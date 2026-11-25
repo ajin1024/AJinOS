@@ -106,14 +106,16 @@ with tempfile.TemporaryDirectory(prefix="studio-feishu-table-") as home:
             expect(drawer).to_have_count(0)
             expect(table.get_by_role("row").filter(has_text="设计评审群")).to_contain_text("本人、联调助手")
             assert writes[-1]["groups"][-1] == {"id": "oc_new", "mode": "mentions", "targetIds": ["ou_owner", "ou_robot"]}
-            page.get_by_role("combobox", name="扫描周期").select_option("10")
+            schedule = page.get_by_role("combobox", name="扫描周期")
+            schedule.click()
+            page.get_by_role("option", name="每 10 分钟").click()
             page.get_by_role("button", name="保存周期").click()
             expect(page.get_by_role("button", name="保存周期")).to_be_disabled()
             assert writes[-1]["interval"] == 10
             assert len(writes[-1]["groups"]) == 3
             page.reload()
             expect(table.get_by_text("设计评审群", exact=True)).to_be_visible()
-            expect(page.get_by_role("combobox", name="扫描周期")).to_have_value("10")
+            expect(schedule).to_contain_text("每 10 分钟")
             page.set_viewport_size({"width": 850, "height": 650})
             page.locator("#status-capsule").click()
             page.locator('[data-theme-choice="dark"]').click()

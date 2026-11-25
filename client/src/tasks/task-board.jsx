@@ -129,7 +129,10 @@ export function TaskBoard({
             <div className="kb-col-body">
               {items.map((entry) => {
                 const subItems = cardSubItemsOf(entry);
-                const reference = entry.ticket?.number ?? cardSourceLabel(entry);
+                const id = entry.runs?.[0]?.id ?? entry.standaloneCard?.id ?? entry.intake?.id;
+                const number = entry.ticket?.number || (id != null ? "#" + id : "");
+                const source = cardSourceLabel(entry);
+                const reference = [number, source === entry.title ? "" : source].filter(Boolean).join(" / ");
                 const age = formatWaitAge(entry.updatedAt);
                 const attention = col.id === "review" ? reviewReasonLabel(entry) : "";
                 return (

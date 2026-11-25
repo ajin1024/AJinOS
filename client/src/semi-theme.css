@@ -1,61 +1,42 @@
-/* Shared Semi Design Clear Mint / Charcoal token mapping & App Shell / Settings Center styles. */
-body {
-  --semi-color-primary: #36785b;
-  --semi-color-primary-hover: #286349;
-  --semi-color-primary-active: #20513c;
-  --semi-color-primary-disabled: #9fc7b4;
-  --semi-color-primary-light-default: #ebf9f1;
-  --semi-color-primary-light-hover: #ddf2e7;
-  --semi-color-primary-light-active: #cce9db;
-  --semi-color-bg-0: var(--ui-panel);
+body, body[theme-mode="dark"] {
+  --semi-color-primary: var(--ui-accent);
+  --semi-color-primary-hover: var(--ui-accent-hover);
+  --semi-color-primary-active: var(--ui-accent-active);
+  --semi-color-primary-disabled: var(--ui-wire);
+  --semi-color-primary-light-default: var(--ui-soft);
+  --semi-color-primary-light-hover: var(--ui-soft);
+  --semi-color-primary-light-active: var(--ui-soft);
+  --semi-color-success-light-default: var(--ui-success-soft);
+  --semi-color-warning-light-default: var(--ui-warn-soft);
+  --semi-color-danger-light-default: var(--ui-danger-soft);
+  --semi-color-success: var(--ui-success);
+  --semi-color-warning: var(--ui-warn);
+  --semi-color-danger: var(--ui-danger);
+  --semi-color-bg-0: var(--ui-bg);
   --semi-color-bg-1: var(--ui-panel);
-  --semi-color-bg-2: var(--ui-panel);
-  --semi-color-bg-3: var(--ui-surface);
-  --semi-color-bg-4: var(--ui-panel);
-  --semi-color-text-0: var(--ui-text);
-  --semi-color-text-1: var(--ui-text);
-  --semi-color-text-2: var(--ui-muted);
-  --semi-color-text-3: var(--ui-muted);
-  --semi-color-border: var(--ui-line);
-  --semi-color-fill-0: rgba(37, 53, 46, 0.05);
-  --semi-color-fill-1: rgba(37, 53, 46, 0.09);
-  --semi-color-fill-2: rgba(37, 53, 46, 0.13);
-}
-
-body[theme-mode="dark"] {
-  --semi-color-primary: #a5e7c5;
-  --semi-color-primary-hover: #b5eed1;
-  --semi-color-primary-active: #94ddba;
-  --semi-color-primary-disabled: #557a68;
-  --semi-color-primary-light-default: #293b34;
-  --semi-color-primary-light-hover: #324a3f;
-  --semi-color-primary-light-active: #3c5649;
-  --semi-color-bg-0: var(--ui-panel);
-  --semi-color-bg-1: var(--ui-panel);
-  --semi-color-bg-2: var(--ui-panel);
+  --semi-color-bg-2: var(--ui-raised);
   --semi-color-bg-3: var(--ui-surface);
   --semi-color-bg-4: var(--ui-raised);
   --semi-color-text-0: var(--ui-text);
-  --semi-color-text-1: var(--ui-text);
+  --semi-color-text-1: var(--ui-text-secondary);
   --semi-color-text-2: var(--ui-muted);
   --semi-color-text-3: var(--ui-muted);
   --semi-color-border: var(--ui-line);
-  --semi-color-fill-0: rgba(229, 234, 231, 0.07);
-  --semi-color-fill-1: rgba(229, 234, 231, 0.12);
-  --semi-color-fill-2: rgba(229, 234, 231, 0.18);
+  --semi-color-fill-0: color-mix(in srgb,var(--ui-muted) 6%,transparent);
+  --semi-color-fill-1: color-mix(in srgb,var(--ui-muted) 10%,transparent);
+  --semi-color-fill-2: color-mix(in srgb,var(--ui-muted) 15%,transparent);
 }
-
 .semi-button-primary.semi-button-solid {
   background: var(--ui-accent);
-  color: #173e2d;
+  color: var(--ui-accent-on);
 }
 .semi-button-primary.semi-button-solid:hover:not(.semi-button-disabled) {
   background: var(--ui-accent-hover);
-  color: #173e2d;
+  color: var(--ui-accent-on);
 }
 .semi-button-primary.semi-button-solid:active:not(.semi-button-disabled) {
-  background: var(--ui-accent-line);
-  color: #123123;
+  background: var(--ui-accent-active);
+  color: var(--ui-accent-on);
 }
 .semi-modal-content,
 .semi-sidesheet-content,
@@ -1456,34 +1437,19 @@ body.station-view #drawer.tc-drawer-surface .task-list-content {
   color: var(--ui-muted);
 }
 .kb-col-icon.tone-slate {
-  color: #475569;
-}
-body[theme-mode="dark"] .kb-col-icon.tone-slate {
-  color: #94a3b8;
+  color: var(--ui-neutral-badge);
 }
 .kb-col-icon.tone-amber {
-  color: #b7791f;
-}
-body[theme-mode="dark"] .kb-col-icon.tone-amber {
-  color: #dfb570;
+  color: var(--ui-warn);
 }
 .kb-col-icon.tone-red {
-  color: #c53030;
-}
-body[theme-mode="dark"] .kb-col-icon.tone-red {
-  color: #f19a9c;
+  color: var(--ui-danger);
 }
 .kb-col-icon.tone-blue {
-  color: #2b6cb0;
-}
-body[theme-mode="dark"] .kb-col-icon.tone-blue {
-  color: #7dd3fc;
+  color: var(--ui-accent);
 }
 .kb-col-icon.tone-green {
-  color: #2f855a;
-}
-body[theme-mode="dark"] .kb-col-icon.tone-green {
-  color: #6ac79c;
+  color: var(--ui-success);
 }
 
 .kb-start-btn {
@@ -1615,28 +1581,16 @@ body[theme-mode="dark"] .kb-col-icon.tone-green {
   background: var(--ui-muted);
 }
 .kb-dot.tone-green {
-  background: #2f855a;
-}
-body[theme-mode="dark"] .kb-dot.tone-green {
-  background: #6ac79c;
+  background: var(--ui-success);
 }
 .kb-dot.tone-red {
-  background: #c53030;
-}
-body[theme-mode="dark"] .kb-dot.tone-red {
-  background: #f19a9c;
+  background: var(--ui-danger);
 }
 .kb-dot.tone-amber {
-  background: #b7791f;
-}
-body[theme-mode="dark"] .kb-dot.tone-amber {
-  background: #dfb570;
+  background: var(--ui-warn);
 }
 .kb-dot.tone-blue {
-  background: #2b6cb0;
-}
-body[theme-mode="dark"] .kb-dot.tone-blue {
-  background: #7dd3fc;
+  background: var(--ui-accent);
 }
 .kb-sub-code {
   font-family: Consolas, "Cascadia Code", monospace;
@@ -1661,28 +1615,16 @@ body[theme-mode="dark"] .kb-dot.tone-blue {
   font-weight: 560;
 }
 .kb-sub-status.tone-green {
-  color: #2f855a;
-}
-body[theme-mode="dark"] .kb-sub-status.tone-green {
-  color: #6ac79c;
+  color: var(--ui-success);
 }
 .kb-sub-status.tone-red {
-  color: #c53030;
-}
-body[theme-mode="dark"] .kb-sub-status.tone-red {
-  color: #f19a9c;
+  color: var(--ui-danger);
 }
 .kb-sub-status.tone-amber {
-  color: #b7791f;
-}
-body[theme-mode="dark"] .kb-sub-status.tone-amber {
-  color: #dfb570;
+  color: var(--ui-warn);
 }
 .kb-sub-status.tone-blue {
-  color: #2b6cb0;
-}
-body[theme-mode="dark"] .kb-sub-status.tone-blue {
-  color: #7dd3fc;
+  color: var(--ui-accent);
 }
 .kb-sub-status.tone-slate {
   color: var(--ui-muted);

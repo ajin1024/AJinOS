@@ -31,16 +31,16 @@ body.station-view .shell:has(> #main > .mc-page) #engine-power:hover {
   }
 }
 .mc-page {
-  --mc-primary: #276044;
-  --mc-primary-hover: #1d5037;
-  --mc-primary-ink: #fff;
+  --mc-primary: var(--ui-accent);
+  --mc-primary-hover: var(--ui-accent-hover);
+  --mc-primary-ink: var(--ui-accent-on);
   --mc-sidebar: color-mix(in srgb, var(--ui-bg) 70%, var(--ui-panel));
   --mc-edge: color-mix(in srgb, var(--ui-line) 72%, var(--ui-panel));
   --mc-wash: color-mix(in srgb, var(--ui-surface) 72%, var(--ui-panel));
   --mc-selected: color-mix(in srgb, var(--ui-soft) 54%, var(--ui-surface));
   --mc-thread-width: 754px;
   display: grid;
-  grid-template-columns: clamp(240px, 18vw, 288px) minmax(0, 1fr);
+  grid-template-columns: 248px minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   background: var(--ui-panel);
@@ -49,7 +49,7 @@ body.station-view .shell:has(> #main > .mc-page) #engine-power:hover {
 :root[data-theme="dark"] .mc-page {
   --mc-primary: var(--ui-accent);
   --mc-primary-hover: var(--ui-accent-hover);
-  --mc-primary-ink: #173e2d;
+  --mc-primary-ink: var(--ui-accent-on);
 }
 .mc-page .semi-button-primary.semi-button-solid:not(:disabled) {
   background: var(--mc-primary);
@@ -805,6 +805,14 @@ body.station-view .mc-search input[type="search"] {
 .mc-acceptance p .semi-icon {
   color: var(--ui-accent-ink);
 }
+.mc-acceptance-actions {
+  background: var(--ui-warn-soft);
+  border-color: color-mix(in srgb, var(--ui-warn) 35%, var(--ui-line));
+}
+.mc-acceptance-actions p,
+.mc-acceptance-actions p .semi-icon {
+  color: var(--ui-warn);
+}
 .mc-acceptance .mc-close-task {
   margin-inline-start: auto;
   background: transparent;
@@ -1102,7 +1110,7 @@ body.station-view .mc-composer .mc-textarea {
   display: none;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 959px) {
   .mc-page {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
@@ -1145,9 +1153,7 @@ body.station-view .mc-composer .mc-textarea {
 }
 
 @media (max-width: 560px) {
-  .shell:has(> #main > .mc-page) .studio-header #nav .nav-item > .semi-icon {
-    display: none;
-  }
+
   .mc-main[data-new] .mc-thread {
     padding-block: 12px clamp(20px, 8vh, 56px);
   }

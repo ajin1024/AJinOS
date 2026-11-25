@@ -1,47 +1,63 @@
-/* D / Clear Mint. Every surface shares these tokens, including native form controls. */
 :root {
-  --ui-bg: #f8fbf9;
+  --ui-rail: #eef0f6;
+  --ui-surface: #f4f6fa;
+  --ui-bg: #f9fafc;
   --ui-panel: #ffffff;
-  --ui-surface: #f2f6f4;
   --ui-raised: #ffffff;
-  --ui-line: #e0e9e4;
-  --ui-wire: #b4c8bd;
-  --ui-text: #25352e;
-  --ui-muted: #6f8077;
-  --ui-accent: #a5e7c5;
-  --ui-accent-hover: #94ddba;
-  --ui-accent-ink: #36785b;
-  --ui-accent-line: #6ac79c;
-  --ui-soft: #ebf9f1;
-  --ui-warn: #956b2d;
-  --ui-warn-soft: #fcf4e5;
-  --ui-danger: #b64d51;
-  --ui-danger-soft: #fceff0;
-  --ui-overlay: #162c22;
-  --ui-shadow: #253b30;
+  --ui-line: #e2e6f0;
+  --ui-wire: #bfc7da;
+  --ui-text: #171c28;
+  --ui-secondary: var(--ui-text-secondary);
+  --ui-text-secondary: #475166;
+  --ui-muted: #747f96;
+  --ui-accent: #4f6ae8;
+  --ui-accent-on: #ffffff;
+  --ui-accent-ink: #3b53cc;
+  --ui-soft: #e9eefd;
+  --ui-success: #168a5b;
+  --ui-success-soft: #e7f7ef;
+  --ui-warn: #b4690e;
+  --ui-warn-soft: #fdf3e3;
+  --ui-danger: #c93b44;
+  --ui-danger-soft: #fdecef;
+  --ui-neutral-badge: #646e82;
+  --ui-neutral-badge-soft: #eceff5;
+  --ui-accent-hover: #3f58d6;
+  --ui-accent-active: #3349bd;
+  --ui-accent-line: #7a91f2;
+  --ui-overlay: #161924;
+  --ui-shadow: #171c28;
   color-scheme: light;
-  background: var(--ui-bg);
 }
 :root[data-theme="dark"] {
-  --ui-bg: #17191e;
-  --ui-panel: #1d2026;
-  --ui-surface: #23272e;
-  --ui-raised: #262a31;
-  --ui-line: #383e47;
-  --ui-wire: #525b66;
-  --ui-text: #e5eae7;
-  --ui-muted: #9aa7a0;
-  --ui-accent: #a5e7c5;
-  --ui-accent-hover: #b5eed1;
-  --ui-accent-ink: #a5e7c5;
-  --ui-accent-line: #6ac79c;
-  --ui-soft: #293b34;
-  --ui-warn: #dfb570;
-  --ui-warn-soft: #3a3227;
-  --ui-danger: #f19a9c;
-  --ui-danger-soft: #3c2b30;
-  --ui-overlay: #050709;
-  --ui-shadow: #000000;
+  --ui-rail: #11131c;
+  --ui-surface: #161924;
+  --ui-bg: #1b1f2c;
+  --ui-panel: #212636;
+  --ui-raised: #272d40;
+  --ui-line: #2e354a;
+  --ui-wire: #444e6b;
+  --ui-text: #e8ecf7;
+  --ui-secondary: var(--ui-text-secondary);
+  --ui-text-secondary: #b4bed6;
+  --ui-muted: #7d88a3;
+  --ui-accent: #7aa2f7;
+  --ui-accent-on: #101524;
+  --ui-accent-ink: #8db1fa;
+  --ui-soft: #252e47;
+  --ui-success: #34d399;
+  --ui-success-soft: #18352c;
+  --ui-warn: #f2b84b;
+  --ui-warn-soft: #3a2e1b;
+  --ui-danger: #f87171;
+  --ui-danger-soft: #3b2026;
+  --ui-neutral-badge: #8b95b0;
+  --ui-neutral-badge-soft: #252a3a;
+  --ui-accent-hover: #8db1fa;
+  --ui-accent-active: #658ee8;
+  --ui-accent-line: #5d82d6;
+  --ui-overlay: #10131c;
+  --ui-shadow: #10131c;
   color-scheme: dark;
 }
 body.station-view,
@@ -53,7 +69,7 @@ body.station-view,
   --text: var(--ui-text);
   --muted: var(--ui-muted);
   --blue: var(--ui-accent-ink);
-  --green: var(--ui-accent-ink);
+  --green: var(--ui-success);
   --amber: var(--ui-warn);
   --red: var(--ui-danger);
   --purple: var(--ui-accent-ink);
@@ -96,7 +112,7 @@ body.station-view :is(#dialog, #management-dialog, #drawer) .button.primary,
 body.station-view .wb-button.primary {
   background: var(--ui-accent);
   border-color: var(--ui-accent);
-  color: #173e2d;
+  color: var(--ui-accent-on);
   box-shadow: none;
 }
 body.station-view .button.primary:hover {
@@ -137,7 +153,10 @@ body.station-view .pill.red {
   background: var(--ui-danger-soft);
   color: var(--ui-danger);
 }
-body.station-view .pill.green,
+body.station-view .pill.green {
+  color: var(--ui-success);
+  background: var(--ui-success-soft);
+}
 body.station-view .pill.blue {
   background: var(--ui-soft);
   color: var(--ui-accent-ink);
@@ -180,7 +199,7 @@ body.station-view .button:hover {
 }
 body.station-view .button.primary:hover {
   background: var(--ui-accent-hover);
-  color: #173e2d;
+  color: var(--ui-accent-on);
 }
 body.station-view .button,
 body.station-view .nav-item {

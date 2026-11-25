@@ -1,5 +1,5 @@
 # Prevent pending-task selection or live updates from losing a reply across unified Task Center views.
-# Prevent an empty board from filling the viewport with empty lanes or cutting off lanes at desktop widths.
+# Prevent an empty board from filling the viewport with empty lanes or preventing access to offscreen lanes.
 # Prevent the removed demo tab from appearing in Task Center.
 import json
 import os
@@ -87,7 +87,11 @@ with temporary_studio_home() as home:
                     review_col = page.locator('[data-board-col="review"]')
                     expect(review_col.locator(".kb-card")).to_have_count(2, timeout=10000)
                     expect(board.locator("[data-board-col]")).to_have_count(7)
-                    assert board.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
+                    last_column = board.locator("[data-board-col]").last
+                    last_column.scroll_into_view_if_needed()
+                    expect(last_column).to_be_in_viewport()
+                    reference = review_col.locator(".kb-card").first
+                    assert reference.locator(".kb-card-reference").inner_text() != reference.locator(".kb-card-title").inner_text()
                     page.locator("#task-search").fill("找不到的任务")
                     expect(board.get_by_text("没有匹配的任务", exact=True)).to_be_visible()
                     expect(board.locator("[data-board-col]")).to_have_count(0)

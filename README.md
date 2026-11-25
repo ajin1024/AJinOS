@@ -94,11 +94,13 @@ agent-autoloop try
 
 `client/` 目录提供独立的桌面与本地网页客户端 **AJinOS Studio**。它完全通过标准 Hub HTTP / SSE 协议工作，不修改中台内核与调度协议：
 
-| 日间主题 · 工作台 | 夜间主题 · 工作台 |
+下图取自隔离的本地 Studio，任务与项目为演示数据。
+
+| 瓷白蓝紫 · 工作台 | 深蓝灰 · 工作台 |
 | --- | --- |
 | ![工作台日间主题](docs/screenshots/workbench-light.png) | ![工作台夜间主题](docs/screenshots/workbench-dark.png) |
-| **消息中心与行内卡片审批** | **任务中心看板与验收** |
-| ![消息中心与行内卡片审批](docs/screenshots/messages.png) | ![任务中心看板](docs/screenshots/tasks.png) |
+| **消息中心与项目对话** | **任务中心看板与验收** |
+| ![按项目发起对话](docs/screenshots/messages.png) | ![任务中心看板](docs/screenshots/tasks.png) |
 
 <details>
 <summary>查看项目空间与 Studio 架构分层图</summary>

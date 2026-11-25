@@ -394,12 +394,12 @@ export function FeishuPanel({ api, toast, onEditingChange }) {
           <section className="sc-card" style={{ gap: 16 }}>
             <div className="sc-feishu-toolbar">
               <form className="sc-feishu-schedule" onSubmit={saveInterval}>
-                <label htmlFor="feishu-scan-interval" style={{ fontSize: 13, fontWeight: 560 }}>
+                <label id="feishu-scan-interval-label" htmlFor="feishu-scan-interval" style={{ fontSize: 13, fontWeight: 560 }}>
                   扫描周期
                 </label>
                 <Select
                   id="feishu-scan-interval"
-                  aria-label="扫描周期"
+                  aria-labelledby="feishu-scan-interval-label"
                   value={intervalDraft}
                   disabled={saving || settings.interval === null}
                   onChange={(value) => setIntervalDraft(String(value ?? ""))}

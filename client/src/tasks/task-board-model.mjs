@@ -1,12 +1,12 @@
 import { pendingNotices } from "../task-workflow.mjs";
 
 export const BOARD_COLUMNS = [
-  { id: "unplanned", label: "未规划", icon: "dashed", tone: "muted" },
   { id: "todo", label: "待办", icon: "circle", tone: "slate" },
   { id: "in_progress", label: "进行中", icon: "progress", tone: "amber" },
   { id: "review", label: "待审核", icon: "alert", tone: "red", actionLabel: "开始处理" },
   { id: "acceptance", label: "待验收", icon: "check-outline", tone: "blue" },
   { id: "done", label: "已完成", icon: "check-filled", tone: "green" },
+  { id: "unplanned", label: "未规划", icon: "dashed", tone: "muted" },
   { id: "cancelled", label: "已取消", icon: "cancel", tone: "muted" },
 ];
 

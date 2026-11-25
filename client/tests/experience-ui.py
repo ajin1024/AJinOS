@@ -3,16 +3,14 @@
 # Prevent real task submission, new timeline messages, or a workbench redraw from stealing the user's place.
 # Keep the workbench navigation and its accessible region under the same short name.
 from base64 import b64decode
-from contextlib import contextmanager
+from studio_home import studio_home
 from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
 from queue import Queue
 import subprocess
-import tempfile
 from threading import Thread
-import time
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -36,24 +34,7 @@ def navigate(page, view):
     expect(page.locator('#nav [aria-current="page"]')).to_have_attribute("data-view", view)
 
 
-@contextmanager
-def studio_home():
-    directory = tempfile.TemporaryDirectory(prefix="studio-experience-")
-    try:
-        yield directory.name
-    finally:
-        # Windows can still hold the demo Agent's working directory just after the run is settled.
-        if os.name == "nt":
-            for _ in range(20):
-                try:
-                    directory.cleanup()
-                    break
-                except PermissionError:
-                    time.sleep(0.25)
-        directory.cleanup()
-
-
-with studio_home() as home:
+with studio_home('studio-experience-') as home:
     with open(Path(home) / "server.log", "w", encoding="utf-8") as log:
         server = subprocess.Popen(
             ["node", "--input-type=module", "-e", SERVER, home],
@@ -101,7 +82,8 @@ with studio_home() as home:
                 assert page.locator("#new-task").evaluate(
                     "(button) => getComputedStyle(button).transitionDuration.split(',').every(t => parseFloat(t) === 0)"
                 )
-                page.locator("#new-task").click()
+                page.locator("#status-capsule").click()
+                page.locator("#studio-status-menu").get_by_role("button", name="新建任务", exact=True).click()
                 expect(page.get_by_role("dialog", name="发起新任务")).to_be_visible()
                 page.keyboard.press("Escape")
                 expect(page.get_by_role("dialog", name="发起新任务")).to_be_hidden()
@@ -124,7 +106,8 @@ with studio_home() as home:
 
                 page.set_viewport_size({"width": 1280, "height": 840})
                 navigate(page, "projects")
-                page.locator("#new-task").click()
+                page.locator("#status-capsule").click()
+                page.locator("#studio-status-menu").get_by_role("button", name="新建任务", exact=True).click()
                 modal = page.get_by_role("dialog", name="发起新任务")
                 modal.get_by_role("textbox").fill("检查演示订单并反馈结果")
                 modal.locator('select[name="project"]').select_option("orders")

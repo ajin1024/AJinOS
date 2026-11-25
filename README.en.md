@@ -94,10 +94,12 @@ In an interactive terminal, type the option number. In a non-interactive termina
 
 The `client/` directory provides **AJinOS Studio**, a standalone desktop and local web client that talks to the hub strictly over the standard HTTP / SSE `/v1` protocol without altering the kernel:
 
-| Light Theme · Live Workbench | Dark Theme · Live Workbench |
+These screenshots show an isolated local Studio with demo projects and tasks.
+
+| Porcelain Indigo · Live Workbench | Slate Blue · Live Workbench |
 | --- | --- |
 | ![Workbench Light](docs/screenshots/workbench-light.png) | ![Workbench Dark](docs/screenshots/workbench-dark.png) |
-| **Message Center & Inline Approvals** | **Task Center Board & Acceptance** |
+| **Message Center & Project Conversations** | **Task Center Board & Acceptance** |
 | ![Message Center](docs/screenshots/messages.png) | ![Task Center](docs/screenshots/tasks.png) |
 
 <details>

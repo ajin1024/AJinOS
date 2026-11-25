@@ -272,7 +272,7 @@ async function saveProjectValues(id, v) {
   } else {
     const to = resolveRoleCandidates(config, "execute").candidates[0] || agentOptionsOf(config)[0]?.value;
     if (!to) throw new Error("请先在系统配置中添加执行器");
-    Object.assign(project, { role: "project", aliases: [], description: "", color: "#a5e7c5" });
+    Object.assign(project, { role: "project", aliases: [], description: "", color: "#4f6ae8" });
     next.projects.push(project);
     next.rules.rules.push({
       name: project.rule,

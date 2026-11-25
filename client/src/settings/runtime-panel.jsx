@@ -3,7 +3,7 @@ import { Banner, Button, Input, InputNumber, Modal, Tag, TextArea } from "@douyi
 import { IconPause, IconPlay, IconRefresh } from "@douyinfe/semi-icons";
 import { parseList } from "../studio-helpers.mjs";
 
-export function RuntimePanel({ config, snapshot, api, toast, onSaveConfig, onEngineControl, onEditingChange }) {
+export function RuntimePanel({ themeMode, selectTheme, config, snapshot, api, toast, onSaveConfig, onEngineControl, onEditingChange }) {
   const initialTz = config.rules?.timezone || "Asia/Shanghai";
   const initialCapacity = config.runtime?.capacity ?? 2;
   const initialAutoAccept = config.runtime?.autoAcceptMinutes ?? 0;
@@ -92,7 +92,7 @@ export function RuntimePanel({ config, snapshot, api, toast, onSaveConfig, onEng
   }
 
   return (
-    <div className="sc-container">
+    <div className="sc-container sc-runtime">
       <header className="sc-header">
         <div>
           <h1>运行环境与引擎</h1>
@@ -106,14 +106,41 @@ export function RuntimePanel({ config, snapshot, api, toast, onSaveConfig, onEng
             <h2>{engineControlled ? "Studio 自管引擎" : "外部引擎"}</h2>
             <p className="sc-muted">{engineCopy}</p>
           </div>
+          <div className="runtime-engine-actions">
           <Tag
             color={snapshot.connected ? "green" : snapshot.engineStopped ? "grey" : "red"}
             shape="circle"
           >
             {engineStatus}
           </Tag>
+            {engineControlled && (
+          <div className="sc-header-actions">
+            {snapshot.enginePid ? (
+              <>
+                <Button type="tertiary" icon={<IconPause aria-hidden="true" />} disabled={engineBusy} onClick={() => setEngineConfirm("stop")}>
+                  停止引擎
+                </Button>
+                <Button icon={<IconRefresh aria-hidden="true" />} disabled={engineBusy} onClick={() => setEngineConfirm("restart")}>
+                  重启引擎
+                </Button>
+              </>
+            ) : (
+              <Button theme="solid" icon={<IconPlay aria-hidden="true" />} loading={engineBusy} onClick={() => runEngine("start")}>
+                启动引擎
+              </Button>
+            )}
+          </div>
+        )}
+          </div>
         </div>
 
+        <div className="runtime-theme-row"><strong>外观主题</strong>
+          <div role="radiogroup" aria-label="外观主题" className="studio-theme-pills">
+            {[["system", "跟随系统"], ["light", "瓷白蓝紫"], ["dark", "深蓝灰"]].map(([mode, label]) =>
+              <button type="button" key={mode} role="radio" aria-checked={themeMode === mode} className={"studio-theme-pill " + (themeMode === mode ? "active" : "")} onClick={() => selectTheme(mode)}>{label}</button>
+            )}
+          </div>
+        </div>
         <dl className="sc-kv-grid">
           <div>
             <dt>引擎进程</dt>
@@ -137,24 +164,6 @@ export function RuntimePanel({ config, snapshot, api, toast, onSaveConfig, onEng
           <Banner type="warning" description="部分配置（如并发容量或通道连接）将在重启自管引擎后生效。" closeIcon={null} />
         )}
 
-        {engineControlled && (
-          <div className="sc-header-actions">
-            {snapshot.enginePid ? (
-              <>
-                <Button icon={<IconPause aria-hidden="true" />} disabled={engineBusy} onClick={() => setEngineConfirm("stop")}>
-                  停止引擎
-                </Button>
-                <Button icon={<IconRefresh aria-hidden="true" />} disabled={engineBusy} onClick={() => setEngineConfirm("restart")}>
-                  重启引擎
-                </Button>
-              </>
-            ) : (
-              <Button theme="solid" icon={<IconPlay aria-hidden="true" />} loading={engineBusy} onClick={() => runEngine("start")}>
-                启动引擎
-              </Button>
-            )}
-          </div>
-        )}
       </section>
 
       <section className="sc-card">

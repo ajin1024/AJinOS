@@ -427,6 +427,7 @@ export function filterConversations(list, { filter = "all", search = "" } = {}) 
     .toLocaleLowerCase();
   return (list || []).filter((conversation) => {
     if (filter === "actionable" && !conversation.actionable) return false;
+    if (filter === "needs_acceptance" && conversation.status !== "needs_acceptance") return false;
     if (filter === "running" && conversation.status !== "running") return false;
     if (filter === "done" && conversation.status !== "done") return false;
     if (!needle) return true;

@@ -1,5 +1,5 @@
 # Prevent mixed light/dark surfaces, lost theme preferences, and a refresh button that only redraws cached state.
-# Prevent page-specific styles from replacing the shared mint accent with another palette.
+# Prevent the global accent from replacing the independent online status color.
 # A real isolated Studio serves these pages. SSE keeps the network open; wait for the rendered canvas instead of networkidle.
 import json
 import os
@@ -7,7 +7,7 @@ from pathlib import Path
 from queue import Queue
 import subprocess
 import sys
-import tempfile
+from studio_home import studio_home
 from threading import Thread
 from playwright.sync_api import sync_playwright, expect
 
@@ -15,7 +15,7 @@ root = Path(__file__).resolve().parents[2]
 artifacts = Path(sys.argv[1]) if len(sys.argv) > 1 else None
 if artifacts:
     artifacts.mkdir(parents=True, exist_ok=True)
-with tempfile.TemporaryDirectory(prefix="studio-theme-ui-") as temp:
+with studio_home("studio-theme-ui-") as temp:
     script = """
       import { startDemoStudio as startStudio } from './client/tests/studio-fixtures.mjs';
       const s = await startStudio({home: process.argv[1], port: 0, autostart: true, businessTasks: true});
@@ -37,49 +37,60 @@ with tempfile.TemporaryDirectory(prefix="studio-theme-ui-") as temp:
             page.goto(url)
             page.wait_for_selector(".fc-canvas")
             page.wait_for_function("async () => (await (await fetch('/api/state')).json()).connected")
+            page.goto(url + "/#settings/runtime")
+            expect(page.get_by_text("外观主题", exact=True)).to_be_visible()
+            page.get_by_role("radio", name="瓷白蓝紫", exact=True).click()
+            expect(page.locator(".studio-capsule-dot")).to_have_css("background-color", "rgb(22, 138, 91)")
+            page.locator('#nav [data-view="overview"]').click()
             submitted = page.request.post(url + "/api/messages", headers={"x-studio-action": "1"},
                 data={"id": "theme-task", "project": "orders", "text": "核对演示结果并直接完成", "requirementsConfirmed": True})
             assert submitted.ok, submitted.text()
             assert not submitted.json().get("needsProject"), submitted.text()
+            for index, (project, title) in enumerate([
+                ("orders", "检查支付回调"), ("orders", "整理退款记录"), ("orders", "核对订单库存"),
+                ("orders", "整理发货清单"), ("content", "更新素材目录并直接完成"),
+            ]):
+                submitted = page.request.post(url + "/api/messages", headers={"x-studio-action": "1"},
+                    data={"id": f"theme-thread-{index}", "project": project, "text": title, "requirementsConfirmed": True})
+                assert submitted.ok and submitted.json().get("project") == project, submitted.text()
             page.wait_for_function("""async () => {
                 const {state} = await (await fetch('/api/state')).json();
                 return state?.runs.some(run => run.state === 'done');
             }""")
             for theme in ["light", "dark"]:
-                page.locator("#status-capsule").click()
-                page.locator(f'[data-theme-choice="{theme}"]').click()
-                page.locator("#status-capsule").click()
+                page.locator('#nav [data-view="settings"]').click()
+                page.get_by_role("radio", name={"light": "瓷白蓝紫", "dark": "深蓝灰"}[theme]).click()
+                page.locator('#nav [data-view="overview"]').click()
                 expect(page.locator("html")).to_have_attribute("data-theme", theme)
                 if theme == "dark":
                     expect(page.locator("body")).to_have_attribute("theme-mode", "dark")
-                accent_ink = "rgb(165, 231, 197)" if theme == "dark" else "rgb(54, 120, 91)"
-                assert page.locator("#nav .nav-item.active").evaluate("e=>getComputedStyle(e).color") == accent_ink
-                assert page.locator("#new-task").evaluate("e=>getComputedStyle(e).backgroundColor") == "rgb(165, 231, 197)"
-                if artifacts: page.screenshot(path=str(artifacts / f"mint-{theme}-workbench.png"), full_page=True)
-                expected = "rgb(29, 32, 38)" if theme == "dark" else "rgb(255, 255, 255)"
+                accent = "#7aa2f7" if theme == "dark" else "#4f6ae8"
+                assert page.locator("html").evaluate("e=>getComputedStyle(e).getPropertyValue('--ui-accent').trim().toLowerCase()") == accent
+                if artifacts: page.screenshot(path=str(artifacts / f"{theme}-workbench.png"), full_page=True)
+                expected = "rgb(33, 38, 54)" if theme == "dark" else "rgb(255, 255, 255)"
 
                 # Canvas shortcuts navigate directly to pages without nested management dialogs.
                 page.get_by_role("button", name="项目网关管理", exact=True).click()
                 expect(page.get_by_role("heading", name="项目识别网关", exact=True)).to_be_visible()
-                if artifacts: page.screenshot(path=str(artifacts / f"mint-{theme}-gateway.png"), full_page=True)
+                if artifacts: page.screenshot(path=str(artifacts / f"{theme}-gateway.png"), full_page=True)
 
                 page.locator('#nav [data-view="projects"]').click()
                 expect(page.get_by_role("region", name="项目卡片")).to_be_visible()
+                if artifacts: page.screenshot(path=str(artifacts / f"{theme}-projects.png"), full_page=True)
                 page.get_by_role("button", name="添加项目", exact=True).click()
-                field = page.locator('input[name="name"]')
+                field = page.locator('input[name="cwd"]')
                 field.fill("尚未保存的输入")
                 page.locator("#status-capsule").click()
                 page.locator("#refresh-app").click()
                 expect(field).to_have_value("尚未保存的输入")
                 page.keyboard.press("Escape")
                 expect(page.locator(".ps-editor")).not_to_be_visible()
-                if artifacts: page.screenshot(path=str(artifacts / f"mint-{theme}-projects.png"), full_page=True)
 
                 page.locator("#status-capsule").click()
                 page.locator("#open-versions").click()
                 expect(page.locator(".version-current")).to_be_visible()
                 expect(page.locator("#versions-body")).to_contain_text("浏览器中查看")
-                if artifacts: page.screenshot(path=str(artifacts / f"mint-{theme}-versions.png"), full_page=True)
+                if artifacts: page.screenshot(path=str(artifacts / f"{theme}-versions.png"), full_page=True)
                 page.keyboard.press("Escape")
 
                 page.locator('#nav [data-view="overview"]').click()
@@ -93,24 +104,54 @@ with tempfile.TemporaryDirectory(prefix="studio-theme-ui-") as temp:
 
                 page.locator('#nav [data-view="tasks"]').click()
                 expect(page.get_by_role("region", name="任务看板")).to_be_visible()
-                if artifacts: page.screenshot(path=str(artifacts / f"mint-{theme}-kanban.png"), full_page=True)
+                header = page.locator(".kb-col-head").first.bounding_box()
+                controls = page.locator(".tc-tools").bounding_box()
+                assert controls["y"] + controls["height"] <= header["y"] + 1
+                if artifacts: page.screenshot(path=str(artifacts / f"{theme}-kanban.png"), full_page=True)
                 page.locator(".kb-card").first.click()
                 expect(page.locator("#task-tabs")).to_be_visible()
                 assert page.locator("#drawer").evaluate("e=>getComputedStyle(e).backgroundColor") == expected
-                if artifacts: page.screenshot(path=str(artifacts / f"mint-{theme}-task-detail.png"), full_page=True)
+                assert abs(page.locator("#drawer").bounding_box()["width"] - 380) <= 1
+                if artifacts: page.screenshot(path=str(artifacts / f"{theme}-task-detail.png"), full_page=True)
                 page.keyboard.press("Escape")
 
                 page.locator('#nav [data-view="settings"]').click()
                 expect(page.locator(".admin-settings")).to_be_visible()
-                if artifacts: page.screenshot(path=str(artifacts / f"mint-{theme}-settings.png"), full_page=True)
-                page.locator('#nav [data-view="overview"]').click()
+                if artifacts: page.screenshot(path=str(artifacts / f"{theme}-settings.png"), full_page=True)
+                page.locator('#nav [data-view="messages"]').click()
+                sidebar = page.get_by_role("complementary", name="会话列表")
+                expect(sidebar).to_be_visible()
+                assert abs(sidebar.bounding_box()["width"] - 248) <= 1
+                group = sidebar.locator(".mc-conversation-group").filter(has=page.get_by_role("button", name="订单服务 · 演示", exact=False))
+                expect(group.locator(".mc-conversation")).to_have_count(4)
+                group.get_by_role("button", name="展开显示").click()
+                expect(group.locator(".mc-conversation")).to_have_count(5)
+                group.get_by_role("button", name="收起", exact=True).click()
+                page.get_by_role("combobox", name="选择发起项目").select_option("orders")
+                expect(page.locator(".mc-composer textarea")).to_be_in_viewport()
+                if artifacts: page.screenshot(path=str(artifacts / f"{theme}-messages.png"))
+                page.set_viewport_size({"width": 390, "height": 844})
+                for view, content in (("messages", ".mc-composer textarea"), ("tasks", ".kb-board"),
+                                      ("overview", ".fc-canvas"), ("settings", ".sc-main"), ("projects", ".ps-card-grid")):
+                    page.locator(f'#nav [data-view="{view}"]').click()
+                    expect(page.locator(content).first).to_be_visible()
+                    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), (theme, view)
+                    if artifacts: page.screenshot(path=str(artifacts / f"{theme}-390-{view}.png"))
+                page.set_viewport_size({"width": 1600, "height": 1000})
 
-            page.locator("#status-capsule").click()
-            page.locator('[data-theme-choice="system"]').click()
-            page.locator("#status-capsule").click()
+            toggle = page.get_by_role("button", name="切换外观主题", exact=True)
+            toggle.click()
+            page.reload()
+            expect(page.locator("html")).to_have_attribute("data-theme-mode", "light")
+            page.locator('#nav [data-view="settings"]').click()
+            page.get_by_role("radio", name="跟随系统").click()
             for theme in ["dark", "light"]:
                 page.emulate_media(color_scheme=theme)
                 expect(page.locator("html")).to_have_attribute("data-theme", theme)
+            page.wait_for_function("""async () => {
+                const {state} = await (await fetch('/api/state')).json();
+                return state?.runs.length >= 6 && state.runs.every(run => run.state === 'done');
+            }""", timeout=60000)
             assert not errors, errors
             browser.close()
         print("PASS: both themes, all surfaces, unsaved guard, system theme and real reload")

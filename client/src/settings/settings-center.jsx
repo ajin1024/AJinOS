@@ -48,7 +48,7 @@ const GROUPS = [
 ];
 
 export function SettingsCenter({
-  section,
+  themeMode, selectTheme, section,
   onSelectSection,
   config,
   snapshot,
@@ -64,10 +64,12 @@ export function SettingsCenter({
   versionProgress,
   onEditingChange,
 }) {
+  const [showNav, setShowNav] = React.useState(false);
   const active = section || "runtime";
 
   return (
-    <div className="sc-shell admin-settings">
+    <div className="sc-shell admin-settings" data-nav-open={showNav}>
+      <button className="sc-menu-toggle" aria-expanded={showNav} onClick={() => setShowNav(!showNav)}>系统配置导航</button>
       <nav className="sc-nav" aria-label="系统配置导航">
         {GROUPS.map((group) => (
           <div className="sc-nav-group" key={group.title}>
@@ -79,7 +81,7 @@ export function SettingsCenter({
                 className={`sc-nav-item ${active === item.id ? "active" : ""}`}
                 data-settings-section={item.id}
                 aria-current={active === item.id ? "page" : undefined}
-                onClick={() => onSelectSection(item.id)}
+                onClick={() => { setShowNav(false); onSelectSection(item.id); }}
               >
                 {item.icon}
                 <span>{item.label}</span>
@@ -126,7 +128,7 @@ export function SettingsCenter({
         )}
         {active === "feishu" && <FeishuPanel api={api} toast={toast} onEditingChange={onEditingChange} />}
         {active === "runtime" && (
-          <RuntimePanel
+          <RuntimePanel themeMode={themeMode} selectTheme={selectTheme}
             config={config}
             snapshot={snapshot}
             api={api}

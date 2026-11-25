@@ -94,7 +94,8 @@ def run_test(url):
             assert dialog.evaluate("el => el.getBoundingClientRect().width <= window.innerWidth")
             dialog.get_by_role("button", name="取消", exact=True).click()
             page.set_viewport_size({"width": 1600, "height": 1000})
-            page.get_by_role("button", name="新建任务", exact=True).click()
+            page.locator("#status-capsule").click()
+            page.locator("#studio-status-menu").get_by_role("button", name="新建任务", exact=True).click()
             page.locator("#new-task-form select[name=project]").select_option("orders")
             executors = page.locator("#new-task-form select[name=executor] option")
             expect(executors.filter(has_text="我的 Sol 执行器")).to_have_count(1)
@@ -115,7 +116,10 @@ def run_test(url):
         for width in (1280, 640, 390):
             page.set_viewport_size({"width": width, "height": 800})
             for section in ("gateway", "rules", "connections", "runtime", "agents", "advanced"):
+                if width < 960:
+                    page.get_by_role("button", name="系统配置导航", exact=True).click()
                 page.locator(f'[data-settings-section="{section}"]').click()
+                expect(page.get_by_role("region", name="系统配置内容")).to_be_visible()
                 assert page.locator("#main").evaluate("el => el.scrollWidth <= el.clientWidth + 1")
             page.locator('#nav [data-view="projects"]').click()
             expect(page.locator(".ps-page-host")).to_be_visible()

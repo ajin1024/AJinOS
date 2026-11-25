@@ -100,7 +100,8 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
                     expect(page.locator('textarea[name="blockedTerms"]')).to_have_value("禁止测试词")
 
                     form = page.locator("#new-task-form")
-                    page.locator("#new-task").click()
+                    page.locator("#status-capsule").click()
+                    page.locator("#studio-status-menu").get_by_role("button", name="新建任务", exact=True).click()
                     form.locator('[name="project"]').select_option("ui-review")
                     form.locator('[name="text"]').fill("禁止测试词")
                     page.locator("#dialog-submit").click()

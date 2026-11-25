@@ -980,7 +980,7 @@ body.station-view .studio-header #new-task,
 body.station-view .pending-submit .button.primary {
   background: var(--ui-accent);
   border-color: var(--ui-accent);
-  color: #173e2d;
+  color: var(--ui-accent-on);
 }
 
 body.station-view :is(.studio-header #new-task, .pending-submit .button.primary):hover {
@@ -1303,7 +1303,7 @@ body.station-view .task-list-page .pill.blue {
 body.station-view .task-list-footer > .button.primary {
   background: var(--ui-accent);
   border-color: var(--ui-accent);
-  color: #173e2d;
+  color: var(--ui-accent-on);
 }
 
 .task-list-more {

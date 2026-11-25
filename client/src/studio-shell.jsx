@@ -15,6 +15,7 @@ import {
 } from "@douyinfe/semi-icons";
 import semiCss from "@douyinfe/semi-ui/dist/css/semi.min.css";
 import semiThemeCss from "./semi-theme.css";
+import studioLayoutCss from "./studio-layout.css";
 import motionCss from "./studio-motion.css";
 import projectCss from "./project-space.css";
 import { ProjectSpace } from "./project-space.jsx";
@@ -33,7 +34,7 @@ function installSemiStyles() {
   semiStylesInstalled = true;
   const style = document.createElement("style");
   style.id = "studio-semi-styles";
-  style.textContent = semiCss + "\n" + semiThemeCss + "\n" + projectCss + "\n" + motionCss;
+  style.textContent = semiCss + "\n" + semiThemeCss + "\n" + projectCss + "\n" + motionCss + "\n" + studioLayoutCss;
   document.head.append(style);
 }
 
@@ -115,6 +116,7 @@ function StudioShell({
   hasUnsavedForm,
   openNewProjectSignal,
 }) {
+  const [taskToolbarHost, setTaskToolbarHost] = useState(null);
   const [themeMode, setThemeMode] = useState(() =>
     applyThemeMode(document.documentElement.dataset.themeMode || "system"),
   );
@@ -376,6 +378,9 @@ function StudioShell({
 
       <div className="studio-popover-section">
         <div className="studio-popover-links">
+          {route.view !== "tasks" && <button type="button" className="studio-popover-link" aria-label="新建任务" onClick={() => { setCapsuleOpen(false); onOpenNewTask(); }}>
+            <span>新建任务</span><IconPlus size="small" aria-hidden="true" />
+          </button>}
           <button type="button" id="refresh-app" className="studio-popover-link" onClick={handleRefresh}>
             <span>刷新界面</span>
             <small>不重启任务</small>
@@ -399,7 +404,7 @@ function StudioShell({
 
   return (
     <ConfigProvider>
-      <div className="shell">
+      <div className="shell" data-studio-view={route.view}>
         <header className="studio-header">
           <a
             className="studio-brand"
@@ -409,7 +414,7 @@ function StudioShell({
               onNavigate({ view: "overview" });
             }}
           >
-            <span aria-hidden="true">∞</span> AJinOS
+            <span aria-hidden="true">∞</span> {route.view === "tasks" ? "任务中心" : route.view === "overview" ? "AJinOS Studio" : "AJinOS"}
           </a>
 
           <nav id="nav" aria-label="主导航">
@@ -422,6 +427,7 @@ function StudioShell({
                   data-view={item.id}
                   className={`nav-item ${active ? "active" : ""}`}
                   aria-current={active ? "page" : undefined}
+                  aria-label={item.label}
                   title={item.label}
                   onClick={() => onNavigate({ view: item.id, projectId: null })}
                 >
@@ -431,8 +437,13 @@ function StudioShell({
                 </button>
               );
             })}
+            <button type="button" className="rail-theme" aria-label="切换外观主题" title="切换外观主题"
+              onClick={() => selectTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark")}>
+              <span className="rail-light">☾</span><span className="rail-dark">☀</span>
+            </button>
           </nav>
 
+          {route.view === "tasks" && <div className="task-header-slot" ref={setTaskToolbarHost} />}
           <div className="top-actions">
             {showColdStartButton && (
               <button
@@ -515,6 +526,7 @@ function StudioShell({
 
           {route.view === "tasks" && config && (
             <TaskCenter
+              toolbarHost={taskToolbarHost}
               config={config}
               snapshot={snapshot}
               state={state}
@@ -573,6 +585,8 @@ function StudioShell({
 
           {route.view === "settings" && config && (
             <SettingsCenter
+              themeMode={themeMode}
+              selectTheme={selectTheme}
               section={route.section}
               onSelectSection={(section) => onNavigate({ view: "settings", section })}
               config={config}
@@ -613,7 +627,7 @@ function StudioShell({
       <SideSheet
         visible={Boolean(drawerTask)}
         onCancel={onCloseDrawer}
-        width={760}
+        width={380}
         style={{ maxWidth: "100vw" }}
         headerStyle={{ display: "none" }}
         className="studio-task-sidesheet"

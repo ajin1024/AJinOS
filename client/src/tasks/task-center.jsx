@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { IconFolder, IconKanban, IconLayers, IconList, IconSearch } from "@douyinfe/semi-icons";
 import { Banner, Button, Tag } from "@douyinfe/semi-ui";
 import { businessProjects } from "../gateway-config.mjs";
@@ -43,6 +44,7 @@ function statusTag(workflow) {
 }
 
 export function TaskCenter({
+  toolbarHost,
   config,
   snapshot,
   state,
@@ -77,6 +79,13 @@ export function TaskCenter({
   api,
   toast,
 }) {
+  const [wide, setWide] = useState(() => window.matchMedia("(min-width: 1380px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1380px)");
+    const resize = () => setWide(media.matches);
+    media.addEventListener("change", resize);
+    return () => media.removeEventListener("change", resize);
+  }, []);
   const [todoMode, setTodoMode] = useState("pending");
   const [viewMode, setViewMode] = useState("board");
 
@@ -236,9 +245,8 @@ export function TaskCenter({
     onInspectEntry?.(entry);
   }
 
-  return (
-    <div className="pending-page task-list-page tc-page">
-      <div className="tc-tools">
+  const tools = (
+    <div className="tc-tools">
         <div className="tc-toolbar">
           <div className="tc-scopes" role="tablist" aria-label="任务分类">
             {[
@@ -387,7 +395,12 @@ export function TaskCenter({
             )}
           </div>
         )}
-
+    </div>
+  );
+  return (
+    <div className="pending-page task-list-page tc-page">
+      {wide && toolbarHost ? createPortal(tools, toolbarHost) : tools}
+      <div className="tc-banners">
         {!snapshot.connected && (
           <Banner
             type="warning"

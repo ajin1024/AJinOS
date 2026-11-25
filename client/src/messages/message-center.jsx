@@ -11,11 +11,12 @@ import {
   IconFolderStroked,
   IconListView,
   IconLoading,
-  IconPaperclipStroked,
+  IconPlus,
   IconSearch,
   IconSidebar,
   IconTerminal,
 } from "@douyinfe/semi-icons";
+import { ACCESS_NAMES } from "../studio-helpers.mjs";
 import { businessProjects } from "../gateway-config.mjs";
 import { executorChoicesFor, flowChoicesFor } from "../tasks/task-handoff.mjs";
 import { CardReplyForm } from "../tasks/card-reply-form.jsx";
@@ -29,7 +30,7 @@ const STATUS_COLORS = {
   needs_acceptance: "attention",
   needs_confirmation: "attention",
   needs_project: "attention",
-  running: "green",
+  running: "attention",
   blocked: "red",
   failed: "red",
   done: "grey",
@@ -38,6 +39,7 @@ const STATUS_COLORS = {
 const FILTERS = [
   ["all", "全部"],
   ["actionable", "待处理"],
+  ["needs_acceptance", "待验收"],
   ["running", "进行中"],
   ["done", "已结束"],
 ];
@@ -56,7 +58,7 @@ const RUN_STATE_LABELS = {
 };
 const RUN_STATE_COLORS = {
   queued: "attention",
-  claimed: "green",
+  claimed: "attention",
   unknown: "attention",
   done: "green",
   nothing: "grey",
@@ -192,17 +194,17 @@ function RunBubble({ run, config, onInspectRun, children }) {
 
 function AcceptanceActions({ runId, onAction }) {
   return (
-    <div className="mc-acceptance">
+    <div className="mc-acceptance mc-acceptance-actions">
       <p>
         <IconFlagStroked size="small" aria-hidden="true" />
-        请验收这一轮的结果
+        待验收
       </p>
       <div className="mc-actions-row">
         <Button size="small" theme="solid" onClick={() => onAction(runId, "accept")}>
-          验收通过
+          通过验收
         </Button>
         <Button size="small" theme="outline" onClick={() => onAction(runId, "rework")}>
-          补充返工
+          打回修改
         </Button>
         <Button size="small" className="mc-close-task" onClick={() => onAction(runId, "close")}>
           关闭任务
@@ -214,11 +216,11 @@ function AcceptanceActions({ runId, onAction }) {
 
 function ExecutionInfo({ run, conversation, config, onInspectRun }) {
   return (
-    <aside className="mc-execution" aria-label="执行信息">
-      <h2>
+    <details className="mc-execution" aria-label="执行信息">
+      <summary>
         <IconListView size="small" aria-hidden="true" />
         执行信息
-      </h2>
+      </summary>
       <dl>
         <div>
           <dt>执行者</dt>
@@ -244,12 +246,12 @@ function ExecutionInfo({ run, conversation, config, onInspectRun }) {
       >
         查看执行详情
       </Button>
-    </aside>
+    </details>
   );
 }
 
 function ConversationRow({ conversation, active, hasDraft, onOpen }) {
-  const Icon = conversation.kind === "topic" ? IconFolderStroked : IconCommentStroked;
+  const Icon = IconCommentStroked;
   return (
     <button
       type="button"
@@ -438,6 +440,7 @@ function Composer({
   connected,
   onNavigate,
   onMessagesRefresh,
+  onNewConversation,
 }) {
   const { text, attachments, project, flow, executor, complexity, requirementsConfirmed, advancedOpen, busy, error } = draft;
   const [dragActive, setDragActive] = useState(false);
@@ -458,6 +461,10 @@ function Composer({
   const defaultFlowChoice = flowChoices.find((choice) => choice.id === "default");
   const availableFlows = flowChoices.filter((choice) => choice.id !== "default");
   const showPrimaryExecutor = executorChoices.length > 1;
+  const boundRule = isContinuation ? conversation.latestRun?.rule : executorChoices.find((choice) => choice.id === executor)?.rule;
+  const rule = boundRule && config?.rules?.rules?.find((item) => item.name === boundRule);
+  const agent = rule && config?.rules?.agents?.[rule.to];
+  const access = agent ? ACCESS_NAMES[rule.access || agent.access || "edit"] : "按项目规则授权";
   const uploading = attachments.some((attachment) => attachment.status === "uploading");
   const uploadFailed = attachments.some((attachment) => attachment.status === "error");
   const textLength = [...text].length;
@@ -571,7 +578,7 @@ function Composer({
       ].slice(0, MAX_ATTACHMENTS);
       const answer = await api("/messages", "POST", {
         id: messageId,
-        topic: continuingTopic || "new",
+        ...(continuingTopic ? { topic: continuingTopic } : {}),
         text: content,
         project: isContinuation
           ? conversation?.project || intakeInput.project || undefined
@@ -621,23 +628,18 @@ function Composer({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      <div className="mc-context-strip"><IconTerminal size="small" /> 本地引擎 ·
+        {isContinuation ? conversation?.projectName || "自动识别" : <>
+          <label className="mc-strip-project">{projects.find((item) => item.id === project)?.name || "自动识别项目"}
+            <select aria-label="目标项目" value={project} onChange={(event) => patchDraft({project:event.target.value, flow:"", executor:""})}>
+              <option value="">自动识别项目</option>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <button type="button" className="mc-context-more" aria-label="高级选项" title="高级选项" aria-expanded={advancedOpen} onClick={() => patchDraft({advancedOpen:!advancedOpen})}>···</button>
+        </>}
+      </div>
       {!isContinuation && advancedOpen && (
         <div className="mc-advanced">
-          {showPrimaryExecutor && (
-            <label className="mc-option">
-              <span>执行器 / 模型</span>
-              <Select
-                size="small"
-                value={executor}
-                onChange={(value) => patchDraft({ executor: String(value ?? "") })}
-                optionList={[
-                  { value: "", label: `默认（${defaultFlowChoice?.agentName || "按项目规则"}）` },
-                  ...executorChoices.map((choice) => ({ value: choice.id, label: choice.label })),
-                ]}
-                style={{ width: 190 }}
-              />
-            </label>
-          )}
           {!showPrimaryExecutor && availableFlows.length > 0 && (
             <label className="mc-option">
               <span>处理流程</span>
@@ -724,7 +726,7 @@ function Composer({
             aria-label="添加图片"
             onClick={() => fileInputRef.current?.click()}
           >
-            <IconPaperclipStroked aria-hidden="true" />
+            <IconPlus aria-hidden="true" />
           </button>
           <input
             ref={fileInputRef}
@@ -737,45 +739,27 @@ function Composer({
               event.target.value = "";
             }}
           />
-          {isContinuation ? (
-            <button
-              type="button"
-              className="mc-option-toggle"
-              onClick={() => onNavigate({ view: "messages", topic: null })}
-            >
-              切换新对话
-            </button>
-          ) : (
-            <>
-              <div className="mc-project-picker">
-                <IconFolderStroked size="small" aria-hidden="true" />
-                <span id="mc-project-label" hidden>目标项目</span>
-                <Select
-                  aria-labelledby="mc-project-label"
-                  size="small"
-                  value={project}
-                  onChange={(value) => {
-                    patchDraft({ project: String(value ?? ""), flow: "", executor: "" });
-                  }}
-                  optionList={[
-                    { value: "", label: "自动识别项目" },
-                    ...projects.map((item) => ({ value: item.id, label: item.name })),
-                  ]}
-                />
-              </div>
-              <button
-                type="button"
-                className="mc-option-toggle"
-                aria-expanded={advancedOpen}
-                onClick={() => patchDraft({ advancedOpen: !advancedOpen })}
-              >
-                高级选项
-                <IconChevronDown size="small" aria-hidden="true" />
-              </button>
-            </>
-          )}
+          <span className="mc-access"><IconFolderStroked size="small" /> {access}</span>
+          {isContinuation && <button type="button" className="mc-option-toggle" onClick={onNewConversation}>切换新对话</button>}
         </div>
         <div className="mc-composer-send">
+          {!isContinuation && executorChoices.length > 0 ? (
+            <label className="mc-option">
+              <span>执行器 / 模型</span>
+              <Select
+                size="small"
+                aria-label="执行器 / 模型"
+                value={executor}
+                onChange={(value) => patchDraft({ executor: String(value ?? "") })}
+                optionList={[
+                  { value: "", label: "自动模型（按项目规则）" },
+                  ...executorChoices.map((choice) => ({ value: choice.id, label: choice.label })),
+                ]}
+                style={{ width: 190 }}
+              />
+            </label>
+          ) : <span className="mc-model" title="识别项目后，按该项目的规则选择执行器和模型">{agent?.name || "自动模型"}</span>}
+
           {textLength >= MAX_TEXT * 0.9 && <span className="mc-count">{textLength}/{MAX_TEXT}</span>}
           <Button
             theme="solid"
@@ -816,6 +800,23 @@ export function MessageCenter({
   appliedComposerFocus,
 }) {
   const [filter, setFilter] = useState("all");
+  const [showSearch, setShowSearch] = useState(false);
+  const searchRef = useRef(null);
+  useEffect(() => { if (showSearch) searchRef.current?.focus(); }, [showSearch]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [closedGroups, setClosedGroups] = useState({});
+  const [expandedGroups, setExpandedGroups] = useState({});
+  const [pinned, setPinned] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("studio-pinned-conversations") || "[]");
+      return Array.isArray(stored) ? stored : [];
+    } catch { return []; }
+  });
+  function togglePin(id) {
+    const next = pinned.includes(id) ? pinned.filter((value) => value !== id) : [...pinned, id];
+    setPinned(next);
+    try { localStorage.setItem("studio-pinned-conversations", JSON.stringify(next)); } catch {}
+  }
   const [search, setSearch] = useState("");
   const [lightbox, setLightbox] = useState(null);
   const [verifyingRunId, setVerifyingRunId] = useState(null);
@@ -957,6 +958,19 @@ export function MessageCenter({
   }
 
   function startNewConversation() {
+    const draft = composerDrafts.get(null);
+    const hasRoute = draft?.project || draft?.flow || draft?.executor || draft?.complexity || draft?.requirementsConfirmed;
+    if (draft && (hasRoute || (!activeId && hasComposerDraft(draft)))) {
+      if (draft.busy || draft.attachments.some((file) => file.status === "uploading")) {
+        toast("当前草稿正在发送或上传图片，完成后即可新建对话。");
+        return;
+      }
+      if (hasComposerDraft(draft)) {
+        const title = draft.text.trim().split("\n")[0].slice(0, 60) || "图片草稿";
+        changeComposerDraft("draft:" + crypto.randomUUID(), () => ({ ...draft, title }));
+      }
+      changeComposerDraft(null, () => null);
+    }
     if (activeId || showConversations) focusNewDraft.current = true;
     else textareaRef.current?.focus();
     setFilter("all");
@@ -973,7 +987,8 @@ export function MessageCenter({
     const attachmentIds = originalAttachmentIds(intake);
     const answer = await api("/messages", "POST", {
       id: messageId,
-      topic: input.topic && input.topic !== "new" ? input.topic : "new",
+      ...(input.conversation ? { conversation: input.conversation } :
+        input.topic && input.topic !== "new" ? { topic: input.topic } : {}),
       text: content,
       project: patch.project || input.project || undefined,
       requirementsConfirmed: patch.requirementsConfirmed ?? input.requirementsConfirmed === true,
@@ -1106,9 +1121,25 @@ export function MessageCenter({
 
   const timelineEmpty = activeConversation ? activeConversation.items.length === 0 : Boolean(activeId);
 
+  const groups = new Map(businessProjects(config).map((project) => [project.id, { name: project.name, items: [] }]));
+  for (const item of filtered) {
+    const id = item.project || "";
+    if (!groups.has(id)) groups.set(id, { name: item.projectName || "未归属项目", items: [] });
+    groups.get(id).items.push(item);
+  }
+  function row(item) {
+    return <div className="mc-tree-row" key={item.id}>
+      <ConversationRow conversation={item} active={activeId === item.id} hasDraft={hasComposerDraft(composerDrafts.get(item.id))} onOpen={() => openConversation(item.id)} />
+      <button type="button" className="mc-pin" aria-pressed={pinned.includes(item.id)} aria-label={(pinned.includes(item.id) ? "取消置顶 " : "置顶 ") + item.title} onClick={() => togglePin(item.id)}>⌖</button>
+    </div>;
+  }
   return (
     <div className="mc-page" data-narrow-pane={showConversations ? "list" : "conversation"}>
       <aside ref={listRef} className="mc-sidebar" id="mc-conversation-list" aria-label="会话列表">
+        <div className="mc-tree-head"><strong>AJinOS</strong>
+          <button aria-label="筛选会话" aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}><IconFlagStroked /></button>
+          <button aria-label="搜索对话" aria-expanded={showSearch} onClick={() => setShowSearch(!showSearch)}><IconSearch /></button>
+        </div>
         <div className="mc-sidebar-head">
           <Button
             className="mc-new-conversation"
@@ -1128,10 +1159,11 @@ export function MessageCenter({
           />
         </div>
 
-        <div className="mc-search">
+        <div className="mc-search" hidden={!showSearch && !search}>
           <IconSearch size="small" aria-hidden="true" />
           <input
             type="search"
+            ref={searchRef}
             value={search}
             placeholder="搜索对话"
             onChange={(event) => setSearch(event.target.value)}
@@ -1139,7 +1171,7 @@ export function MessageCenter({
           />
         </div>
 
-        <div className="mc-filters" role="group" aria-label="筛选会话">
+        <div className="mc-filters" hidden={!showFilters && filter === "all"} role="group" aria-label="筛选会话">
           {FILTERS.map(([value, label]) => (
             <button
               key={value}
@@ -1179,22 +1211,22 @@ export function MessageCenter({
               {conversations.length === 0 ? "暂无会话记录" : "没有符合条件的对话"}
             </div>
           )}
-          {(
-            groupByDay(filtered, (conversation) => conversation.updatedAt).map(({ key, label, items }) => (
-              <div className="mc-conversation-group" key={key}>
-                {label && <h3>{label}</h3>}
-                {items.map((conversation) => (
-                  <ConversationRow
-                    key={conversation.id}
-                    conversation={conversation}
-                    hasDraft={hasComposerDraft(composerDrafts.get(conversation.id))}
-                    active={activeId === conversation.id}
-                    onOpen={() => openConversation(conversation.id)}
-                  />
-                ))}
-              </div>
-            ))
-          )}
+          {filtered.some((item) => pinned.includes(item.id)) && <section className="mc-conversation-group"><h3>置顶</h3>{filtered.filter((item) => pinned.includes(item.id)).map(row)}</section>}
+          <h3 className="mc-tree-label">主要项目</h3>
+          {[...groups].map(([id, group]) => {
+            if (!group.items.length && (filter !== "all" || search)) return null;
+            const visibleItems = group.items.filter((item) => !pinned.includes(item.id));
+            const running = group.items.some((item) => item.status === "running");
+            const pending = group.items.some((item) => item.status === "needs_acceptance");
+            return <section className="mc-conversation-group" key={id}>
+              <button type="button" className="mc-tree-project" aria-expanded={!closedGroups[id]} onClick={() => setClosedGroups({...closedGroups, [id]: !closedGroups[id]})}>
+                <span>{closedGroups[id] ? "›" : "⌄"}</span><IconFolderStroked />{group.name}
+                {running && <i className="mc-running" aria-label="运行中" />}{pending && <i className="mc-pending" aria-label="待验收" />}
+              </button>
+              {!closedGroups[id] && <>{(expandedGroups[id] || search ? visibleItems : visibleItems.slice(0, 4)).map(row)}
+                {visibleItems.length > 4 && !search && <button className="mc-more" onClick={() => setExpandedGroups({...expandedGroups, [id]: !expandedGroups[id]})}>{expandedGroups[id] ? "收起" : "展开显示"}</button>}</>}
+            </section>;
+          })}
         </div>
       </aside>
 
@@ -1246,7 +1278,15 @@ export function MessageCenter({
               aria-label={activeId ? "对话记录" : undefined}
             >
               <div className="mc-timeline-content" ref={timelineContentRef}>
-                {!activeId && <h1 className="mc-start-title">今天想做什么？</h1>}
+                {!activeId && <div className="mc-welcome">
+                  <span className="mc-mark" aria-hidden="true">∞</span>
+                  <h1 className="mc-start-title">你想让我们在
+                    <label className="mc-start-project">{businessProjects(config).find((p) => p.id === composerDraft.project)?.name || "自动识别"}
+                    <select aria-label="选择发起项目" value={composerDraft.project} onChange={(event) => updateComposerDraft((current) => ({...current, project:event.target.value, executor:"", flow:""}))}>
+                      <option value="">自动识别</option>
+                      {businessProjects(config).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select></label> 中构建什么？</h1>
+                </div>}
 
                 {activeConversation && groupByDay(activeConversation.items, (item) => item.at).map(({ key, label, items }) => (
                   <div className="mc-timeline-day" key={key}>
@@ -1258,7 +1298,7 @@ export function MessageCenter({
                 {timelineEmpty && (
                   <div className="mc-empty-line">
                     {detachedDraft
-                      ? "原对话已结束。可以继续编辑草稿，将它作为新任务发送。"
+                      ? activeId.startsWith("draft:") ? "继续编辑这份草稿，发送时沿用已选项目和执行设置。" : "原对话已结束。可以继续编辑草稿，将它作为新任务发送。"
                       : activeConversation
                       ? "这段对话还没有消息，在下方继续输入即可。"
                       : "正在载入这段对话……如果一直没出现，它可能已经被清理。"}
@@ -1275,6 +1315,7 @@ export function MessageCenter({
           <Composer
             key={activeId ?? ""}
             conversation={activeConversation}
+            onNewConversation={startNewConversation}
             draft={composerDraft}
             updateDraft={updateComposerDraft}
             textareaRef={textareaRef}
@@ -1293,7 +1334,7 @@ export function MessageCenter({
             )}
           </div>
           {!activeId && (
-            <div className="mc-examples" role="group" aria-label="任务示例">
+            <details className="mc-examples"><summary>任务示例</summary>
               {EXAMPLES.map(({ icon: Icon, text }) => (
                 <button
                   key={text}
@@ -1311,7 +1352,7 @@ export function MessageCenter({
                   <span>{text}</span>
                 </button>
               ))}
-            </div>
+            </details>
           )}
         </div>
       </section>
