@@ -11,6 +11,10 @@ agent-autoloop check
 ```
 接单电脑需要已登录的 `gh`；轮询脚本把正文一并交给 Agent。
 
+- **Windows / 跨平台**：将 `watcher` 的 `command` 改为使用零依赖 Node.js 版本：
+  `["node", "{cwd}/examples/watch-github-issues.mjs", "owner/repo", "created:>=2026-11-25T00:00:00+08:00"]`
+- **macOS / Linux**：也可直接使用 `watch-github-issues.sh` 或上述 `.mjs` 版本。
+
 ## 要改哪几处
 - 两处 `worker` 换成接单电脑；`use` 选 `codex` 或 `claude`。
 - `owner/repo` 换成仓库，`created:>=2026-11-04T00:00:00+08:00` 换成启用日期；GitHub 按 UTC 算日期，不带时区的话，北京时间当天早上 8 点前开的 Issue 会被漏掉。`cwd` 换成干净的项目目录。
