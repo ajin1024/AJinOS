@@ -1,6 +1,6 @@
 // A generated design must reach its confirmation card without publishing other local files or uploading it again on update.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -15,7 +15,7 @@ const png = Buffer.from(
 const card = { id: 87, rule: "studio:example", kind: "ask", state: "open", run: { id: 558, attempt: 1 } };
 
 async function fixture(t, { missing = false } = {}) {
-  const home = await mkdtemp(path.join(tmpdir(), "studio-feishu-images-"));
+  const home = await mkdtemp(path.join(await realpath(tmpdir()), "studio-feishu-images-"));
   t.after(() => rm(home, { recursive: true, force: true }));
   const root = path.join(home, ".codex", "generated_images");
   const dir = path.join(home, "worker", "runs", "558-1");
