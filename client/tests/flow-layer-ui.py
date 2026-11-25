@@ -34,6 +34,8 @@ with sync_playwright() as p:
     assert result.get("overlap"), "Replay must overlap a node to reproduce the reported failure"
     assert result["nodeClickable"], "Empty overlay area must let clicks through to nodes"
     page.mouse.click(**result["overlap"])
-    expect(page.locator("dialog[open]")).to_be_visible()
+    drawer = page.locator("#drawer")
+    expect(drawer).to_be_visible()
+    expect(drawer.get_by_role("region", name="任务对话")).to_be_visible()
     browser.close()
     print("Task card stays above nodes, opens details, and leaves other nodes clickable.")
