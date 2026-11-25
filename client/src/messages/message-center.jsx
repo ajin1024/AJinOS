@@ -1,20 +1,20 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, Modal, Select, Tag } from "@douyinfe/semi-ui";
 import {
+  IconArrowUp,
   IconArrowUpRight,
   IconChevronDown,
-  IconChevronLeft,
   IconClose,
-  IconComment,
   IconCommentStroked,
+  IconEditStroked,
   IconFlagStroked,
   IconFolderStroked,
-  IconImage,
   IconListView,
   IconLoading,
-  IconPlus,
+  IconPaperclipStroked,
   IconSearch,
-  IconSend,
+  IconSidebar,
+  IconTerminal,
 } from "@douyinfe/semi-icons";
 import { businessProjects } from "../gateway-config.mjs";
 import { executorChoicesFor, flowChoicesFor } from "../tasks/task-handoff.mjs";
@@ -41,7 +41,11 @@ const FILTERS = [
   ["running", "进行中"],
   ["done", "已结束"],
 ];
-const EXAMPLES = ["把订单列表加上批量发货", "检查一下今天线上有没有报错", "整理一份本周项目进展"];
+const EXAMPLES = [
+  { icon: IconTerminal, text: "把订单列表加上批量发货" },
+  { icon: IconSearch, text: "检查一下今天线上有没有报错" },
+  { icon: IconListView, text: "整理一份本周项目进展" },
+];
 const RUN_STATE_LABELS = {
   queued: "排队中",
   claimed: "执行中",
@@ -261,8 +265,8 @@ function ConversationRow({ conversation, active, hasDraft, onOpen }) {
           <span className="mc-conversation-title">{conversation.title}</span>
           <MessageTime value={conversation.updatedAt} />
         </span>
-        <span className="mc-conversation-preview">{hasDraft && <strong className="mc-draft-label">草稿 · </strong>}{conversation.preview || "暂无内容"}</span>
         <span className="mc-conversation-meta">
+          {hasDraft && <span className="mc-draft-label">草稿</span>}
           {conversation.projectName && <span className="mc-project-label">{conversation.projectName}</span>}
           <StatusTag label={conversation.statusLabel} color={STATUS_COLORS[conversation.status]} />
         </span>
@@ -617,53 +621,6 @@ function Composer({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {isContinuation ? (
-        <div className="mc-composer-context">
-          <span className="mc-context-dot" aria-hidden="true" />
-          <span>正在续接此话题</span>
-          {conversation?.projectName && (
-            <Tag size="small" shape="circle">
-              {conversation.projectName}
-            </Tag>
-          )}
-          <button
-            type="button"
-            className="mc-link-button"
-            onClick={() => onNavigate({ view: "messages", topic: null })}
-          >
-            切换新对话
-          </button>
-        </div>
-      ) : (
-        <div className="mc-composer-options">
-          <label className="mc-option">
-            <span id="mc-project-label">目标项目</span>
-            <Select
-              aria-labelledby="mc-project-label"
-              size="small"
-              value={project}
-              onChange={(value) => {
-                patchDraft({ project: String(value ?? ""), flow: "", executor: "" });
-              }}
-              optionList={[
-                { value: "", label: "自动识别" },
-                ...projects.map((item) => ({ value: item.id, label: item.name })),
-              ]}
-              style={{ width: 170 }}
-            />
-          </label>
-          <button
-            type="button"
-            className="mc-option-toggle"
-            aria-expanded={advancedOpen}
-            onClick={() => patchDraft({ advancedOpen: !advancedOpen })}
-          >
-            高级选项
-            <IconChevronDown size="small" aria-hidden="true" />
-          </button>
-        </div>
-      )}
-
       {!isContinuation && advancedOpen && (
         <div className="mc-advanced">
           {showPrimaryExecutor && (
@@ -749,21 +706,15 @@ function Composer({
         ref={textareaRef}
         className="mc-textarea"
         aria-label="任务说明"
-        rows={3}
+        rows={2}
         value={text}
-        placeholder={
-          isContinuation
-            ? "继续说明这次要改什么；Enter 发送，Shift+Enter 换行…"
-            : "输入你要完成的事；可以粘贴或拖入截图，Enter 发送…"
-        }
+        placeholder={isContinuation ? "补充要求或继续这段对话…" : "描述要完成的事，可粘贴或拖入截图…"}
         onChange={(event) => patchDraft({ text: event.target.value, error: "" })}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
       />
 
       {error && <span className="mc-error" role="alert">{error}</span>}
-      {!connected && <span className="mc-composer-offline">引擎未连接。可以先写，连接后再发送。</span>}
-
       <div className="mc-composer-toolbar">
         <div className="mc-composer-tools">
           <button
@@ -773,8 +724,7 @@ function Composer({
             aria-label="添加图片"
             onClick={() => fileInputRef.current?.click()}
           >
-            <IconImage size="small" aria-hidden="true" />
-            图片
+            <IconPaperclipStroked aria-hidden="true" />
           </button>
           <input
             ref={fileInputRef}
@@ -787,25 +737,56 @@ function Composer({
               event.target.value = "";
             }}
           />
-          <span className="mc-composer-hint">Enter 发送 · Shift+Enter 换行 · 可粘贴或拖入截图</span>
-          {textLength >= MAX_TEXT * 0.9 && <span className="mc-count">{textLength}/{MAX_TEXT}</span>}
+          {isContinuation ? (
+            <button
+              type="button"
+              className="mc-option-toggle"
+              onClick={() => onNavigate({ view: "messages", topic: null })}
+            >
+              切换新对话
+            </button>
+          ) : (
+            <>
+              <div className="mc-project-picker">
+                <IconFolderStroked size="small" aria-hidden="true" />
+                <span id="mc-project-label" hidden>目标项目</span>
+                <Select
+                  aria-labelledby="mc-project-label"
+                  size="small"
+                  value={project}
+                  onChange={(value) => {
+                    patchDraft({ project: String(value ?? ""), flow: "", executor: "" });
+                  }}
+                  optionList={[
+                    { value: "", label: "自动识别项目" },
+                    ...projects.map((item) => ({ value: item.id, label: item.name })),
+                  ]}
+                />
+              </div>
+              <button
+                type="button"
+                className="mc-option-toggle"
+                aria-expanded={advancedOpen}
+                onClick={() => patchDraft({ advancedOpen: !advancedOpen })}
+              >
+                高级选项
+                <IconChevronDown size="small" aria-hidden="true" />
+              </button>
+            </>
+          )}
         </div>
-        <span className="mc-composer-hint">Enter 发送 · Shift + Enter 换行</span>
-        {text && (
-          <span className="mc-count">
-            {text.length}/{MAX_TEXT}
-          </span>
-        )}
-        <Button
-          size="small"
-          theme="solid"
-          icon={<IconSend size="small" aria-hidden="true" />}
-          loading={busy}
-          disabled={!text.trim() || textLength > MAX_TEXT || uploading || uploadFailed || !connected}
-          onClick={() => void send()}
-        >
-          {busy ? "正在发送…" : "发送"}
-        </Button>
+        <div className="mc-composer-send">
+          {textLength >= MAX_TEXT * 0.9 && <span className="mc-count">{textLength}/{MAX_TEXT}</span>}
+          <Button
+            theme="solid"
+            aria-label={busy ? "正在发送…" : "发送"}
+            title={connected ? "发送（Enter）" : "引擎未连接"}
+            icon={<IconArrowUp aria-hidden="true" />}
+            loading={busy}
+            disabled={!text.trim() || textLength > MAX_TEXT || uploading || uploadFailed || !connected}
+            onClick={() => void send()}
+          />
+        </div>
       </div>
     </div>
   );
@@ -860,6 +841,7 @@ export function MessageCenter({
   const listRef = useRef(null);
   const conversationRef = useRef(null);
   const previousPane = useRef(false);
+  const focusNewDraft = useRef(false);
   const textareaRef = useRef(null);
   const timelineRef = useRef(null);
   const timelineContentRef = useRef(null);
@@ -919,12 +901,15 @@ export function MessageCenter({
     if (!showConversations && composerFocusSignal !== appliedComposerFocus.current) {
       textareaRef.current?.focus();
       appliedComposerFocus.current = composerFocusSignal;
+    } else if (!showConversations && !activeId && focusNewDraft.current) {
+      focusNewDraft.current = false;
+      textareaRef.current?.focus({ preventScroll: true });
     } else if (paneChanged) {
       const pane = showConversations ? listRef.current : conversationRef.current;
       const toggle = pane?.querySelector("button.mc-narrow-back");
       if (toggle?.getClientRects().length) toggle.focus({ preventScroll: true });
     }
-  }, [composerFocusSignal, showConversations]);
+  }, [activeId, composerFocusSignal, showConversations]);
 
   function scrollToLatest() {
     const element = timelineRef.current;
@@ -972,6 +957,8 @@ export function MessageCenter({
   }
 
   function startNewConversation() {
+    if (activeId || showConversations) focusNewDraft.current = true;
+    else textareaRef.current?.focus();
     setFilter("all");
     setSearch("");
     setShowConversations(false);
@@ -1123,19 +1110,22 @@ export function MessageCenter({
     <div className="mc-page" data-narrow-pane={showConversations ? "list" : "conversation"}>
       <aside ref={listRef} className="mc-sidebar" id="mc-conversation-list" aria-label="会话列表">
         <div className="mc-sidebar-head">
-          <div className="mc-sidebar-title">
-            <IconComment aria-hidden="true" />
-            <h2>会话</h2>
-            {messageBadge > 0 && <span className="mc-badge">{messageBadge}</span>}
-          </div>
-          <div className="mc-head-actions">
-            <Button className="mc-narrow-back" size="small" onClick={() => setShowConversations(false)}>
-              返回对话
-            </Button>
-            <Button size="small" theme="solid" icon={<IconPlus size="small" aria-hidden="true" />} onClick={startNewConversation}>
-              新对话
-            </Button>
-          </div>
+          <Button
+            className="mc-new-conversation"
+            theme="borderless"
+            icon={<IconEditStroked size="small" aria-hidden="true" />}
+            onClick={startNewConversation}
+          >
+            新对话
+          </Button>
+          <Button
+            className="mc-narrow-back"
+            theme="borderless"
+            aria-label="返回对话"
+            title="返回对话"
+            icon={<IconSidebar aria-hidden="true" />}
+            onClick={() => setShowConversations(false)}
+          />
         </div>
 
         <div className="mc-search">
@@ -1143,7 +1133,7 @@ export function MessageCenter({
           <input
             type="search"
             value={search}
-            placeholder="搜索对话或关键词"
+            placeholder="搜索对话"
             onChange={(event) => setSearch(event.target.value)}
             aria-label="搜索对话"
           />
@@ -1173,15 +1163,20 @@ export function MessageCenter({
               aria-current={activeId === id ? "true" : undefined}
               onClick={() => openConversation(id)}
             >
-              <span className="mc-conversation-title">{draft.title}</span>
-              <span className="mc-conversation-preview">
-                <strong className="mc-draft-label">草稿 · </strong>{draft.text.trim() || "图片附件"}
+              <span className="mc-conversation-icon">
+                <IconEditStroked size="small" aria-hidden="true" />
+              </span>
+              <span className="mc-conversation-copy">
+                <span className="mc-conversation-title">{draft.title}</span>
+                <span className="mc-conversation-preview">
+                  <strong className="mc-draft-label">草稿 · </strong>{draft.text.trim() || "图片附件"}
+                </span>
               </span>
             </button>
           ))}
           {filtered.length === 0 && detachedDrafts.length === 0 && (
             <div className="mc-list-empty">
-              {conversations.length === 0 ? "还没有对话，点「新对话」开始吧" : "没有符合条件的对话"}
+              {conversations.length === 0 ? "暂无会话记录" : "没有符合条件的对话"}
             </div>
           )}
           {(
@@ -1203,29 +1198,33 @@ export function MessageCenter({
         </div>
       </aside>
 
-      <section ref={conversationRef} className="mc-main" aria-label="对话内容">
+      <section ref={conversationRef} className="mc-main" data-new={!activeId || undefined} aria-label="对话内容">
         <header className="mc-conversation-head">
           <Button
             className="mc-narrow-back"
-            size="small"
-            icon={<IconChevronLeft size="small" aria-hidden="true" />}
+            theme="borderless"
+            icon={<IconSidebar aria-hidden="true" />}
+            aria-label="对话列表"
+            title="对话列表"
             aria-controls="mc-conversation-list"
             onClick={() => setShowConversations(true)}
-          >
-            对话列表
-          </Button>
-          {activeConversation?.projectName && (
-            <p className="mc-head-project">
-              <IconFolderStroked size="small" aria-hidden="true" />
-              {activeConversation.projectName}
-            </p>
+          />
+          {activeId && (
+            <>
+              <div className="mc-head-title">
+                <h1>{activeConversation?.title || (detachedDraft ? composerDraft.title : "对话")}</h1>
+                {activeConversation && (
+                  <StatusTag label={activeConversation.statusLabel} color={STATUS_COLORS[activeConversation.status]} />
+                )}
+              </div>
+              {activeConversation?.projectName && (
+                <p className="mc-head-project">
+                  <IconFolderStroked size="small" aria-hidden="true" />
+                  {activeConversation.projectName}
+                </p>
+              )}
+            </>
           )}
-          <div className="mc-head-title">
-            <h1>{activeConversation?.title || (detachedDraft ? composerDraft.title : "新对话")}</h1>
-            {activeConversation && (
-              <StatusTag label={activeConversation.statusLabel} color={STATUS_COLORS[activeConversation.status]} />
-            )}
-          </div>
         </header>
 
         {latestRun && (
@@ -1238,79 +1237,82 @@ export function MessageCenter({
         )}
 
         <div className="mc-thread">
-        <div className="mc-timeline-region">
-          <div className="mc-timeline" ref={timelineRef} onScroll={rememberScroll} tabIndex={0} aria-label="对话记录">
-            <div className="mc-timeline-content" ref={timelineContentRef}>
-              {!activeConversation && !activeId && (
-                <div className="mc-empty">
-                  <div className="mc-empty-card">
-                    <IconComment size="extra-large" aria-hidden="true" />
-                    <h2>这里可以直接开始一个新任务</h2>
-                    <p>
-                      说说你想做什么，也可以附上截图。系统会尝试匹配项目，需要你决定时会在这里询问。
-                    </p>
-                    <div className="mc-examples">
-                      {EXAMPLES.map((example) => (
-                        <button
-                          key={example}
-                          type="button"
-                          className="mc-example"
-                          onClick={() => {
-                            updateComposerDraft((current) => ({
-                              ...current,
-                              text: current.text.trim() ? current.text + "\n" + example : example,
-                            }));
-                            textareaRef.current?.focus();
-                          }}
-                        >
-                          {example}
-                        </button>
-                      ))}
-                    </div>
+          <div className="mc-timeline-region">
+            <div
+              className="mc-timeline"
+              ref={timelineRef}
+              onScroll={rememberScroll}
+              tabIndex={activeId ? 0 : undefined}
+              aria-label={activeId ? "对话记录" : undefined}
+            >
+              <div className="mc-timeline-content" ref={timelineContentRef}>
+                {!activeId && <h1 className="mc-start-title">今天想做什么？</h1>}
+
+                {activeConversation && groupByDay(activeConversation.items, (item) => item.at).map(({ key, label, items }) => (
+                  <div className="mc-timeline-day" key={key}>
+                    {label && <div className="mc-date-line">{label}</div>}
+                    {items.map(renderItem)}
                   </div>
-                </div>
-              )}
+                ))}
 
-              {activeConversation && groupByDay(activeConversation.items, (item) => item.at).map(({ key, label, items }) => (
-                <div className="mc-timeline-day" key={key}>
-                  {label && <div className="mc-date-line">{label}</div>}
-                  {items.map(renderItem)}
-                </div>
-              ))}
-
-              {timelineEmpty && (
-                <div className="mc-empty-line">
-                  {detachedDraft
-                    ? "原对话已结束。可以继续编辑草稿，将它作为新任务发送。"
-                    : activeConversation
-                    ? "这段对话还没有消息，在下方继续输入即可。"
-                    : "正在载入这段对话……如果一直没出现，它可能已经被清理。"}
-                </div>
-              )}
+                {timelineEmpty && (
+                  <div className="mc-empty-line">
+                    {detachedDraft
+                      ? "原对话已结束。可以继续编辑草稿，将它作为新任务发送。"
+                      : activeConversation
+                      ? "这段对话还没有消息，在下方继续输入即可。"
+                      : "正在载入这段对话……如果一直没出现，它可能已经被清理。"}
+                  </div>
+                )}
+              </div>
             </div>
+            {hasNewItems && (
+              <button className="mc-jump-latest button" type="button" onClick={jumpToLatest}>
+                查看新消息 <IconChevronDown size="small" aria-hidden="true" />
+              </button>
+            )}
           </div>
-          {hasNewItems && (
-            <button className="mc-jump-latest button" type="button" onClick={jumpToLatest}>
-              查看新消息 <IconChevronDown size="small" aria-hidden="true" />
-            </button>
+          <Composer
+            key={activeId ?? ""}
+            conversation={activeConversation}
+            draft={composerDraft}
+            updateDraft={updateComposerDraft}
+            textareaRef={textareaRef}
+            config={config}
+            api={api}
+            toast={toast}
+            connected={Boolean(snapshot?.connected)}
+            onNavigate={onNavigate}
+            onMessagesRefresh={onMessagesRefresh}
+          />
+          <div className="mc-composer-note">
+            {snapshot?.connected ? (
+              <span>Enter 发送 · Shift + Enter 换行</span>
+            ) : (
+              <span className="mc-composer-offline">引擎未连接 · 可继续编辑草稿</span>
+            )}
+          </div>
+          {!activeId && (
+            <div className="mc-examples" role="group" aria-label="任务示例">
+              {EXAMPLES.map(({ icon: Icon, text }) => (
+                <button
+                  key={text}
+                  type="button"
+                  className="mc-example"
+                  onClick={() => {
+                    updateComposerDraft((current) => ({
+                      ...current,
+                      text: current.text.trim() ? current.text + "\n" + text : text,
+                    }));
+                    textareaRef.current?.focus();
+                  }}
+                >
+                  <Icon size="small" aria-hidden="true" />
+                  <span>{text}</span>
+                </button>
+              ))}
+            </div>
           )}
-        </div>
-
-
-
-        <Composer
-          key={activeId ?? ""}
-          conversation={activeConversation}
-          draft={composerDraft}
-          updateDraft={updateComposerDraft}
-          textareaRef={textareaRef}
-          config={config}
-          api={api}
-          toast={toast}
-          connected={Boolean(snapshot?.connected)}
-          onNavigate={onNavigate}
-          onMessagesRefresh={onMessagesRefresh}
-        />
         </div>
       </section>
 

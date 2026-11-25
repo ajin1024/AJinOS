@@ -8,8 +8,10 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, 
 import path from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { createDefaults, validateWorkspace, eventFor } from "./config.mjs";
-import { Gateway, flowsFor } from "./gateway.mjs";
+import { Gateway, flowsFor, projectIdentity } from "./gateway.mjs";
+import { workspaceSize } from "./project-storage.mjs";
 import { MemoryStore, attachMemoryToText } from "./memory.mjs";
 import { ChiefOfStaff, buildGlobalBrief } from "./chief.mjs";
 import { GatewayActivity, readWorkbenchData } from "./workbench-data.mjs";
@@ -614,6 +616,26 @@ export async function startStudio({
       profiles: Object.fromEntries(value.projects.map((p) => [p.id, gateway.profile(p)])),
     };
   }
+  function analyzeProject(config, project) {
+    const identity = projectIdentity(project);
+    const pending = pendingProfiles.get(identity);
+    if (pending) return pending;
+    const isCurrent = () => {
+      if (closed) return false;
+      const current = workspace().projects.find((item) => item.id === project.id);
+      return Boolean(current && projectIdentity(current) === identity);
+    };
+    const analysis = nextTurn()
+      .then(async () => {
+        if (!isCurrent()) throw statusError(409, "项目资料已更新，本次分析已跳过");
+        const profile = await gateway.analyze(config, project.id, { isCurrent });
+        broadcast("configuration", configuration());
+        return profile;
+      })
+      .finally(() => pendingProfiles.delete(identity));
+    pendingProfiles.set(identity, analysis);
+    return analysis;
+  }
   let writeQueue = Promise.resolve();
   function enqueueConfigWrite(write) {
     const operation = writeQueue.then(write);
@@ -673,6 +695,13 @@ export async function startStudio({
       }
       broadcast("configuration", configuration());
       scheduleRefresh();
+      const project = next.projects.find((item) => item.id === body.profileProject && item.role !== "integration");
+      if (project) {
+        const previous = before.projects.find((item) => item.id === project.id);
+        if (!previous || projectIdentity(previous) !== projectIdentity(project)) {
+          void analyzeProject(next, project).catch((error) => remember(`项目 ${project.id} 画像：${error.message}`));
+        }
+      }
       return { ...configuration(), restartRequired };
     });
   }
@@ -1192,7 +1221,7 @@ export async function startStudio({
         }
         const before = workspace();
         if (managed) await stopEngine();
-        db.exec("DELETE FROM messages; DELETE FROM topics; DELETE FROM gateway_facts;");
+        db.exec("DELETE FROM messages; DELETE FROM topics; DELETE FROM gateway_facts; DELETE FROM project_profile_cache;");
         pendingMessages.clear();
         const fresh = createDefaults(home, { includeAutoloop: managed });
         if (keepProjects && Array.isArray(before.projects) && before.projects.length) {
@@ -1361,24 +1390,28 @@ export async function startStudio({
         await refresh();
         return reply(answer);
       }
-      const profileMatch = /^\/api\/projects\/([a-z][a-z0-9-]*)\/(profile|analyze)$/.exec(route);
+      const profileMatch = /^\/api\/projects\/([a-z][a-z0-9-]*)\/(profile|analyze|storage|clear-profile)$/.exec(route);
       if (profileMatch) {
         const [, id, action] = profileMatch;
         const cfg = workspace(),
           project = cfg.projects.find((p) => p.id === id);
         if (!project) throw statusError(404, "项目不存在");
         if (req.method === "GET" && action === "profile") return reply(gateway.profile(project));
-        if (req.method === "POST" && action === "analyze") {
-          let pending = pendingProfiles.get(id);
-          if (!pending) {
-            pending = gateway.analyze(cfg, id);
-            pendingProfiles.set(id, pending);
-            pending.finally(() => pendingProfiles.delete(id)).catch(() => {});
-          }
-          const profile = await pending;
-          if (closed) throw statusError(503, "客户端正在关闭");
+        if (req.method === "GET" && action === "storage") {
+          const storage = await workspaceSize(project.cwd);
+          return reply({ ...storage, profileBytes: gateway.profileBytes(project) });
+        }
+        if (req.method === "POST" && action === "clear-profile") {
+          if ((await readBody(req))?.confirm !== true) throw statusError(400, "请确认清空画像缓存");
+          const current = workspace().projects.find((p) => p.id === id);
+          if (!current || projectIdentity(current) !== projectIdentity(project)) throw statusError(409, "项目已变更，请重新打开");
+          if (pendingProfiles.has(projectIdentity(project))) throw statusError(409, "画像正在生成，请稍后再清空");
+          gateway.clearProfile(project);
           broadcast("configuration", configuration());
-          return reply(profile);
+          return reply({ profileBytes: 0 });
+        }
+        if (req.method === "POST" && action === "analyze") {
+          return reply(await analyzeProject(cfg, project));
         }
       }
       if (req.method === "POST" && route === "/api/route") {

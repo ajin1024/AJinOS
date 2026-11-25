@@ -14,6 +14,18 @@ const cleanText = (value, max) => typeof value === "string" && value.trim() && v
 export const projectIdentity = (p) =>
   hash({ id: p.id, cwd: p.cwd, name: p.name, description: p.description, aliases: p.aliases });
 
+function newTaskTiers(config, project, flowId) {
+  const execute = config.roleRouting?.roles?.execute;
+  if (
+    flowId === "default" &&
+    project.service !== "autoloop" &&
+    project.executionMode !== "fixed" &&
+    (execute?.primary || execute?.fallback) &&
+    !config.executionTiers
+  ) return null;
+  return config.executionRoutes?.[`${project.id}/${flowId}`];
+}
+
 export function projectSnapshot(project) {
   const root = realpathSync(project.cwd.replace(/^~(?=[/\\])/, homedir()));
   const entries = readdirSync(root, { withFileTypes: true });
@@ -59,6 +71,7 @@ export class Gateway {
     db.exec(
       "CREATE TABLE IF NOT EXISTS gateway_facts(seq INTEGER PRIMARY KEY, key TEXT NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS gateway_facts_key ON gateway_facts(key,seq)",
     );
+    db.exec("CREATE TABLE IF NOT EXISTS project_profile_cache(project TEXT PRIMARY KEY, data TEXT NOT NULL)");
   }
   read(key) {
     const row = this.db.prepare("SELECT data FROM gateway_facts WHERE key=? ORDER BY seq DESC LIMIT 1").get(key);
@@ -69,8 +82,26 @@ export class Gateway {
     return value;
   }
   profile(project) {
-    const value = this.read(`profile:${project.id}`);
-    return value && value.identity === projectIdentity(project) ? value : null;
+    const cached = this.db.prepare("SELECT data FROM project_profile_cache WHERE project=?").get(project.id);
+    const value = cached ? JSON.parse(cached.data) : this.read(`profile:${project.id}`);
+    return value?.summary && value.identity === projectIdentity(project) ? value : null;
+  }
+  profileBytes(project) {
+    const cache = this.db.prepare("SELECT length(CAST(data AS BLOB)) AS bytes FROM project_profile_cache WHERE project=?").get(project.id);
+    const legacy = cache ? null : this.profile(project);
+    return cache?.bytes ?? (legacy ? Buffer.byteLength(JSON.stringify(legacy)) : 0);
+  }
+  clearProfile(project) {
+    if (!this.profileBytes(project)) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare("DELETE FROM project_profile_cache WHERE project=?").run(project.id);
+      this.record(`profile:${project.id}`, null);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
   binding(topic) {
     return (
@@ -92,7 +123,7 @@ export class Gateway {
       throw fail("话题归属已确定，请新建话题切换项目或流程");
     if (!previous) this.record(`topic:${topic}`, { ...value, at: new Date().toISOString() });
   }
-  async analyze(config, id) {
+  async analyze(config, id, { isCurrent = () => true } = {}) {
     const project = config.projects.find((p) => p.id === id);
     if (!project) throw fail("项目不存在");
     const snapshot = projectSnapshot(project);
@@ -104,7 +135,8 @@ export class Gateway {
       )
     )
       throw fail("项目画像格式无效，请重新分析");
-    return this.record(`profile:${id}`, {
+    if (!isCurrent()) throw fail("项目资料已更新，本次分析结果已失效");
+    const profile = {
       summary: output.summary,
       tags: output.tags,
       tasks: output.tasks,
@@ -118,7 +150,18 @@ export class Gateway {
         tasks: output.tasks,
       }),
       at: new Date().toISOString(),
-    });
+    };
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare("INSERT OR REPLACE INTO project_profile_cache(project,data) VALUES (?,?)").run(id, JSON.stringify(profile));
+      const { identity, fingerprint, version, evidence, at } = profile;
+      this.record(`profile:${id}`, { identity, fingerprint, version, evidence, at });
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return profile;
   }
   resolve(config, projectId, flowId, extra = {}) {
     const project = config.projects.find((p) => p.id === projectId);
@@ -227,8 +270,9 @@ export class Gateway {
       if (body.executor) return this.resolve(config, body.project, body.flow, { topic, executor: body.executor });
       explicit = this.resolve(config, body.project, body.flow, { topic });
       fixedFlow = body.flow || body.complexity || flowsFor(explicit.project).length === 1 ? explicit.flow.id : null;
-      if (fixedFlow && (!config.executionRoutes?.[`${explicit.project.id}/${explicit.flow.id}`] || body.complexity))
-        return config.executionRoutes?.[`${explicit.project.id}/${explicit.flow.id}`]
+      const tiers = newTaskTiers(config, explicit.project, explicit.flow.id);
+      if (fixedFlow && (!tiers || body.complexity))
+        return tiers
           ? this.resolve(config, body.project, body.flow, { topic, complexity: body.complexity })
           : { ...explicit, complexity: null };
     }
@@ -245,7 +289,7 @@ export class Gateway {
       !explicit &&
       matches.length === 1 &&
       flowsFor(matches[0]).length === 1 &&
-      !config.executionRoutes?.[`${matches[0].id}/default`]
+      !newTaskTiers(config, matches[0], "default")
     )
       return this.resolve(config, matches[0].id, "default", { topic, reason: "匹配已登记的项目名称、目录或别名" });
     const projects = candidatesConfig
@@ -287,10 +331,11 @@ export class Gateway {
           "无法唯一确定项目与流程，请选择" + (cleanText(output?.reason, 600) ? `：${output.reason}` : ""),
           candidates,
         );
-      if (!candidatesConfig.some((p) => p.id === output.project)) return pending("识别结果不属于已登记的业务项目");
+      const project = candidatesConfig.find((p) => p.id === output.project);
+      if (!project) return pending("识别结果不属于已登记的业务项目");
       if ((explicit && output.project !== explicit.project.id) || (fixedFlow && output.flow !== fixedFlow))
         throw fail("识别结果与指定项目或流程不一致");
-      const tiered = config.executionRoutes?.[`${output.project}/${output.flow}`];
+      const tiered = newTaskTiers(config, project, output.flow);
       if (tiered && !["simple", "complex"].includes(output.complexity))
         return pending("请手动选择任务等级", [output.project]);
       return this.resolve(config, output.project, output.flow, {

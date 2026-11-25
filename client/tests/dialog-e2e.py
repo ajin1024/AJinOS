@@ -13,7 +13,7 @@ from playwright.sync_api import sync_playwright, expect
 root = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
     home = Path(temp)
-    workspace = home / "project"
+    workspace = home / "ui-review"
     moved = home / "moved"
     workspace.mkdir()
     moved.mkdir()
@@ -45,17 +45,13 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
                     page.wait_for_selector(".fc-canvas")
 
                     # Create project on first-level Project Space page
-                    page.get_by_role("button", name="项目管理", exact=True).click()
+                    page.get_by_role("button", name="项目空间", exact=True).click()
                     page.get_by_role("button", name="添加项目", exact=True).click()
-                    page.locator('input[name="name"]').fill("弹窗验收项目")
                     page.locator('input[name="cwd"]').fill(str(workspace))
-                    page.get_by_text("高级配置", exact=False).click()
-                    page.locator('input[name="id"]').fill("ui-review")
-                    page.locator('input[name="rule"]').fill("ui-review-task")
-                    page.get_by_role("button", name="保存项目", exact=True).click()
+                    page.get_by_role("button", name="添加项目", exact=True).click()
                     expect(page.locator(".ps-editor")).not_to_be_visible()
-                    page.get_by_role("button", name="查看弹窗验收项目", exact=True).click()
-                    expect(page.get_by_role("heading", name="弹窗验收项目", exact=True)).to_be_visible()
+                    page.get_by_role("button", name="查看ui-review", exact=True).click()
+                    expect(page.get_by_role("heading", name="ui-review", exact=True)).to_be_visible()
 
                     # Add flow via SideSheet
                     page.get_by_role("button", name="添加流程", exact=True).click()
@@ -66,15 +62,15 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
                     sheet.locator('textarea[name="prompt"]').fill("检查资料并交回结果")
                     sheet.get_by_role("button", name="保存流程", exact=True).click()
                     expect(sheet).not_to_be_visible()
-                    project_details = page.get_by_role("dialog", name="弹窗验收项目", exact=True)
-                    expect(project_details.get_by_text("默认流程、核查", exact=True)).to_be_visible()
+                    project_details = page.get_by_role("region", name="ui-review", exact=True)
+                    expect(project_details.get_by_role("list", name="已配置流程").get_by_text("核查", exact=True)).to_be_visible()
                     page.keyboard.press("Escape")
                     expect(project_details).not_to_be_visible()
 
                     # Rename flow rule in Settings -> Rules
                     page.locator('#nav [data-view="settings"]').click()
                     page.locator('[data-settings-section="rules"]').click()
-                    page.locator('[data-rule-id="弹窗验收项目 · 核查"]').click()
+                    page.locator('[data-rule-id="ui-review · 核查"]').click()
                     sheet = page.locator(".semi-sidesheet")
                     expect(sheet.locator('input[name="cwd"]')).to_be_disabled()
                     sheet.locator('input[name="name"]').fill("renamed-audit")
@@ -83,13 +79,10 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
 
                     # Move project directory & rule name to verify flow rule isolation
                     page.locator('#nav [data-view="projects"]').click()
-                    page.get_by_role("button", name="查看弹窗验收项目", exact=True).click()
-                    page.get_by_role("button", name="编辑项目", exact=True).click()
+                    page.get_by_role("button", name="查看ui-review", exact=True).click()
                     page.locator('input[name="cwd"]').fill(str(moved))
-                    page.get_by_text("高级配置", exact=False).click()
-                    page.locator('input[name="rule"]').fill("ui-review-moved")
                     page.get_by_role("button", name="保存项目", exact=True).click()
-                    expect(page.locator(".ps-editor")).not_to_be_visible()
+                    expect(project_details.get_by_role("button", name="保存项目", exact=True)).to_be_disabled()
 
                     saved = page.request.get(url + "/api/config").json()["value"]
                     project = next(item for item in saved["projects"] if item["id"] == "ui-review")

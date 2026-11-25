@@ -279,10 +279,10 @@ function StudioShell({
   const combinedTaskBadge = taskCount + inboxCount;
 
   const navItems = [
-    { id: "overview", label: "运行工作台", icon: <IconApps size="small" aria-hidden="true" /> },
+    { id: "overview", label: "工作台", icon: <IconApps size="small" aria-hidden="true" /> },
     {
       id: "messages",
-      label: "消息",
+      label: "消息中心",
       icon: <IconComment size="small" aria-hidden="true" />,
       badge: messageBadge,
     },
@@ -423,7 +423,7 @@ function StudioShell({
                   className={`nav-item ${active ? "active" : ""}`}
                   aria-current={active ? "page" : undefined}
                   title={item.label}
-                  onClick={() => onNavigate({ view: item.id })}
+                  onClick={() => onNavigate({ view: item.id, projectId: null })}
                 >
                   {item.icon}
                   <span>{item.label}</span>
@@ -563,6 +563,11 @@ function StudioShell({
               onNewTask={(projectId) => onOpenNewTask(projectId)}
               onEditingChange={onEditingChange}
               openNewSignal={openNewProjectSignal}
+              taskDialogOpen={Boolean(newTaskRequest)}
+              detailId={route.projectId}
+              onSelectProject={(projectId) => onNavigate({ view: "projects", projectId })}
+              onOpenExecutors={() => onNavigate({ view: "settings", section: "agents" })}
+              api={api}
             />
           )}
 

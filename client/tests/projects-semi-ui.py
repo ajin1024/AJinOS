@@ -41,11 +41,11 @@ def run_test(url):
         page.goto(url)
         original = page.request.get(url.rstrip("/") + "/api/config").json()["value"]
         first_project = original["projects"][0]
-        page.get_by_role("button", name="项目管理", exact=True).click()
+        page.get_by_role("button", name="项目空间", exact=True).click()
         expect(page).to_have_url(re.compile(r"#projects$"))
         cards = page.get_by_role("region", name="项目卡片").get_by_role("button")
         expect(cards).to_have_count(len(original["projects"]))
-        detail = page.get_by_role("dialog", name=first_project["name"], exact=True)
+        detail = page.get_by_role("region", name=first_project["name"], exact=True)
         expect(detail).not_to_be_visible()
 
         search = page.get_by_placeholder("搜索项目名称、目录或别名")
@@ -55,6 +55,7 @@ def run_test(url):
         card.focus()
         card.press("Enter")
         expect(detail).to_be_visible()
+        expect(page).to_have_url(re.compile(rf"#projects/{first_project['id']}$"))
         page.keyboard.press("Escape")
         expect(detail).not_to_be_visible()
         expect(card).to_be_focused()
@@ -62,25 +63,24 @@ def run_test(url):
         box = card.bounding_box()
         card.click(position={"x": box["width"] - 12, "y": box["height"] - 12})
         detail.get_by_role("button", name="发起任务", exact=True).click()
-        expect(detail).not_to_be_visible()
         expect(page.locator('#new-task-form [name="project"]')).to_have_value(first_project["id"])
         page.locator("#dialog-cancel").click()
 
-        card.click()
-        detail.get_by_role("button", name="编辑项目", exact=True).click()
-        expect(detail).not_to_be_visible()
+        expect(detail).to_be_visible()
         expect(page.locator('input[name="name"]')).to_have_value(first_project["name"])
-        page.get_by_text("高级配置", exact=False).click()
-        page.locator('input[name="aliases"]').fill("Semi 界面测试")
-        page.locator(".ps-editor").get_by_text("只读", exact=True).click()
-        expect(page.get_by_role("radio", name="只读", exact=True)).to_be_checked()
+        page.locator('input[name="name"]').fill("取消的修改")
+        page.get_by_role("button", name="取消修改", exact=True).click()
+        expect(page.locator('input[name="name"]')).to_have_value(first_project["name"])
+        page.locator('input[name="name"]').fill("Semi 界面测试")
         page.locator("#status-capsule").click()
         page.locator("#refresh-app").click()
         page.wait_for_timeout(500)
-        expect(page.locator('input[name="aliases"]')).to_have_value("Semi 界面测试")
+        expect(page.locator('input[name="name"]')).to_have_value("Semi 界面测试")
         page.get_by_role("button", name="保存项目", exact=True).click()
+        expect(page.get_by_role("region", name="Semi 界面测试", exact=True)).to_be_visible()
+        page.get_by_role("button", name="返回项目", exact=True).click()
         expect(page.get_by_placeholder("搜索项目名称、目录或别名")).to_have_value(first_project["id"])
-        assert writes and "Semi 界面测试" in next(x for x in writes[-1]["value"]["projects"] if x["id"] == first_project["id"])["aliases"]
+        assert writes and "Semi 界面测试" == next(x for x in writes[-1]["value"]["projects"] if x["id"] == first_project["id"])["name"]
         saved = writes[-1]["value"]
         for project in original["projects"]:
             if project["id"] != first_project["id"]:
@@ -90,23 +90,23 @@ def run_test(url):
                 assert saved["rules"]["agents"][rule["to"]] == original["rules"]["agents"][rule["to"]]
         target = next(x for x in saved["projects"] if x["id"] == first_project["id"])
         target_rule = next(x for x in saved["rules"]["rules"] if x["name"] == target["rule"])
-        assert saved["rules"]["agents"][target_rule["to"]]["access"] == "read"
+        assert target["aliases"] == first_project["aliases"]
+        assert target_rule == next(x for x in original["rules"]["rules"] if x["name"] == first_project["rule"])
 
         # Add project with progressive disclosure (auto-derived id & rule name)
         page.get_by_role("button", name="添加项目", exact=True).click()
-        page.get_by_role("button", name="保存项目", exact=True).click()
-        expect(page.get_by_text("请输入项目名称", exact=True)).to_be_visible()
-        page.locator('input[name="name"]').fill("Semi 测试项目")
+        page.get_by_role("button", name="添加项目", exact=True).click()
+        expect(page.get_by_text("请选择本地工作目录", exact=True)).to_be_visible()
         page.locator('input[name="cwd"]').fill("C:/workspace/semi-preview-test")
         reject_save = True
-        page.get_by_role("button", name="保存项目", exact=True).click()
+        page.get_by_role("button", name="添加项目", exact=True).click()
         expect(page.get_by_text("配置已更新，请重新载入后保存", exact=True)).to_be_visible()
-        expect(page.locator('input[name="name"]')).to_have_value("Semi 测试项目")
+        expect(page.locator('input[name="cwd"]')).to_have_value("C:/workspace/semi-preview-test")
         reject_save = False
-        page.get_by_role("button", name="保存项目", exact=True).click()
+        page.get_by_role("button", name="添加项目", exact=True).click()
         expect(page.locator(".ps-editor")).not_to_be_visible()
         created = next(x for x in writes[-1]["value"]["projects"] if x["id"] == "semi-preview-test")
-        assert created["role"] == "project" and created["color"] and created["rule"]
+        assert created["role"] == "project" and created["name"] == "semi-preview-test" and created["rule"]
 
         search.fill("不存在的项目-xyz")
         expect(page.get_by_text("没有匹配的项目", exact=True)).to_be_visible()
@@ -120,7 +120,6 @@ def run_test(url):
         expect(cards).to_have_count(len(original["projects"]) + 1)
 
         cards.first.click()
-        page.get_by_role("dialog").get_by_role("button", name="编辑项目", exact=True).click()
         page.keyboard.press("Escape")
         expect(page.locator(".ps-editor")).not_to_be_visible()
 
@@ -133,12 +132,12 @@ def run_test(url):
             page.set_viewport_size({"width": width, "height": 850})
             assert page.locator("#main").evaluate("el => el.scrollWidth <= el.clientWidth + 1")
             cards.first.click()
-            dialog = page.get_by_role("dialog")
-            expect(dialog.get_by_role("button", name="发起任务", exact=True)).to_be_in_viewport()
-            bounds = dialog.bounding_box()
+            workspace = page.locator(".ps-editor")
+            expect(workspace.get_by_role("button", name="发起任务", exact=True)).to_be_in_viewport()
+            bounds = workspace.bounding_box()
             assert 0 <= bounds["x"] and bounds["x"] + bounds["width"] <= width
             page.keyboard.press("Escape")
-            expect(dialog).not_to_be_visible()
+            expect(workspace).not_to_be_visible()
         assert not errors, errors
         browser.close()
         print("Semi project space: first-level page, progressive disclosure, filtering, editing, theme and responsive checks passed.")

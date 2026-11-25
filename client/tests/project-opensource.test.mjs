@@ -29,8 +29,10 @@ test("normalizeGitHubRepo accepts owner/repo and GitHub HTTPS/SSH URLs and rejec
   assert.throws(() => normalizeGitHubRepo("owner/repo; rm -rf /"), /仓库/);
 });
 
-test("enabling openSource.autoHandleIssues derives isolated watcher, cron poll, and edit-capped handler rules", () => {
+test("Issue handling shares the project's parallel limit and caps its access at edit", () => {
   const cfg = baseWorkspace();
+  const projectRule = cfg.rules.rules.find((rule) => rule.name === cfg.projects[0].rule);
+  projectRule.parallel = 3;
   cfg.projects[0].openSource = {
     enabled: true,
     repo: "https://github.com/ajin1024/AJinOS.git",
@@ -69,7 +71,8 @@ test("enabling openSource.autoHandleIssues derives isolated watcher, cron poll, 
   assert.equal(handleRule.to, "claude");
   assert.equal(handleRule.cwd, validated.projects[0].cwd);
   assert.equal(handleRule.access, "edit", "external GitHub Issues must not inherit full access automatically");
-  assert.equal(handleRule.parallel, 1);
+  assert.equal(handleRule.group, projectRule.name);
+  assert.equal(handleRule.parallel, projectRule.parallel);
   assert.equal(handleRule.tell, "always");
 
   // Re-validating is idempotent and projectRuleNames includes the derived Issue rules

@@ -32,6 +32,8 @@ export function parseHashRoute(rawHash) {
   if (clean === "tasks") return { view: "tasks", section: null, tasksTab: "list" };
   if (clean === "inbox" || clean === "tasks?tab=todo") return { view: "tasks", section: null, tasksTab: "inbox" };
   if (clean === "projects") return { view: "projects", section: null, tasksTab: "list" };
+  const projectRoute = /^projects\/([a-z][a-z0-9-]{0,39})$/.exec(clean);
+  if (projectRoute) return { view: "projects", section: null, tasksTab: "list", projectId: projectRoute[1] };
   if (clean === "settings") return { view: "settings", section: "runtime", tasksTab: "list" };
   if (clean.startsWith("settings/")) {
     const part = clean.slice("settings/".length);
@@ -60,6 +62,7 @@ export function parseHashRoute(rawHash) {
 export function routeToHash(route) {
   if (route.view === "settings") return `settings/${route.section || "runtime"}`;
   if (route.view === "messages") return route.topic ? "messages/" + encodeURIComponent(route.topic) : "messages";
+  if (route.view === "projects" && route.projectId) return `projects/${route.projectId}`;
   if (route.view === "tasks" && route.tasksTab === "inbox") return "inbox";
   return route.view || "overview";
 }

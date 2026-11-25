@@ -119,7 +119,7 @@ export class Workbench {
     };
     document.addEventListener("visibilitychange", this.onVisibility);
     installWorkbenchStyles();
-    root.innerHTML = '<section class="wb fc-workbench" aria-label="运行工作台"></section>';
+    root.innerHTML = '<section class="wb fc-workbench" aria-label="工作台"></section>';
     this.el = root.firstElementChild;
     this.dialog = document.createElement("dialog");
     this.dialog.className = "wb wb-modal";
@@ -424,7 +424,7 @@ export class Workbench {
           .map((t) => button("task", `#${t.id} ${esc(t.title)}<small>${esc(t.status)}</small>`, t.id, "wide"))
           .join(
             "",
-          )}${button("project-task", "在此项目新建任务", p.id, "primary wide")}${button("project", "编辑项目", p.id, "wide")}`;
+          )}${button("project-task", "在此项目新建任务", p.id, "primary wide")}${button("project", "打开项目", p.id, "wide")}`;
     }
     if (this.panel?.startsWith("plan:")) {
       const p = m.plans.find((p) => `plan:${p.id}` === this.panel);

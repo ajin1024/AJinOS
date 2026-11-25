@@ -11,7 +11,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/workbench-dark.png" />
   <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/workbench-light.png" />
-  <img alt="AJinOS Studio 运行工作台" src="docs/screenshots/workbench-light.png" />
+  <img alt="AJinOS Studio 工作台" src="docs/screenshots/workbench-light.png" />
 </picture>
 
 ## 它解决什么问题
@@ -94,9 +94,9 @@ agent-autoloop try
 
 `client/` 目录提供独立的桌面与本地网页客户端 **AJinOS Studio**。它完全通过标准 Hub HTTP / SSE 协议工作，不修改中台内核与调度协议：
 
-| 日间主题 · 运行工作台 | 夜间主题 · 运行工作台 |
+| 日间主题 · 工作台 | 夜间主题 · 工作台 |
 | --- | --- |
-| ![运行工作台日间主题](docs/screenshots/workbench-light.png) | ![运行工作台夜间主题](docs/screenshots/workbench-dark.png) |
+| ![工作台日间主题](docs/screenshots/workbench-light.png) | ![工作台夜间主题](docs/screenshots/workbench-dark.png) |
 | **消息中心与行内卡片审批** | **任务中心看板与验收** |
 | ![消息中心与行内卡片审批](docs/screenshots/messages.png) | ![任务中心看板](docs/screenshots/tasks.png) |
 
@@ -109,7 +109,7 @@ agent-autoloop try
 
 </details>
 
-- **运行工作台**：实时可视化展示业务项目、项目识别网关、执行器、排队原因与流转路径，支持日夜/跟随系统主题。
+- **工作台**：实时可视化展示业务项目、项目识别网关、执行器、排队原因与流转路径，支持日夜/跟随系统主题。
 - **消息中心与审批**：支持文字与图片粘贴/拖入、行内卡片答复、话题草稿保留、系统托盘提醒与全局快捷键（`Alt + Shift + A`）。
 - **三角色调度与模型自由配置**：按规划 / 执行 / 校验配置已登录的 Claude Code、Codex、Antigravity（ACP），模型留空即沿用本机 CLI 默认。
 - **任务中心与总管统筹**：聚合「待我处理」、看板/列表、零消耗全局简报、进度问答与多工单 DAG 协作计划，验收关闭同步 Hub 原生工单。

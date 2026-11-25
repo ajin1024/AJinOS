@@ -1,8 +1,8 @@
 import { isImportedExecutor } from "./executor-presets.mjs";
 
 export const EXECUTION_MODELS = { simple: "", complex: "" };
-export const OPEN_SOURCE_POLL_MINUTES = [5, 10, 15, 30, 60];
-const VALID_POLL_MINUTES = new Set([1, 5, 10, 15, 30, 60]);
+export const OPEN_SOURCE_POLL_MINUTES = [1, 5, 10, 15, 30, 60];
+const VALID_POLL_MINUTES = new Set(OPEN_SOURCE_POLL_MINUTES);
 const GITHUB_SLUG = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const ISO_SINCE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2}))?$/;
 
@@ -293,7 +293,7 @@ export function syncOpenSourceIssueRoutes(config, { node = "node", watcherScript
       to: base.to,
       cwd: p.cwd,
       access: baseAccess === "read" ? "read" : "edit",
-      parallel: 1,
+      parallel: base.parallel,
       tell: "always",
       group: base.group || base.name,
       prompt: GITHUB_ISSUE_PROMPT,

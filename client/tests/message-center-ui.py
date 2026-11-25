@@ -1,4 +1,4 @@
-# Prevent the new message layout from hiding execution details or breaking the path from a draft to acceptance.
+# Prevent the message layout from separating a new draft from its starter actions or hiding execution details.
 import base64
 import json
 import os
@@ -51,7 +51,23 @@ with tempfile.TemporaryDirectory(prefix="studio-messages-ui-") as temp:
                 timeline = page.locator(".mc-timeline")
                 sidebar = page.get_by_role("complementary", name="会话列表")
                 draft = composer.locator("textarea")
-                page.get_by_role("button", name="整理一份本周项目进展").click()
+                first_starter = page.get_by_role("button", name="把订单列表加上批量发货")
+                starter = page.get_by_role("button", name="整理一份本周项目进展")
+                heading = page.get_by_role("heading", name="今天想做什么？")
+                expect(heading).to_be_visible()
+                expect(page.get_by_role("button", name="对话列表")).to_be_hidden()
+                expect(page.get_by_role("button", name="返回对话")).to_be_hidden()
+                for viewport in ({"width": 1484, "height": 960}, {"width": 390, "height": 680}):
+                    page.set_viewport_size(viewport)
+                    expect(draft).to_be_in_viewport()
+                    expect(starter).to_be_in_viewport()
+                    heading_box = heading.bounding_box()
+                    composer_box = composer.bounding_box()
+                    starter_box = first_starter.bounding_box()
+                    assert 0 <= composer_box["y"] - heading_box["y"] - heading_box["height"] <= 48
+                    assert 0 <= starter_box["y"] - composer_box["y"] - composer_box["height"] <= 56
+                page.set_viewport_size({"width": 1484, "height": 960})
+                starter.click()
                 expect(draft).to_have_value("整理一份本周项目进展")
                 composer.get_by_role("combobox", name="目标项目").click()
                 page.get_by_role("option", name="订单服务 · 演示").click()

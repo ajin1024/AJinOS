@@ -277,7 +277,7 @@ else {
     win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     ipcMain.handle("studio:directory", async (event) => {
       if (!event.senderFrame.url.startsWith(base + "/")) throw new Error("无效的客户端");
-      const result = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "选择本地项目目录" });
+      const result = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "选择本地工作目录" });
       return result.canceled ? null : result.filePaths[0];
     });
     const validSender = (event) =>

@@ -268,3 +268,23 @@ test("Gateway.choose applies roleRouting execute target for follow projects with
     db.close();
   }
 });
+
+test("a Codex project's new tasks follow global execution while an existing tier conversation stays bound", async () => {
+  const given = makeRoleConfig();
+  given.rules.rules.find((rule) => rule.name === given.projects[0].rule).to = "codex";
+  const config = validateWorkspace(given);
+  const db = new DatabaseSync(":memory:");
+  const gateway = new Gateway(db, {
+    model: async () => { throw new Error("明确指定项目时无需推断执行等级"); },
+  });
+  try {
+    const tier = config.executionRoutes["orders/default"].simple;
+    gateway.bind("legacy", { project: "orders", flow: "default", complexity: "simple", rule: tier.rule });
+    const existing = await gateway.choose(config, { text: "继续", conversation: "legacy" });
+    const next = await gateway.choose(config, { text: "更新订单列表", project: "orders" });
+    assert.equal(existing.rule, tier.rule);
+    assert.equal(next.rule, config.agentRoutes.orders["cc-deepseek"].rule);
+  } finally {
+    db.close();
+  }
+});

@@ -1,4 +1,5 @@
 import { updateProjectBinding } from "./project-bindings.mjs";
+import { resolveRoleCandidates } from "../role-routing.mjs";
 import dialogCss from "./dialogs.css";
 import themeCss from "./theme.css";
 import workspaceCss from "./workspace-pages.css";
@@ -16,7 +17,7 @@ import { workflowFor, savedWorkflow, taskActions } from "./task-workflow.mjs";
 import { projectDisplayRules, businessProjects } from "./gateway-config.mjs";
 import { Workbench, installWorkbenchStyles } from "./workbench.js";
 import { withStudioDefaults, assignIslandStyles } from "./island-presets.mjs";
-import { parseHashRoute, routeToHash, parseList } from "./studio-helpers.mjs";
+import { agentOptionsOf, deriveProjectId, folderNameFromPath, parseHashRoute, parseList, routeToHash } from "./studio-helpers.mjs";
 import { buildHandoffRequest } from "./tasks/task-handoff.mjs";
 
 installWorkbenchStyles();
@@ -174,9 +175,9 @@ async function loadConfig() {
   return result;
 }
 
-async function save(next) {
+async function save(next, { profileProject } = {}) {
   assignIslandStyles(next.projects);
-  const result = await api("/config", "PUT", { value: next, revision });
+  const result = await api("/config", "PUT", { value: next, revision, profileProject });
   config = result.value;
   profiles = result.profiles || {};
   revision = result.revision;
@@ -195,8 +196,6 @@ async function importExecutor(draft) {
 }
 
 async function analyzeProject(id) {
-  const recognitionName = config.rules.agents[config.gateway?.agent]?.name || "Claude Code";
-  toast(`正在分析项目，识别渠道：${recognitionName}…`);
   profiles[id] = await api(`/projects/${encodeURIComponent(id)}/analyze`, "POST", {});
   render();
   toast("项目画像已更新");
@@ -204,67 +203,88 @@ async function analyzeProject(id) {
 
 async function saveProjectValues(id, v) {
   const p = config.projects.find((item) => item.id === id);
-  const r = config.rules.rules.find((item) => item.name === p?.rule) || {};
   const next = structuredClone(config);
+  const cwd = v.cwd.trim();
+  const name = p ? v.name.trim() : folderNameFromPath(cwd) || cwd;
   const project = {
     ...p,
-    id: p?.id || v.id.trim(),
-    name: v.name.trim(),
-    role: v.role || "project",
-    cwd: v.cwd.trim(),
-    rule: v.rule.trim(),
-    aliases: parseList(v.aliases),
-    description: v.description || "",
-    color: v.color || "#a5e7c5",
+    id:
+      p?.id ||
+      deriveProjectId(
+        name,
+        cwd,
+        next.projects.map((item) => item.id),
+      ),
+    name,
+    cwd,
   };
-  if (v.openSourceEnabled || String(v.openSourceRepo || "").trim()) {
+  const repo = String(v.openSourceRepo || "").trim();
+  if (p && repo) {
     project.openSource = {
-      enabled: Boolean(v.openSourceEnabled),
-      repo: String(v.openSourceRepo || "").trim(),
-      autoHandleIssues: Boolean(v.openSourceEnabled && v.autoHandleIssues),
+      enabled: true,
+      repo,
+      autoHandleIssues: Boolean(v.autoHandleIssues),
       pollMinutes: Number(v.pollMinutes || 5),
       ...(String(v.issueSince || "").trim() ? { since: String(v.issueSince).trim() } : {}),
     };
   } else {
     delete project.openSource;
   }
-  if (!p && next.projects.some((item) => item.id === project.id)) throw new Error("项目编号已存在");
-  const conflict = next.rules.rules.find((item) => item.name === project.rule && item.name !== p?.rule);
-  if (conflict) throw new Error("规则名称已被其他规则使用");
-  const baseAgent = next.rules.agents[v.agent];
-  if (!baseAgent) throw new Error("请选择存在的执行配置");
-  const rule = {
-    ...r,
-    name: project.rule,
-    when: { source: "local", types: [`project.${project.id}.task`] },
-    cwd: project.cwd,
-    to: v.agent,
-    prompt: v.prompt,
-    parallel: Number(v.parallel),
-    resume: Boolean(v.resume),
-  };
-  if (v.projectAccess && v.projectAccess !== (baseAgent.access || "edit")) rule.access = v.projectAccess;
-  else delete rule.access;
-  if (p) {
-    updateProjectBinding(next, p.rule, rule);
-    if (p.flows) project.flows = next.projects.find((item) => item.id === p.id).flows;
-    next.projects[next.projects.findIndex((item) => item.id === id)] = project;
-    next.rules.rules[next.rules.rules.findIndex((item) => item.name === p.rule)] = rule;
-  } else {
-    next.projects.push(project);
-    next.rules.rules.push(rule);
-  }
-  await save(next);
-  if (
-    project.role !== "integration" &&
-    (!p || p.cwd !== project.cwd || p.description !== project.description || p.name !== project.name)
-  ) {
-    try {
-      await analyzeProject(project.id);
-    } catch (error) {
-      toast("项目已保存，画像分析未完成：" + error.message, true);
+  const moved = p && p.cwd !== cwd;
+  if (!p || moved) {
+    const used = new Set(next.rules.rules.map((rule) => rule.name));
+    const base = `${name} 任务`;
+    project.rule = base;
+    for (
+      let suffix = 2;
+      [project.rule, ...(p?.flows || []).map((flow) => `${project.rule} / ${flow.id}`)].some((rule) => used.has(rule));
+      suffix++
+    ) {
+      project.rule = `${base} ${suffix}`;
     }
   }
+  if (p) {
+    project.aliases = parseList(v.aliases?.replaceAll("、", "，"));
+    const index = next.rules.rules.findIndex((rule) => rule.name === p.rule);
+    const previous = next.rules.rules[index];
+    const rule = { ...previous, name: project.rule, cwd };
+    if (moved) {
+      updateProjectBinding(next, p.rule, rule);
+      if (p.flows) project.flows = next.projects.find((item) => item.id === id).flows;
+    }
+    const baseAccess = next.rules.agents[rule.to]?.access || "edit";
+    if (p.service !== "autoloop" && v.projectAccess && v.projectAccess !== (rule.access || baseAccess)) {
+      if (v.projectAccess === baseAccess) delete rule.access;
+      else rule.access = v.projectAccess;
+    }
+    if (v.resume !== Boolean(rule.resume)) rule.resume = v.resume;
+    if (v.parallel !== rule.parallel) {
+      rule.parallel = v.parallel;
+      const ownFlows = new Set((project.flows || []).map((flow) => flow.rule));
+      for (const flowRule of next.rules.rules) {
+        if (ownFlows.has(flowRule.name) && flowRule.group && flowRule.group === (rule.group || rule.name)) {
+          flowRule.parallel = rule.parallel;
+        }
+      }
+    }
+    next.rules.rules[index] = rule;
+    next.projects[next.projects.findIndex((item) => item.id === id)] = project;
+  } else {
+    const to = resolveRoleCandidates(config, "execute").candidates[0] || agentOptionsOf(config)[0]?.value;
+    if (!to) throw new Error("请先在系统配置中添加执行器");
+    Object.assign(project, { role: "project", aliases: [], description: "", color: "#a5e7c5" });
+    next.projects.push(project);
+    next.rules.rules.push({
+      name: project.rule,
+      when: { source: "local", types: [`project.${project.id}.task`] },
+      cwd,
+      to,
+      prompt: "根据本轮资料处理任务，保留已完成步骤，需要决定时交回 ask。",
+      parallel: 1,
+      resume: true,
+    });
+  }
+  await save(next, { profileProject: project.id });
 }
 
 async function engineControl(operation) {
@@ -291,6 +311,7 @@ function navigate(target) {
   drawerCustomEntry = null;
   const previousView = route.view;
   const next = typeof target === "string" ? parseHashRoute(target) : { ...route, ...target };
+  if (next.view !== "projects") delete next.projectId;
   if (next.view === "settings" && !next.section) next.section = "runtime";
   if (next.view === "tasks") {
     if (next.tasksTab === "inbox") taskScope = "todo";
@@ -575,10 +596,10 @@ async function perform(action, id) {
   }
   if (action === "project-new") {
     openNewProjectSignal += 1;
-    navigate({ view: "projects" });
+    navigate({ view: "projects", projectId: null });
     return;
   }
-  if (action === "project") return navigate({ view: "projects" });
+  if (action === "project") return navigate({ view: "projects", projectId: id || null });
   if (action === "agent" || action === "agent-new" || action === "model-preset")
     return navigate({ view: "settings", section: "agents" });
   if (action === "rule" || action === "rule-new") return navigate({ view: "settings", section: "rules" });
@@ -860,7 +881,10 @@ try {
   });
   events.addEventListener("configuration", (e) => {
     const result = JSON.parse(e.data);
-    if (!newTaskRequest && !workflowModal && !reactEditing) {
+    if (result.revision === revision) {
+      profiles = result.profiles || {};
+      render();
+    } else if (!newTaskRequest && !workflowModal && !reactEditing) {
       config = result.value;
       profiles = result.profiles || {};
       revision = result.revision;

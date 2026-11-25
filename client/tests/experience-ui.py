@@ -1,6 +1,7 @@
 # Prevent navigation from dropping an unsent message and reduced-motion mode from running UI transitions.
 # Prevent the mobile conversation list from crowding out the active conversation.
 # Prevent real task submission, new timeline messages, or a workbench redraw from stealing the user's place.
+# Keep the workbench navigation and its accessible region under the same short name.
 from base64 import b64decode
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -72,6 +73,8 @@ with studio_home() as home:
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 page.goto(url)
+                expect(page.locator("#nav").get_by_role("button", name="工作台", exact=True)).to_be_visible(timeout=3000)
+                expect(page.get_by_role("region", name="工作台", exact=True)).to_be_visible()
                 expect(page.locator(".fc-canvas")).to_be_visible()
                 gateway = page.locator('[data-node="gateway"]')
                 gateway.focus()
