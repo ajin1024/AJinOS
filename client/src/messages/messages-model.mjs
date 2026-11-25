@@ -192,6 +192,7 @@ export function buildConversations({
   intakes = [],
   runs = [],
   cards = [],
+  tickets = [],
   taskWorkflows = [],
 } = {}) {
   const topicRecords = new Map((topics || []).map((topic) => [topic.id, topic]));
@@ -275,6 +276,7 @@ export function buildConversations({
   }
 
   const result = [];
+  const ticketsById = new Map(tickets.map((ticket) => [ticket.id, ticket]));
 
   for (const conversation of topicConversations.values()) {
     const runsSorted = [...conversation.runs].sort((left, right) => Number(left.id) - Number(right.id));
@@ -287,6 +289,7 @@ export function buildConversations({
       ...intakesSorted.map(itemOfIntake),
     ]);
 
+    const ticketRun = runsSorted.findLast((run) => Number.isInteger(run.ticket) && run.ticket > 0);
     const task = {
       key: JSON.stringify(["topic", conversation.project, conversation.id]),
       runs: runsSorted,
@@ -295,7 +298,7 @@ export function buildConversations({
       timers: [],
       topic: conversation.id,
       project: conversation.project,
-      ticket: null,
+      ticket: ticketsById.get(ticketRun?.ticket) || null,
     };
     const workflow = workflowFor(task, savedWorkflow(task, taskWorkflows));
 

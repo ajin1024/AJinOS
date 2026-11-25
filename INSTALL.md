@@ -111,6 +111,8 @@ agent-autoloop uninstall
 
 ## 文档
 
+Windows 桌面用户可以直接安装 AJinOS EXE，随后在默认项目「AJinOS」中请助手检查和准备配置。配置 MCP 随安装包交付。参见 [AJinOS 第一次体验](client/README.md#第一次体验)。
+
 - [配置手册](skills/agent-autoloop/SKILL.md)：接事件插件、通道、多台电脑和交付流水线。
 - [协议](docs/protocol.md)：HTTP、回执、事实日志和故障恢复。
 - [插件](docs/plugins.md)：三个可运行的最小例子。

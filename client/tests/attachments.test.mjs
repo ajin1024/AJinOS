@@ -11,7 +11,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "../attachments.mjs";
-import { startStudio } from "../server.mjs";
+import { startDemoStudio as startStudio } from "./studio-fixtures.mjs";
 
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489", "hex");
 

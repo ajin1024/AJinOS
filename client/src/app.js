@@ -185,6 +185,15 @@ async function save(next) {
   toast(result.restartRequired ? "配置已保存；Worker 容量将在重启自管引擎后生效" : "配置已保存，规则将自动载入");
 }
 
+async function importExecutor(draft) {
+  const result = await api("/agents/import", "POST", draft);
+  config = result.value;
+  profiles = result.profiles || {};
+  revision = result.revision;
+  render();
+  toast(`已导入「${config.rules.agents[result.agentId].name}」，可在新建任务时选择`);
+}
+
 async function analyzeProject(id) {
   const recognitionName = config.rules.agents[config.gateway?.agent]?.name || "Claude Code";
   toast(`正在分析项目，识别渠道：${recognitionName}…`);
@@ -313,6 +322,7 @@ function currentConversations() {
     intakes: snapshot.taskIntakes || [],
     runs: allTaskRuns(),
     cards: state().cards || [],
+    tickets: state().tickets || [],
     taskWorkflows: snapshot.taskWorkflows || [],
   });
 }
@@ -656,17 +666,7 @@ function render() {
       taskKind(config, r, { topics: snapshot.topics, routes: snapshot.workbench?.routes }) === "business",
   ).length;
   const inboxCount = state().cards.length;
-  const messageBadge = countActionableConversations(
-    buildConversations({
-      config,
-      messages: messageRows,
-      topics: snapshot.topics || [],
-      intakes: snapshot.taskIntakes || [],
-      runs: allTaskRuns(),
-      cards: state().cards || [],
-      taskWorkflows: snapshot.taskWorkflows || [],
-    }),
-  );
+  const messageBadge = countActionableConversations(currentConversations());
 
   shell?.render({
     route,
@@ -802,6 +802,7 @@ function render() {
       navigate(next);
     },
     onSaveConfig: save,
+    onImportExecutor: importExecutor,
     onSaveProject: saveProjectValues,
     onAnalyzeProject: analyzeProject,
     onEngineControl: engineControl,

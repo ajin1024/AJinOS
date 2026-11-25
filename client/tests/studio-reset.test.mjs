@@ -49,7 +49,10 @@ test("POST /api/reset requires explicit confirmation, creates a backup, and clea
     const cfgRes = await fetch(studio.url + "/api/config", { headers });
     assert.equal(cfgRes.status, 200);
     const cfg = await cfgRes.json();
-    assert.ok(Array.isArray(cfg.value?.projects));
+    assert.deepEqual(
+      cfg.value.projects.map(({ id, name }) => ({ id, name })),
+      [{ id: "autoloop", name: "AJinOS" }],
+    );
   } finally {
     await studio.close();
     rmSync(home, { recursive: true, force: true });

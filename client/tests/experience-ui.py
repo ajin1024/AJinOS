@@ -18,7 +18,7 @@ from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = """
-import { startStudio } from './client/server.mjs';
+import { startDemoStudio as startStudio } from './client/tests/studio-fixtures.mjs';
 const server = await startStudio({
   home: process.argv[1], port: 0, autostart: true,
   gatewayModel: async (kind) => kind === 'confirm'

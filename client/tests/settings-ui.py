@@ -18,7 +18,7 @@ if artifacts:
 
 with tempfile.TemporaryDirectory(prefix="studio-settings-ui-") as home:
     script = """
-      import { startStudio } from './client/server.mjs';
+      import { startDemoStudio as startStudio } from './client/tests/studio-fixtures.mjs';
       const studio = await startStudio({home: process.argv[1], port: 0, autostart: true});
       console.log(JSON.stringify({url:studio.url}));
       process.stdin.once('data', async () => { await studio.close(); process.exit(0); });

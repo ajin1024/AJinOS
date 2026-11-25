@@ -17,8 +17,8 @@ if artifacts:
     artifacts.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(prefix="studio-theme-ui-") as temp:
     script = """
-      import { startStudio } from './client/server.mjs';
-      const s = await startStudio({home: process.argv[1], port: 0, autostart: true});
+      import { startDemoStudio as startStudio } from './client/tests/studio-fixtures.mjs';
+      const s = await startStudio({home: process.argv[1], port: 0, autostart: true, businessTasks: true});
       console.log(JSON.stringify({url:s.url}));
       process.stdin.once('data',async()=>{await s.close();process.exit(0)});
     """
@@ -64,7 +64,7 @@ with tempfile.TemporaryDirectory(prefix="studio-theme-ui-") as temp:
                 if artifacts: page.screenshot(path=str(artifacts / f"mint-{theme}-gateway.png"), full_page=True)
 
                 page.locator('#nav [data-view="projects"]').click()
-                expect(page.locator(".semi-table")).to_be_visible()
+                expect(page.get_by_role("region", name="项目卡片")).to_be_visible()
                 page.get_by_role("button", name="添加项目", exact=True).click()
                 field = page.locator('input[name="name"]')
                 field.fill("尚未保存的输入")
@@ -92,7 +92,6 @@ with tempfile.TemporaryDirectory(prefix="studio-theme-ui-") as temp:
                 expect(page.locator("html")).to_have_attribute("data-theme", theme)
 
                 page.locator('#nav [data-view="tasks"]').click()
-                page.locator("#task-scope-demo").click()
                 expect(page.get_by_role("region", name="任务看板")).to_be_visible()
                 if artifacts: page.screenshot(path=str(artifacts / f"mint-{theme}-kanban.png"), full_page=True)
                 page.locator(".kb-card").first.click()

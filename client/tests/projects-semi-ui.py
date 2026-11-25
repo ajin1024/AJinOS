@@ -1,4 +1,4 @@
-# Prevent project filtering, editing, progressive disclosure and permission isolation from breaking
+# Prevent project cards from opening the wrong project, and keep filtering, editing and permission isolation
 # on the first-level Project Space page; all writes are intercepted locally.
 import json
 import os
@@ -43,12 +43,32 @@ def run_test(url):
         first_project = original["projects"][0]
         page.get_by_role("button", name="项目管理", exact=True).click()
         expect(page).to_have_url(re.compile(r"#projects$"))
-        expect(page.locator(".semi-table")).to_be_visible()
+        cards = page.get_by_role("region", name="项目卡片").get_by_role("button")
+        expect(cards).to_have_count(len(original["projects"]))
+        detail = page.get_by_role("dialog", name=first_project["name"], exact=True)
+        expect(detail).not_to_be_visible()
 
         search = page.get_by_placeholder("搜索项目名称、目录或别名")
         search.fill(first_project["id"])
-        expect(page.locator(".semi-table-tbody > tr")).to_have_count(1)
-        page.get_by_role("button", name="编辑项目", exact=True).click()
+        expect(cards).to_have_count(1)
+        card = cards.first
+        card.focus()
+        card.press("Enter")
+        expect(detail).to_be_visible()
+        page.keyboard.press("Escape")
+        expect(detail).not_to_be_visible()
+        expect(card).to_be_focused()
+
+        box = card.bounding_box()
+        card.click(position={"x": box["width"] - 12, "y": box["height"] - 12})
+        detail.get_by_role("button", name="发起任务", exact=True).click()
+        expect(detail).not_to_be_visible()
+        expect(page.locator('#new-task-form [name="project"]')).to_have_value(first_project["id"])
+        page.locator("#dialog-cancel").click()
+
+        card.click()
+        detail.get_by_role("button", name="编辑项目", exact=True).click()
+        expect(detail).not_to_be_visible()
         expect(page.locator('input[name="name"]')).to_have_value(first_project["name"])
         page.get_by_text("高级配置", exact=False).click()
         page.locator('input[name="aliases"]').fill("Semi 界面测试")
@@ -93,13 +113,14 @@ def run_test(url):
         search.fill("")
         page.get_by_role("combobox", name="筛选权限").click()
         page.get_by_role("option", name=re.compile("工作区编辑$")).click()
-        expect(page.locator(".semi-table-tbody > tr")).to_have_count(1)
+        expect(cards).to_have_count(1)
         expect(page.get_by_role("option", name=re.compile("工作区编辑$"))).to_have_count(0)
         page.get_by_role("combobox", name="筛选权限").click()
         page.get_by_role("option", name=re.compile("全部权限$")).click()
-        expect(page.locator(".semi-table-tbody > tr")).to_have_count(len(original["projects"]) + 1)
+        expect(cards).to_have_count(len(original["projects"]) + 1)
 
-        page.get_by_role("button", name="编辑项目", exact=True).click()
+        cards.first.click()
+        page.get_by_role("dialog").get_by_role("button", name="编辑项目", exact=True).click()
         page.keyboard.press("Escape")
         expect(page.locator(".ps-editor")).not_to_be_visible()
 
@@ -111,6 +132,13 @@ def run_test(url):
         for width in (1280, 640, 390):
             page.set_viewport_size({"width": width, "height": 850})
             assert page.locator("#main").evaluate("el => el.scrollWidth <= el.clientWidth + 1")
+            cards.first.click()
+            dialog = page.get_by_role("dialog")
+            expect(dialog.get_by_role("button", name="发起任务", exact=True)).to_be_in_viewport()
+            bounds = dialog.bounding_box()
+            assert 0 <= bounds["x"] and bounds["x"] + bounds["width"] <= width
+            page.keyboard.press("Escape")
+            expect(dialog).not_to_be_visible()
         assert not errors, errors
         browser.close()
         print("Semi project space: first-level page, progressive disclosure, filtering, editing, theme and responsive checks passed.")
@@ -120,7 +148,7 @@ if target_url:
 else:
     with tempfile.TemporaryDirectory(prefix="studio-projects-ui-") as home:
         script = """
-          import { startStudio } from './client/server.mjs';
+          import { startDemoStudio as startStudio } from './client/tests/studio-fixtures.mjs';
           const studio = await startStudio({home: process.argv[1], port: 0, autostart: true});
           console.log(JSON.stringify({url: studio.url}));
           process.stdin.once('data', async () => { await studio.close(); process.exit(0); });

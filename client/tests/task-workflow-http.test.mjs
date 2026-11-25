@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { startStudio } from "../server.mjs";
+import { startDemoStudio as startStudio } from "./studio-fixtures.mjs";
 import { workflowFor, savedWorkflow } from "../src/task-workflow.mjs";
 
 test("real Hub task requires acceptance, reworks in its topic, and reopens durably", { timeout: 120000 }, async () => {

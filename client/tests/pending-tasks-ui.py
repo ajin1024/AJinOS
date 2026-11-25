@@ -1,4 +1,6 @@
 # Prevent pending-task selection or live updates from losing a reply across unified Task Center views.
+# Prevent an empty board from filling the viewport with empty lanes or cutting off lanes at desktop widths.
+# Prevent the removed demo tab from appearing in Task Center.
 import json
 import os
 from contextlib import contextmanager
@@ -32,8 +34,8 @@ def temporary_studio_home():
 
 
 script = """
-  import { startStudio } from './client/server.mjs';
-  const studio = await startStudio({ home: process.argv[1], port: 0, autostart: true,
+  import { startDemoStudio as startStudio } from './client/tests/studio-fixtures.mjs';
+  const studio = await startStudio({ home: process.argv[1], port: 0, autostart: true, businessTasks: true,
     gatewayModel: async () => ({ confirmed: true, reason: '隔离测试目标明确' }) });
   console.log(JSON.stringify({url:studio.url}));
   process.stdin.once('data', async () => { await studio.close(); process.exit(0); });
@@ -59,6 +61,16 @@ with temporary_studio_home() as home:
                     page.wait_for_selector(".fc-canvas")
                     expect(page).to_have_title("AJinOS")
                     expect(page.get_by_role("link", name="AJinOS")).to_be_visible()
+                    expect(page.locator("header #nav")).to_be_visible()
+                    expect(page.locator(".sidebar")).to_have_count(0)
+                    page.locator('#nav [data-view="tasks"]').click()
+                    expect(page.get_by_role("tab", name="演示记录", exact=True)).to_have_count(0)
+                    board = page.get_by_role("region", name="任务看板")
+                    expect(board.get_by_text("暂无任务", exact=True)).to_be_visible()
+                    expect(board.locator("[data-board-col]")).to_have_count(0)
+                    assert page.locator("#task-search").bounding_box()["y"] == page.locator(
+                        "#task-status-filter"
+                    ).bounding_box()["y"]
                     for index in (1, 2):
                         response = page.request.post(
                             url + "/api/messages", headers={"x-studio-action": "1"},
@@ -71,14 +83,20 @@ with temporary_studio_home() as home:
                       return snapshot.state.cards.filter(card => card.kind === 'ask').length === 2;
                     }""", timeout=30000)
 
-                    expect(page.locator("header #nav")).to_be_visible()
-                    expect(page.locator(".sidebar")).to_have_count(0)
-                    page.locator('#nav [data-view="tasks"]').click()
-                    expect(page.get_by_role("region", name="任务看板")).to_be_visible()
-                    page.locator("#task-scope-demo").click()
                     # Verify cards land in the "待审核" column and "[ 开始处理 › ]" opens the detail drawer
                     review_col = page.locator('[data-board-col="review"]')
                     expect(review_col.locator(".kb-card")).to_have_count(2, timeout=10000)
+                    expect(board.locator("[data-board-col]")).to_have_count(7)
+                    assert board.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
+                    page.locator("#task-search").fill("找不到的任务")
+                    expect(board.get_by_text("没有匹配的任务", exact=True)).to_be_visible()
+                    expect(board.locator("[data-board-col]")).to_have_count(0)
+                    board.get_by_role("button", name="清除筛选").click()
+                    expect(page.locator("#task-search")).to_have_value("")
+                    page.set_viewport_size({"width": 390, "height": 800})
+                    assert board.evaluate("el => el.scrollWidth > el.clientWidth")
+                    assert page.locator("#main").evaluate("el => el.scrollWidth <= el.clientWidth + 1")
+                    page.set_viewport_size({"width": 1440, "height": 920})
                     review_col.get_by_role("button", name="开始处理 ›").click()
                     expect(page.locator("#drawer")).to_be_visible()
                     page.keyboard.press("Escape")
@@ -129,7 +147,7 @@ with temporary_studio_home() as home:
                     page.get_by_role("region", name="最近处理的卡片").locator(f'[data-id="{card_id}"]').click()
                     expect(detail).to_contain_text("先核对原始记录")
 
-                    page.locator("#task-scope-demo").click()
+                    page.locator("#task-scope-business").click()
                     page.get_by_role("combobox", name="任务状态").select_option("awaiting_human")
                     expect(detail.get_by_role("heading", name="待办演示任务 2")).to_be_visible()
                     page.set_viewport_size({"width": 390, "height": 800})

@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
     (workspace / "README.md").write_text("测试项目", encoding="utf-8")
     (moved / "README.md").write_text("迁移测试项目", encoding="utf-8")
     script = """
-      import { startStudio } from './client/server.mjs';
+      import { startDemoStudio as startStudio } from './client/tests/studio-fixtures.mjs';
       const studio = await startStudio({ home: process.argv[1], port: 0, autostart: true,
         gatewayModel: async () => ({ summary: '隔离测试画像', tags: ['测试'], tasks: ['校验'] }) });
       console.log(JSON.stringify({ url: studio.url }));
@@ -66,6 +66,10 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
                     sheet.locator('textarea[name="prompt"]').fill("检查资料并交回结果")
                     sheet.get_by_role("button", name="保存流程", exact=True).click()
                     expect(sheet).not_to_be_visible()
+                    project_details = page.get_by_role("dialog", name="弹窗验收项目", exact=True)
+                    expect(project_details.get_by_text("默认流程、核查", exact=True)).to_be_visible()
+                    page.keyboard.press("Escape")
+                    expect(project_details).not_to_be_visible()
 
                     # Rename flow rule in Settings -> Rules
                     page.locator('#nav [data-view="settings"]').click()

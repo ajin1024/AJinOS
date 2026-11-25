@@ -1,4 +1,5 @@
 import { workflowFor, savedWorkflow } from "./task-workflow.mjs";
+import { EFFORT_NAMES } from "./executor-presets.mjs";
 import { businessActivity } from "./task-scope.mjs";
 import { taskRecord } from "./task-record.mjs";
 import { workbenchModel, FlowTransitions, duration } from "./workbench-state.mjs";
@@ -274,7 +275,7 @@ export class Workbench {
           `plan:${p.id}`,
           p.name,
           "model",
-          `<small>${esc(p.model)}${profileHint}</small>${counts(p)}`,
+          `<small>${esc(p.model)}${p.effort ? " · " + esc(EFFORT_NAMES[p.effort] || p.effort) : ""}${profileHint}</small>${counts(p)}`,
           p.id,
         );
       })
@@ -304,7 +305,7 @@ export class Workbench {
     <section class="fc-zone fc-messages" data-region="messages"><h2>消息接收${manage("connections", "消息接收")}</h2>${this.nodeHTML("entry", channel, "chat", `<small><i class="fc-dot ${online ? "online" : ""}"></i>${online ? "已连接" : m.connected ? "在线状态未确认" : "离线快照"}</small>`)}</section>
     <section class="fc-zone fc-gateway" data-region="gateway"><h2>总管与识别网关${manage("gateway", "项目网关")}</h2>${this.nodeHTML("gateway", `识别任务归属 · ${gwLabel}`, "gateway", `<small>${m.gateway ? `处理中 ${m.gateway.processing} · 待确认 ${m.gateway.waiting}` : "状态未上报"}${chief.activePlans || chief.draftPlans ? ` · 计划 ${chief.activePlans}/${chief.draftPlans}` : ""}</small>`)}<div class="fc-queue-items" style="margin-top:6px"><button data-wb="memory-settings" title="管理长期记忆档案"><i></i><span>长期记忆：生效 ${mem.active}${mem.draft ? ` · 草案 ${mem.draft}` : ""}</span></button><button data-wb="chief-view" title="打开总管统筹（全局简报与多工单计划）"><i></i><span>总管统筹：进行中 ${chief.activePlans}${chief.draftPlans ? ` · 草案 ${chief.draftPlans}` : ""}</span></button></div></section>
     <section class="fc-zone fc-projects" data-region="projects"><h2>项目 <span>${m.projects.length}</span>${manage("projects", "项目")}</h2><div class="fc-project-list">${projects || this.nodeHTML("empty-project", "登记业务项目", "stack", "<small>添加真实工作目录</small>")}</div></section>
-    <section class="fc-zone fc-models" data-region="models"><h2>模型执行器${manage("agents", "模型执行器", "查看")}</h2><div class="fc-model-list">${modelNodes}</div></section>
+    <section class="fc-zone fc-models" data-region="models"><h2>模型执行器${manage("agents", "模型执行器")}</h2><div class="fc-model-list">${modelNodes}</div></section>
     <section class="fc-zone fc-queue" data-region="queue"><h2>等待领取</h2>${this.nodeHTML("queue", m.queued.length ? `${m.queued.length} 个任务排队` : "当前没有排队", "queue", `<small>${m.queued.length ? esc(m.queued[0].waitReason) : "有任务时自动领取"}</small>`, "queue")}<div class="fc-queue-items">${m.queued
       .slice(0, 3)
       .map(

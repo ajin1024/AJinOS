@@ -1,35 +1,16 @@
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { typeMatches } from "../kernel/rules.ts";
 import { parseRules } from "../protocol/rules.ts";
 import { flowsFor, flowType, buildExecutionRoutes, syncOpenSourceIssueRoutes } from "./src/gateway-config.mjs";
+import { isImportedExecutor } from "./src/executor-presets.mjs";
 
 import { withStudioDefaults, assignIslandStyles, ISLAND_STYLES } from "./src/island-presets.mjs";
 
-const here = import.meta.dirname;
-export function createDefaults(home, node) {
-  const projects = [
-    {
-      id: "orders",
-      name: "订单服务 · 演示",
-      aliases: ["订单", "支付", "履约"],
-      description: "演示订单问题的排查、人工决定和复查。",
-      cwd: path.resolve(home, "workspaces/orders"),
-      rule: "订单问题处理",
-      color: "#7dd3fc",
-    },
-    {
-      id: "content",
-      name: "内容工坊 · 演示",
-      aliases: ["素材", "视频", "内容工坊"],
-      description: "演示素材处理任务，可同时观察不同项目的执行状态。",
-      cwd: path.resolve(home, "workspaces/content"),
-      rule: "内容任务处理",
-      color: "#c4b5fd",
-    },
-  ];
-  return withStudioDefaults({
+export function createDefaults(home, { includeAutoloop = true } = {}) {
+  const config = {
     version: 1,
-    projects,
+    projects: [],
     runtime: { capacity: 2 },
     rules: {
       timezone: "Asia/Shanghai",
@@ -38,34 +19,39 @@ export function createDefaults(home, node) {
       channels: {},
       elsewhere: [],
       agents: {
-        "demo-analysis": {
-          name: "分析执行器 · 演示",
-          worker: "studio-local",
-          use: "command",
-          access: "read",
-          command: [node, path.join(here, "demo-agent.mjs")],
-        },
-        "demo-review": {
-          name: "复查执行器 · 演示",
-          worker: "studio-local",
-          use: "command",
-          access: "read",
-          command: [node, path.join(here, "demo-agent.mjs")],
-        },
         codex: { name: "Codex · 本机", worker: "studio-local", use: "codex", access: "edit", effort: "high" },
       },
-      rules: projects.map((p, i) => ({
-        name: p.rule,
-        when: { source: "local", types: [`project.${p.id}.task`] },
-        to: i ? "demo-review" : "demo-analysis",
-        cwd: p.cwd,
-        prompt: "根据本轮资料处理任务，保留已完成步骤，需要决定时交回 ask。",
-        parallel: 1,
-        resume: true,
-        tell: "needed",
-      })),
+      rules: [],
     },
-  });
+  };
+  if (includeAutoloop) {
+    const project = {
+      id: "autoloop",
+      service: "autoloop",
+      name: "AJinOS",
+      aliases: ["阿锦 Auto", "Autoloop Studio", "配置本软件"],
+      description: "协助配置 AJinOS 的项目、规则、执行器、网关和运行设置。",
+      cwd: path.join(home, "workspaces", "autoloop"),
+      rule: "AJinOS 配置助手",
+      color: "#438ed8",
+      islandStyle: "lighthouse",
+    };
+    config.defaultProject = project.id;
+    config.projects.push(project);
+    config.rules.rules.push({
+      name: project.rule,
+      when: { source: "local", types: ["project.autoloop.task"] },
+      to: "codex",
+      cwd: project.cwd,
+      access: "read",
+      prompt:
+        "协助本人配置已安装的 AJinOS。用 autoloop_studio MCP 读取配置和当前版本，先校验，再把拟议变更提交为配置建议。告诉本人在「系统配置 → 高级 JSON 与版本」查看差异并应用。实际应用前如实说明配置尚未生效。需要凭据或启动引擎时，指引本人在对应的页面操作。",
+      parallel: 1,
+      resume: true,
+      tell: "needed",
+    });
+  }
+  return withStudioDefaults(config);
 }
 
 export function validateWorkspace(given) {
@@ -75,7 +61,7 @@ export function validateWorkspace(given) {
   buildExecutionRoutes(config, (value) => createHash("sha256").update(value).digest("hex").slice(0, 24));
   syncOpenSourceIssueRoutes(config, {
     node: process.execPath,
-    watcherScript: path.resolve(here, "../examples/watch-github-issues.mjs"),
+    watcherScript: path.resolve(import.meta.dirname, "../examples/watch-github-issues.mjs"),
   });
   if (!Number.isInteger(config.runtime?.capacity) || config.runtime.capacity < 1 || config.runtime.capacity > 64)
     throw new Error("Worker 容量需要是 1 到 64 的整数");
@@ -233,22 +219,15 @@ export function validateWorkspace(given) {
       const routes = [
         { type: flowType(p, flow), rule: flow.rule },
         ...Object.values(config.executionRoutes?.[`${p.id}/${flow.id}`] || {}),
+        ...(flow.id === "default"
+          ? Object.values(config.agentRoutes?.[p.id] || {}).filter(
+              (route) => route.auto && isImportedExecutor(route.agent),
+            )
+          : []),
       ];
       for (const route of routes) {
-        const type = route.type;
         const matching = config.rules.rules.filter(
-          (r) =>
-            r.when.source === "local" &&
-            r.when.types?.some((pattern) =>
-              new RegExp(
-                "^" +
-                  pattern
-                    .split("*")
-                    .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-                    .join(".*") +
-                  "$",
-              ).test(type),
-            ),
+          (r) => r.when.source === "local" && r.when.types && typeMatches(r.when.types, route.type),
         );
         if (matching.length !== 1 || matching[0].name !== route.rule)
           throw new Error("项目流程事件必须只匹配自己的规则，不能重复派发");

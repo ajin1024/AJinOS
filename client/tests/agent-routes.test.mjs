@@ -6,15 +6,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { createDefaults, eventFor, validateWorkspace } from "../config.mjs";
+import { eventFor, validateWorkspace } from "../config.mjs";
+import { createDemoWorkspace } from "./studio-fixtures.mjs";
 import { Gateway } from "../gateway.mjs";
-import { startStudio } from "../server.mjs";
+import { startDemoStudio as startStudio } from "./studio-fixtures.mjs";
 import { projectRuleNames } from "../src/gateway-config.mjs";
 import { generatedOwner } from "../src/studio-helpers.mjs";
 import { buildHandoffRequest, executorChoicesFor } from "../src/tasks/task-handoff.mjs";
 
 function makeConfigWithAgy() {
-  const config = createDefaults("C:/workspace/studio", process.execPath);
+  const config = createDemoWorkspace("C:/workspace/studio");
   config.rules.agents.claude = {
     name: "Claude Code · 本机",
     worker: "studio-local",

@@ -73,8 +73,8 @@ export function NewTaskModal({
   const executorChoices = executorChoicesFor(config, project);
   const availableFlows = flowChoices.filter((f) => f.id !== "default");
   const defaultFlowChoice = flowChoices.find((f) => f.id === "default");
-  const showPrimaryExecutor = executorChoices.length > 1;
-  const showPrimaryFlow = !showPrimaryExecutor && availableFlows.length > 0;
+  const showPrimaryExecutor = executorChoices.length > 0;
+  const showPrimaryFlow = availableFlows.length > 0 && executorChoices.length < 2 && !executor;
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -180,34 +180,47 @@ export function NewTaskModal({
         </label>
 
         <label className="tc-field">
-          <span>目标项目</span>
-          <Select
+          <span id="new-task-project-label">目标项目</span>
+          <select
+            name="project"
             value={project}
-            onChange={(value) => {
-              setProject(String(value ?? ""));
+            onChange={(e) => {
+              setProject(e.target.value);
               setFlow("");
               setExecutor("");
             }}
-            optionList={[
-              { value: "", label: "自动识别项目" },
-              ...businessProjects(config).map((p) => ({ value: p.id, label: p.name })),
-            ]}
-            style={{ width: "100%" }}
-          />
+          >
+            <option value="">自动识别项目</option>
+            {businessProjects(config).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
         </label>
 
         {showPrimaryExecutor && (
           <label className="tc-field">
             <span>执行器 / 模型</span>
-            <Select
+            <select
+              name="executor"
               value={executor}
-              onChange={(value) => setExecutor(String(value ?? ""))}
-              optionList={[
-                { value: "", label: `默认（${defaultFlowChoice?.agentName || "按项目规则"}）` },
-                ...executorChoices.map((ex) => ({ value: ex.id, label: ex.label })),
-              ]}
-              style={{ width: "100%" }}
-            />
+              onChange={(e) => {
+                const selected = e.target.value;
+                setExecutor(selected);
+                if (selected) {
+                  setFlow("");
+                  setComplexity("");
+                }
+              }}
+            >
+              <option value="">默认（{defaultFlowChoice?.agentName || "按项目规则"}）</option>
+              {executorChoices.map((ex) => (
+                <option key={ex.id} value={ex.id}>
+                  {ex.label}
+                </option>
+              ))}
+            </select>
           </label>
         )}
 
@@ -269,7 +282,7 @@ export function NewTaskModal({
               />
             </label>
 
-            {!showPrimaryFlow && (
+            {!showPrimaryFlow && !executor && (
               <label className="tc-field">
                 <span>处理流程</span>
                 <Select
@@ -284,19 +297,16 @@ export function NewTaskModal({
               </label>
             )}
 
-            <label className="tc-field">
-              <span>任务等级</span>
-              <Select
-                value={complexity}
-                onChange={(value) => setComplexity(String(value ?? ""))}
-                optionList={[
-                  { value: "", label: "自动判断 / 沿用话题" },
-                  { value: "simple", label: `简单处理（${tierLabel("simple")}）` },
-                  { value: "complex", label: `复杂处理（${tierLabel("complex")}）` },
-                ]}
-                style={{ width: "100%" }}
-              />
-            </label>
+            {!executor && (
+              <label className="tc-field">
+                <span>任务等级</span>
+                <select name="complexity" value={complexity} onChange={(e) => setComplexity(e.target.value)}>
+                  <option value="">自动判断 / 沿用话题</option>
+                  <option value="simple">简单处理（{tierLabel("simple")}）</option>
+                  <option value="complex">复杂处理（{tierLabel("complex")}）</option>
+                </select>
+              </label>
+            )}
 
             <label className="tc-check">
               <input

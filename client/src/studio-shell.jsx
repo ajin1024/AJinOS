@@ -105,6 +105,7 @@ function StudioShell({
   toast,
   onNavigate,
   onSaveConfig,
+  onImportExecutor,
   onSaveProject,
   onAnalyzeProject,
   onEngineControl,
@@ -575,6 +576,7 @@ function StudioShell({
               api={api}
               toast={toast}
               onSaveConfig={onSaveConfig}
+              onImportExecutor={onImportExecutor}
               onSaveProject={onSaveProject}
               onEngineControl={onEngineControl}
               onRestartRequired={onRestartRequired}

@@ -41,7 +41,8 @@ def check_install_slot():
                     name = winreg.QueryValueEx(entry, "DisplayName")[0]
                 except FileNotFoundError:
                     continue
-                if name in ("Autoloop Studio", "阿锦 Auto", "AJinOS") or name.startswith(("Autoloop Studio ", "阿锦 Auto ", "AJinOS ")):
+                names = ("AJinOS", "Autoloop Studio", "阿锦 Auto")
+                if name in names or name.startswith(tuple(item + " " for item in names)):
                     raise RuntimeError("Use a Windows account without an existing AJinOS installation")
 
 
@@ -100,6 +101,7 @@ with tempfile.TemporaryDirectory(prefix="studio-installed-e2e-") as directory:
                     page.wait_for_url(origin + "/", timeout=30000)
                     expect(page.locator(".fc-canvas")).to_be_attached()
                     expect(page.locator("html")).to_be_visible()
+                    expect(page).to_have_title("AJinOS")
 
                     def state():
                         response = page.request.get(origin + "/api/state")
@@ -110,6 +112,16 @@ with tempfile.TemporaryDirectory(prefix="studio-installed-e2e-") as directory:
                     engine = page.request.get(origin + "/api/engine").json()
                     assert engine["node"] == bundled_version.split()[1]
                     assert offline["enginePid"] is None
+                    config = page.request.get(origin + "/api/config").json()["value"]
+                    assert config["defaultProject"] == "autoloop"
+                    assert [(item["id"], item["name"]) for item in config["projects"]] == [("autoloop", "AJinOS")]
+                    mcp = subprocess.run(
+                        [str(bundled), str(install / "resources/app/client/studio-mcp.mjs"), "--project", str(home)],
+                        input='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"studio_overview"}}\n',
+                        text=True, capture_output=True, check=True, timeout=15, env=env,
+                    )
+                    overview = json.loads(json.loads(mcp.stdout)["result"]["content"][0]["text"])
+                    assert overview["defaultProject"] == "autoloop"
                     page.locator("#engine-power").click()
                     initial = wait_for(lambda: (snapshot := state())["connected"] and snapshot)
                     engine = page.request.get(origin + "/api/engine").json()
@@ -129,12 +141,6 @@ with tempfile.TemporaryDirectory(prefix="studio-installed-e2e-") as directory:
                     resumed = wait_for(lambda: (snapshot := state())["connected"] and snapshot)
                     assert resumed["enginePid"] != initial["enginePid"]
 
-                    demo = page.request.post(
-                        origin + "/api/messages", headers={"x-studio-action": "1"},
-                        data={"id": "installer-smoke", "text": "直接完成", "project": "orders", "requirementsConfirmed": True},
-                    )
-                    assert demo.ok, demo.text()
-                    wait_for(lambda: any(run["state"] == "done" for run in (state()["state"] or {}).get("runs", [])))
                     hub = json.loads((home / "config.json").read_text(encoding="utf-8"))["url"]
                 finally:
                     browser.close()
@@ -143,7 +149,7 @@ with tempfile.TemporaryDirectory(prefix="studio-installed-e2e-") as directory:
             assert process.wait(timeout=20) == 0
             with socket.socket() as probe:
                 assert probe.connect_ex(("127.0.0.1", int(hub.rsplit(":", 1)[1]))) != 0
-            print("PASS: Windows x64 installer, bundled Node, engine stop/start, demo task and shutdown", flush=True)
+            print("PASS: Windows x64 installer, AJinOS default project, bundled MCP, engine stop/start and shutdown", flush=True)
         finally:
             if process.poll() is None:
                 subprocess.run(["taskkill.exe", "/PID", str(process.pid), "/T", "/F"], capture_output=True)

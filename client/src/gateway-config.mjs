@@ -1,3 +1,5 @@
+import { isImportedExecutor } from "./executor-presets.mjs";
+
 export const EXECUTION_MODELS = { simple: "", complex: "" };
 export const OPEN_SOURCE_POLL_MINUTES = [5, 10, 15, 30, 60];
 const VALID_POLL_MINUTES = new Set([1, 5, 10, 15, 30, 60]);
@@ -35,7 +37,10 @@ export function normalizeGitHubRepo(raw) {
   return slug;
 }
 
-export const businessProjects = (config) => (config.projects || []).filter((p) => p.role !== "integration");
+export const businessProjects = (config) =>
+  (config.projects || [])
+    .filter((p) => p.role !== "integration")
+    .sort((a, b) => Number(b.id === config.defaultProject) - Number(a.id === config.defaultProject));
 export const flowsFor = (p) => [
   { id: "default", name: "默认流程", description: p.description || "", rule: p.rule },
   ...(p.flows || []),
@@ -66,6 +71,7 @@ export function projectDisplayRules(config, project) {
 }
 
 const DIRECT_EXECUTOR_USES = new Set(["claude", "codex", "acp", "dsh"]);
+const ACCESS_LEVELS = ["read", "edit", "full"];
 
 // Model selection becomes ordinary trusted rules; message data never supplies an executable configuration.
 export function buildExecutionRoutes(config, identity = (value) => value) {
@@ -104,7 +110,7 @@ export function buildExecutionRoutes(config, identity = (value) => value) {
         continue;
       }
       const agent = config.rules.agents[base.to];
-      if (agent?.use !== "codex") continue;
+      if (agent?.use !== "codex" || isImportedExecutor(base.to)) continue;
       const tiers = {};
       for (const [tier, defaultModel] of Object.entries(EXECUTION_MODELS)) {
         const rule = `studio:${p.id}:${flow.id}:${identity(JSON.stringify([base.name, base.cwd]))}:${tier}`,
@@ -143,16 +149,22 @@ export function buildExecutionRoutes(config, identity = (value) => value) {
     if (!base) continue;
     const routes = {};
     const projectFlows = flowsFor(p);
-    for (const [agentId] of directAgents) {
-      if (base.to === agentId) {
+    for (const [agentId, agent] of directAgents) {
+      const imported = isImportedExecutor(agentId);
+      const expandsAccess = (rule) =>
+        ACCESS_LEVELS.indexOf(rule.access) > ACCESS_LEVELS.indexOf(agent.access || "edit");
+      if (!imported && base.to === agentId) {
         routes[agentId] = { agent: agentId, rule: base.name, type: flowType(p, projectFlows[0]), inherited: true };
         continue;
       }
-      const existingFlow = projectFlows.find((f) => {
-        if (f.id === "default") return false;
-        const r = config.rules.rules.find((item) => item.name === f.rule);
-        return r?.to === agentId;
-      });
+      // An imported executor's explicit route survives changes to a project's default executor.
+      const existingFlow =
+        !imported &&
+        projectFlows.find((f) => {
+          if (f.id === "default") return false;
+          const r = config.rules.rules.find((item) => item.name === f.rule);
+          return r?.to === agentId;
+        });
       if (existingFlow) {
         routes[agentId] = {
           agent: agentId,
@@ -167,13 +179,19 @@ export function buildExecutionRoutes(config, identity = (value) => value) {
       if (type.length > 64) continue;
       const rule = `studio-agent:${p.id}:${agentId}:${identity(JSON.stringify([base.name, base.cwd, agentId]))}`;
       if (config.rules.rules.some((r) => r.name === rule)) continue;
-      config.rules.rules.push({
+      const routeRule = {
         ...base,
         name: rule,
         to: agentId,
         group: base.group || base.name,
         when: { source: "local", types: [type] },
-      });
+      };
+      if (imported) {
+        delete routeRule.model;
+        delete routeRule.effort;
+        if (expandsAccess(routeRule)) delete routeRule.access;
+      }
+      config.rules.rules.push(routeRule);
       routes[agentId] = { agent: agentId, rule, type, auto: true };
     }
     if (Object.keys(routes).length) config.agentRoutes[p.id] = routes;

@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "nod
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { startStudio } from "../server.mjs";
+import { startDemoStudio as startStudio } from "./studio-fixtures.mjs";
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 test(

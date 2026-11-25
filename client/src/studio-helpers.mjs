@@ -1,4 +1,5 @@
 import { flowsFor } from "./gateway-config.mjs";
+import { isImportedExecutor } from "./executor-presets.mjs";
 
 export const SETTINGS_SECTIONS = [
   "gateway",
@@ -222,7 +223,7 @@ export function executorFamily(use) {
   return use;
 }
 
-// Collapse wrapper/permission/tier profiles sharing the same engine family, model and worker into one model executor.
+// Legacy scenario profiles share a node; imports retain the identity the owner selected.
 export function groupModelExecutors(agents = {}, config = null) {
   const groups = new Map();
   const agentToPlan = new Map();
@@ -237,7 +238,7 @@ export function groupModelExecutors(agents = {}, config = null) {
   });
   for (const [id, agent] of ranked) {
     const family = executorFamily(agent.use);
-    const key = `${family}::${agent.model || ""}::${agent.worker || ""}`;
+    const key = isImportedExecutor(id) ? id : `${family}::${agent.model || ""}::${agent.worker || ""}`;
     let group = groups.get(key);
     if (!group) {
       group = {
@@ -245,6 +246,7 @@ export function groupModelExecutors(agents = {}, config = null) {
         family,
         name: agent.name || id,
         model: agent.model || "CLI 默认模型",
+        effort: agent.effort,
         worker: agent.worker || "",
         use: agent.use,
         access: agent.access || "edit",

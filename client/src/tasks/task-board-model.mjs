@@ -7,7 +7,7 @@ export const BOARD_COLUMNS = [
   { id: "review", label: "待审核", icon: "alert", tone: "red", actionLabel: "开始处理" },
   { id: "acceptance", label: "待验收", icon: "check-outline", tone: "blue" },
   { id: "done", label: "已完成", icon: "check-filled", tone: "green" },
-  { id: "cancelled", label: "已取消", icon: "cancel", tone: "muted", compact: true },
+  { id: "cancelled", label: "已取消", icon: "cancel", tone: "muted" },
 ];
 
 export function boardColumnFor(entry) {

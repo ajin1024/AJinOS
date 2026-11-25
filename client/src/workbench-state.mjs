@@ -59,7 +59,6 @@ export function workbenchModel(config, snapshot) {
       const ruleObj = (config.rules?.rules || []).find((r) => r.name === run.rule);
       const agent = agents[run.agent] || {},
         model = job ? job.model : ruleObj?.model || agent.model;
-      // Profiles sharing the same engine family, model and worker map to one workbench executor node.
       const plan = agentToPlan.get(run.agent) || "other";
       const worker = job?.worker || agent.worker || null;
       const path = [

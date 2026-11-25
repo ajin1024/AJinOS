@@ -17,7 +17,7 @@
 
 **中台没有界面。** 你和它打交道靠通道和命令行。想要一个页面或大屏，用「本人」一节的几个请求自己做，它和命令行是同等的客户端。
 
-Studio 客户端的项目预分析与首次会话网关见 [架构分层图](studio-architecture.md)。用户首条消息作为分类资料输入独立的只读识别渠道；只有登记范围内的选择可转换为事件，实际执行配置仍由可信规则决定。业务事件正文照旧只进入资料文件，不进入执行提示词；本功能不改变 `/v1` 协议。 Studio 模型配置页面只读；可选的 `gateway.blockedTerms` 在客户端消息入口做文本拦截，不影响外部来源、通道回答或内核协议。
+Studio 客户端的项目预分析与首次会话网关见 [架构分层图](studio-architecture.md)。用户首条消息作为分类资料输入独立的 Terra 识别渠道；只有登记范围内的选择可转换为事件，实际执行配置仍由可信规则决定。Studio 中本人手动导入的每套执行器各自登记为独立 Agent，通过普通规则派发。业务事件正文照旧只进入资料文件，不进入执行提示词；本功能不改变 `/v1` 协议。可选的 `gateway.blockedTerms` 在客户端消息入口做文本拦截，不影响外部来源、通道回答或内核协议。
 
 ## 六个词
 
@@ -506,6 +506,8 @@ Agent 插件可以选择提供 `conversation(line)`，只从一行输出中返�
 权限只选一次性的选项：`read` 允许结构化的读和搜索，`edit` 再允许工作目录内的编辑（核对符号链接，经过找不到目标的链接算在目录外），`full` 允许其他操作。权限请求只带工具调用编号时，按这次调用之前说过的种类和路径判断，请求自己带的字段优先。未提供相应选项就取消。权限依赖 Agent 遵守 ACP，不提供额外的系统隔离；规范允许 Agent 不询问就执行，这种操作 `access` 拦不住，要用 Agent 自己的模式限制。官方 Codex 适配器给的拒绝选项（`reject_once`）只有 `cancel`，选了它整轮以 `stopReason: cancelled` 结束，算没跑成，由中台重派；`read`、`edit` 档下要跑命令的请求就是这样回来的，所以 Agent 非跑命令不可时，给 `full` 或用它自己的模式。Agent 的会话信息列出可选模型时，规则的 `model` 用 `session/set_model` 选中，没有列出就沿用 Agent 自己的；`effort` 不生效，档位通常写在模型编号里。`access` 映射 Agent 给出的模式：`read` 选 `plan`、`edit` 选 `accept-edits`、`full` 选 `auto`，没有对应模式就沿用默认。核对依据：[初始化](https://agentclientprotocol.com/protocol/v1/initialization)、[会话](https://agentclientprotocol.com/protocol/v1/session-setup)、[工具权限](https://agentclientprotocol.com/protocol/v1/tool-calls)。
 
 `agent-autoloop mcp` 提供 stdio MCP，固定支持 [2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) 版，不支持 2026-07-28 的无握手协议。工具为 `status`、`why`、`answer`、`resolve`、`stop`、`emit`、`tell`；按本机已有的本人或来源密钥展示工具。它调用同样的 HTTP 接口，不直接改数据库；密钥留在本机 `config.json`。MCP 客户端把程序设为 `node`，参数设为引擎的绝对路径 `bin/agent-autoloop.ts` 和 `mcp`，环境里指定 `AGENT_AUTOLOOP_HOME`。标准输出只写 JSON-RPC。消息只按换行分帧；每个工具调用各自回复，慢调用不挡 `ping`。它不区分调用方，都按本人记录（`answer` 记成本人，`emit` 不带层数），不要配进接单程序启动的 CLI 的用户级配置，否则一轮能自己回答自己的卡片。
+
+可选的 AJinOS 客户端使用独立的本地配置 MCP，供同名默认项目提出配置建议和本人审核。它沿用客户端的工作空间修订与保存逻辑。见 [AJinOS 配置接口](studio-architecture.md#状态接口与兼容)。
 
 ### 通道模板与命令行示例
 

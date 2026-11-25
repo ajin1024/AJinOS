@@ -1,11 +1,16 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, Modal, Select, Tag } from "@douyinfe/semi-ui";
 import {
+  IconArrowUpRight,
   IconChevronDown,
   IconChevronLeft,
   IconClose,
   IconComment,
+  IconCommentStroked,
+  IconFlagStroked,
+  IconFolderStroked,
   IconImage,
+  IconListView,
   IconLoading,
   IconPlus,
   IconSearch,
@@ -14,20 +19,16 @@ import {
 import { businessProjects } from "../gateway-config.mjs";
 import { executorChoicesFor, flowChoicesFor } from "../tasks/task-handoff.mjs";
 import { CardReplyForm } from "../tasks/card-reply-form.jsx";
-import {
-  buildConversations,
-  countActionableConversations,
-  filterConversations,
-} from "./messages-model.mjs";
+import { buildConversations, countActionableConversations, filterConversations } from "./messages-model.mjs";
 
 const MAX_ATTACHMENTS = 8;
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_TEXT = 4000;
 const STATUS_COLORS = {
-  needs_decision: "amber",
-  needs_acceptance: "amber",
-  needs_confirmation: "amber",
-  needs_project: "amber",
+  needs_decision: "attention",
+  needs_acceptance: "attention",
+  needs_confirmation: "attention",
+  needs_project: "attention",
   running: "green",
   blocked: "red",
   failed: "red",
@@ -40,11 +41,7 @@ const FILTERS = [
   ["running", "进行中"],
   ["done", "已结束"],
 ];
-const EXAMPLES = [
-  "把订单列表加上批量发货",
-  "检查一下今天线上有没有报错",
-  "整理一份本周项目进展",
-];
+const EXAMPLES = ["把订单列表加上批量发货", "检查一下今天线上有没有报错", "整理一份本周项目进展"];
 const RUN_STATE_LABELS = {
   queued: "排队中",
   claimed: "执行中",
@@ -54,25 +51,57 @@ const RUN_STATE_LABELS = {
   cancelled: "已停止",
 };
 const RUN_STATE_COLORS = {
-  queued: "amber",
+  queued: "attention",
   claimed: "green",
-  unknown: "amber",
+  unknown: "attention",
   done: "green",
   nothing: "grey",
   cancelled: "red",
 };
 
-function timeLabel(value) {
-  if (!value) return "";
+const clock = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+const monthDay = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" });
+const fullDay = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "numeric", day: "numeric" });
+
+function dateOf(value) {
+  if (!value) return null;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function groupByDay(items, timeOf) {
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const todayKey = now.toDateString();
+  const yesterdayKey = yesterday.toDateString();
+  const groups = [];
+  for (const item of items) {
+    const date = dateOf(timeOf(item));
+    const key = date?.toDateString() || "";
+    const previous = groups.at(-1);
+    if (previous?.key === key) {
+      previous.items.push(item);
+      continue;
+    }
+    let label = "";
+    if (key === todayKey) label = "今天";
+    else if (key === yesterdayKey) label = "昨天";
+    else if (date) label = (date.getFullYear() === now.getFullYear() ? monthDay : fullDay).format(date);
+    groups.push({ key, label, items: [item] });
+  }
+  return groups;
+}
+
+function MessageTime({ value, showDay = false }) {
+  const date = dateOf(value);
+  if (!date) return null;
+  return (
+    <time dateTime={date.toISOString()} title={date.toLocaleString("zh-CN")}>
+      {showDay && `${fullDay.format(date)} `}
+      {clock.format(date)}
+    </time>
+  );
 }
 
 function projectName(config, id) {
@@ -97,13 +126,8 @@ function readFileBase64(file) {
   });
 }
 
-function StatusTag({ conversation }) {
-  if (!conversation) return null;
-  return (
-    <Tag size="small" shape="circle" color={STATUS_COLORS[conversation.status] || "grey"}>
-      {conversation.statusLabel}
-    </Tag>
-  );
+function StatusTag({ label, color = "grey" }) {
+  return <span className={`mc-status mc-status-${color}`}>{label}</span>;
 }
 
 function AttachmentGrid({ attachments, onPreview }) {
@@ -125,24 +149,125 @@ function AttachmentGrid({ attachments, onPreview }) {
   );
 }
 
-function RunBubble({ run, config, onInspectRun }) {
-  if (!run) return null;
-  const executor = config?.rules?.agents?.[run.agent]?.name || run.agent || "执行器";
+function executorName(config, run) {
+  return config?.rules?.agents?.[run.agent]?.name || run.agent || "执行器";
+}
+
+function RunBubble({ run, config, onInspectRun, children }) {
   const detail = run.summary || run.error || run.events?.at(-1)?.summary || "";
   return (
-    <article className="mc-row mc-row-left">
-      <button type="button" className="mc-bubble mc-bubble-left mc-run" onClick={() => onInspectRun(run.id)}>
-        <div className="mc-run-head">
-          <strong>轮次 #{run.id}</strong>
-          <Tag size="small" shape="circle" color={RUN_STATE_COLORS[run.state] || "grey"}>
-            {RUN_STATE_LABELS[run.state] || run.state || "未知"}
-          </Tag>
-          <small>{executor}</small>
+    <article className="mc-row mc-row-left mc-run-row">
+      <span className="mc-run-avatar" aria-hidden="true">
+        ∞
+      </span>
+      <div className="mc-run-content">
+        <div className="mc-run-byline">
+          <strong>{executorName(config, run)}</strong>
+          <MessageTime value={run.finishedAt || run.claimedAt || run.createdAt} />
         </div>
-        {detail && <p className="mc-run-summary">{detail}</p>}
-        <span className="mc-bubble-link">查看执行详情 →</span>
-      </button>
+        <div className="mc-run-card">
+          <button type="button" className="mc-run" onClick={() => onInspectRun(run.id)}>
+            <span className="mc-run-head">
+              <strong>轮次 #{run.id}</strong>
+              <StatusTag
+                label={RUN_STATE_LABELS[run.state] || run.state || "未知"}
+                color={RUN_STATE_COLORS[run.state]}
+              />
+            </span>
+            {detail && <span className="mc-run-summary">{detail}</span>}
+            <span className="mc-bubble-link">
+              查看执行详情 <IconArrowUpRight size="small" aria-hidden="true" />
+            </span>
+          </button>
+          {children}
+        </div>
+      </div>
     </article>
+  );
+}
+
+function AcceptanceActions({ runId, onAction }) {
+  return (
+    <div className="mc-acceptance">
+      <p>
+        <IconFlagStroked size="small" aria-hidden="true" />
+        请验收这一轮的结果
+      </p>
+      <div className="mc-actions-row">
+        <Button size="small" theme="solid" onClick={() => onAction(runId, "accept")}>
+          验收通过
+        </Button>
+        <Button size="small" theme="outline" onClick={() => onAction(runId, "rework")}>
+          补充返工
+        </Button>
+        <Button size="small" className="mc-close-task" onClick={() => onAction(runId, "close")}>
+          关闭任务
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ExecutionInfo({ run, conversation, config, onInspectRun }) {
+  return (
+    <aside className="mc-execution" aria-label="执行信息">
+      <h2>
+        <IconListView size="small" aria-hidden="true" />
+        执行信息
+      </h2>
+      <dl>
+        <div>
+          <dt>执行者</dt>
+          <dd>{executorName(config, run)}</dd>
+        </div>
+        <div>
+          <dt>执行轮次</dt>
+          <dd>#{run.id}</dd>
+        </div>
+        <div>
+          <dt>最后更新</dt>
+          <dd>
+            <MessageTime value={conversation.updatedAt} showDay />
+          </dd>
+        </div>
+      </dl>
+      <Button
+        size="small"
+        theme="outline"
+        icon={<IconArrowUpRight size="small" aria-hidden="true" />}
+        iconPosition="right"
+        onClick={() => onInspectRun(run.id)}
+      >
+        查看执行详情
+      </Button>
+    </aside>
+  );
+}
+
+function ConversationRow({ conversation, active, hasDraft, onOpen }) {
+  const Icon = conversation.kind === "topic" ? IconFolderStroked : IconCommentStroked;
+  return (
+    <button
+      type="button"
+      className={`mc-conversation ${active ? "active" : ""}`}
+      aria-current={active || undefined}
+      onClick={onOpen}
+    >
+      <span className="mc-conversation-icon">
+        <Icon size="small" aria-hidden="true" />
+      </span>
+      <span className="mc-conversation-copy">
+        <span className="mc-conversation-top">
+          <span className="mc-conversation-title">{conversation.title}</span>
+          <MessageTime value={conversation.updatedAt} />
+        </span>
+        <span className="mc-conversation-preview">{hasDraft && <strong className="mc-draft-label">草稿 · </strong>}{conversation.preview || "暂无内容"}</span>
+        <span className="mc-conversation-meta">
+          {conversation.projectName && <span className="mc-project-label">{conversation.projectName}</span>}
+          <StatusTag label={conversation.statusLabel} color={STATUS_COLORS[conversation.status]} />
+        </span>
+      </span>
+    </button>
   );
 }
 
@@ -512,8 +637,9 @@ function Composer({
       ) : (
         <div className="mc-composer-options">
           <label className="mc-option">
-            <span>目标项目</span>
+            <span id="mc-project-label">目标项目</span>
             <Select
+              aria-labelledby="mc-project-label"
               size="small"
               value={project}
               onChange={(value) => {
@@ -648,6 +774,7 @@ function Composer({
             onClick={() => fileInputRef.current?.click()}
           >
             <IconImage size="small" aria-hidden="true" />
+            图片
           </button>
           <input
             ref={fileInputRef}
@@ -663,7 +790,14 @@ function Composer({
           <span className="mc-composer-hint">Enter 发送 · Shift+Enter 换行 · 可粘贴或拖入截图</span>
           {textLength >= MAX_TEXT * 0.9 && <span className="mc-count">{textLength}/{MAX_TEXT}</span>}
         </div>
+        <span className="mc-composer-hint">Enter 发送 · Shift + Enter 换行</span>
+        {text && (
+          <span className="mc-count">
+            {text.length}/{MAX_TEXT}
+          </span>
+        )}
         <Button
+          size="small"
           theme="solid"
           icon={<IconSend size="small" aria-hidden="true" />}
           loading={busy}
@@ -741,6 +875,7 @@ export function MessageCenter({
         intakes: snapshot?.taskIntakes || [],
         runs: allRuns || [],
         cards: state?.cards || [],
+        tickets: state?.tickets || [],
         taskWorkflows: snapshot?.taskWorkflows || [],
       }),
     [
@@ -750,6 +885,7 @@ export function MessageCenter({
       snapshot?.taskIntakes,
       allRuns,
       state?.cards,
+      state?.tickets,
       snapshot?.taskWorkflows,
     ],
   );
@@ -761,6 +897,7 @@ export function MessageCenter({
 
   const activeId = route?.view === "messages" ? route.topic || null : null;
   const activeConversation = activeId ? conversations.find((item) => item.id === activeId) || null : null;
+  const latestRun = activeConversation?.latestRun;
   const messageBadge = countActionableConversations(conversations);
   const composerDraft = composerDrafts.get(activeId) || initialComposerDraft(activeConversation);
   const detachedDraft = activeId && !activeConversation && composerDrafts.has(activeId);
@@ -868,20 +1005,85 @@ export function MessageCenter({
     await onMessagesRefresh?.();
   }
 
+  function verification(runId) {
+    const report = localVerifyReports[runId] || snapshot?.taskVerifications?.[runId] || null;
+    return (
+      <div className="mc-acceptance" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+        {report && (
+          <div
+            style={{
+              padding: "8px 10px",
+              borderRadius: 8,
+              background: "var(--semi-color-fill-0)",
+              border: "1px solid var(--semi-color-border)",
+              fontSize: 12,
+              display: "grid",
+              gap: 4,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <strong>AI 校验</strong>
+                <Tag
+                  size="small"
+                  color={report.verdict === "pass" ? "green" : report.verdict === "fail" ? "red" : "amber"}
+                >
+                  {{ pass: "建议通过", warn: "有提醒项", fail: "发现问题" }[report.verdict] || report.verdict}
+                </Tag>
+                {report.mode === "auto" && <Tag size="small" color="grey">自动</Tag>}
+              </div>
+              <span className="sc-muted">
+                {report.executor}
+                {report.economyActive ? " · 省钱模式" : ""}
+                {report.degraded ? " · 已降级" : ""}
+              </span>
+            </div>
+            <div>{report.summary}</div>
+            {Array.isArray(report.findings) && report.findings.length > 0 && (
+              <div className="sc-muted">
+                {report.findings.map((f) => `• ${f.point}`).join("  ")}
+              </div>
+            )}
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <Button
+              size="small"
+              loading={verifyingRunId === runId}
+              onClick={() => handleRunVerify(runId)}
+            >
+              {report ? "重新校验" : "AI 校验"}
+            </Button>
+        </div>
+      </div>
+    );
+  }
+
   function renderItem(item) {
     if (item.type === "user_message") {
       return (
         <article className="mc-row mc-row-user" key={item.key}>
-          <div className="mc-bubble mc-bubble-user">
-            <p>{item.message.text}</p>
-            <AttachmentGrid attachments={item.message.attachments} onPreview={setLightbox} />
-            <time>{timeLabel(item.message.at)}</time>
+          <div className="mc-user-message">
+            <div className="mc-bubble mc-bubble-user">
+              <p>{item.message.text}</p>
+              <AttachmentGrid attachments={item.message.attachments} onPreview={setLightbox} />
+            </div>
+            <MessageTime value={item.message.at} />
           </div>
         </article>
       );
     }
     if (item.type === "run") {
-      return <RunBubble key={item.key} run={item.run} config={config} onInspectRun={onInspectRun} />;
+      return (
+        <RunBubble key={item.key} run={item.run} config={config} onInspectRun={onInspectRun}>
+          {item.run.id === latestRun?.id && activeConversation.status === "needs_acceptance" && (
+            <>
+              {verification(item.run.id)}
+              <AcceptanceActions runId={item.run.id} onAction={onWorkflowAction} />
+            </>
+          )}
+        </RunBubble>
+      );
     }
     if (item.type === "card") {
       return (
@@ -895,7 +1097,7 @@ export function MessageCenter({
               onDraftChange={onDraftChange}
               onSubmit={onCardSubmit}
             />
-            <time>{timeLabel(item.card.createdAt || item.card.at)}</time>
+            <MessageTime value={item.card.createdAt || item.card.at} />
           </div>
         </article>
       );
@@ -915,9 +1117,7 @@ export function MessageCenter({
     return null;
   }
 
-  const timelineEmpty = activeConversation
-    ? activeConversation.items.length === 0
-    : Boolean(activeId);
+  const timelineEmpty = activeConversation ? activeConversation.items.length === 0 : Boolean(activeId);
 
   return (
     <div className="mc-page" data-narrow-pane={showConversations ? "list" : "conversation"}>
@@ -925,7 +1125,7 @@ export function MessageCenter({
         <div className="mc-sidebar-head">
           <div className="mc-sidebar-title">
             <IconComment aria-hidden="true" />
-            <h2>消息</h2>
+            <h2>会话</h2>
             {messageBadge > 0 && <span className="mc-badge">{messageBadge}</span>}
           </div>
           <div className="mc-head-actions">
@@ -959,6 +1159,7 @@ export function MessageCenter({
               onClick={() => setFilter(value)}
             >
               {label}
+              {value === "actionable" && messageBadge > 0 && <span className="mc-badge">{messageBadge}</span>}
             </button>
           ))}
         </div>
@@ -983,28 +1184,22 @@ export function MessageCenter({
               {conversations.length === 0 ? "还没有对话，点「新对话」开始吧" : "没有符合条件的对话"}
             </div>
           )}
-          {filtered.map((conversation) => (
-              <button
-                key={conversation.id}
-                type="button"
-                className={`mc-conversation ${activeId === conversation.id ? "active" : ""}`}
-                aria-current={activeId === conversation.id ? "true" : undefined}
-                onClick={() => openConversation(conversation.id)}
-              >
-                <div className="mc-conversation-top">
-                  <span className="mc-conversation-title">{conversation.title}</span>
-                  <StatusTag conversation={conversation} />
-                </div>
-                <span className="mc-conversation-preview">
-                  {hasComposerDraft(composerDrafts.get(conversation.id)) && <strong className="mc-draft-label">草稿 · </strong>}
-                  {conversation.preview || "暂无内容"}
-                </span>
-                <span className="mc-conversation-meta">
-                  {conversation.projectName && <span className="mc-project-label">{conversation.projectName}</span>}
-                  <time>{timeLabel(conversation.updatedAt)}</time>
-                </span>
-              </button>
-          ))}
+          {(
+            groupByDay(filtered, (conversation) => conversation.updatedAt).map(({ key, label, items }) => (
+              <div className="mc-conversation-group" key={key}>
+                {label && <h3>{label}</h3>}
+                {items.map((conversation) => (
+                  <ConversationRow
+                    key={conversation.id}
+                    conversation={conversation}
+                    hasDraft={hasComposerDraft(composerDrafts.get(conversation.id))}
+                    active={activeId === conversation.id}
+                    onOpen={() => openConversation(conversation.id)}
+                  />
+                ))}
+              </div>
+            ))
+          )}
         </div>
       </aside>
 
@@ -1019,32 +1214,30 @@ export function MessageCenter({
           >
             对话列表
           </Button>
+          {activeConversation?.projectName && (
+            <p className="mc-head-project">
+              <IconFolderStroked size="small" aria-hidden="true" />
+              {activeConversation.projectName}
+            </p>
+          )}
           <div className="mc-head-title">
             <h1>{activeConversation?.title || (detachedDraft ? composerDraft.title : "新对话")}</h1>
-            <div className="mc-head-tags">
-              {activeConversation?.projectName && (
-                <Tag size="small" shape="circle">
-                  {activeConversation.projectName}
-                </Tag>
-              )}
-              <StatusTag conversation={activeConversation} />
-              {activeConversation?.latestRun && (
-                <span className="mc-head-rid">轮次 #{activeConversation.latestRun.id}</span>
-              )}
-            </div>
-          </div>
-          <div className="mc-head-actions">
-            {activeConversation?.latestRun && (
-              <Button
-                size="small"
-                onClick={() => onInspectRun(activeConversation.latestRun.id)}
-              >
-                查看执行详情
-              </Button>
+            {activeConversation && (
+              <StatusTag label={activeConversation.statusLabel} color={STATUS_COLORS[activeConversation.status]} />
             )}
           </div>
         </header>
 
+        {latestRun && (
+          <ExecutionInfo
+            run={latestRun}
+            conversation={activeConversation}
+            config={config}
+            onInspectRun={onInspectRun}
+          />
+        )}
+
+        <div className="mc-thread">
         <div className="mc-timeline-region">
           <div className="mc-timeline" ref={timelineRef} onScroll={rememberScroll} tabIndex={0} aria-label="对话记录">
             <div className="mc-timeline-content" ref={timelineContentRef}>
@@ -1078,7 +1271,12 @@ export function MessageCenter({
                 </div>
               )}
 
-              {activeConversation && activeConversation.items.map(renderItem)}
+              {activeConversation && groupByDay(activeConversation.items, (item) => item.at).map(({ key, label, items }) => (
+                <div className="mc-timeline-day" key={key}>
+                  {label && <div className="mc-date-line">{label}</div>}
+                  {items.map(renderItem)}
+                </div>
+              ))}
 
               {timelineEmpty && (
                 <div className="mc-empty-line">
@@ -1098,82 +1296,7 @@ export function MessageCenter({
           )}
         </div>
 
-        {activeConversation?.status === "needs_acceptance" && activeConversation.latestRun && (() => {
-          const runId = activeConversation.latestRun.id;
-          const report = localVerifyReports[runId] || snapshot?.taskVerifications?.[runId] || null;
-          return (
-            <div className="mc-acceptance" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
-              {report && (
-                <div
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: 8,
-                    background: "var(--semi-color-fill-0)",
-                    border: "1px solid var(--semi-color-border)",
-                    fontSize: 12,
-                    display: "grid",
-                    gap: 4,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <strong>AI 校验</strong>
-                      <Tag
-                        size="small"
-                        color={report.verdict === "pass" ? "green" : report.verdict === "fail" ? "red" : "amber"}
-                      >
-                        {{ pass: "建议通过", warn: "有提醒项", fail: "发现问题" }[report.verdict] || report.verdict}
-                      </Tag>
-                      {report.mode === "auto" && <Tag size="small" color="grey">自动</Tag>}
-                    </div>
-                    <span className="sc-muted">
-                      {report.executor}
-                      {report.economyActive ? " · 省钱模式" : ""}
-                      {report.degraded ? " · 已降级" : ""}
-                    </span>
-                  </div>
-                  <div>{report.summary}</div>
-                  {Array.isArray(report.findings) && report.findings.length > 0 && (
-                    <div className="sc-muted">
-                      {report.findings.map((f) => `• ${f.point}`).join("  ")}
-                    </div>
-                  )}
-                </div>
-              )}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <span>这一轮已经完成，请验收实际结果：</span>
-                <div className="mc-actions-row">
-                  <Button
-                    size="small"
-                    theme="solid"
-                    onClick={() => onWorkflowAction(runId, "accept")}
-                  >
-                    验收通过
-                  </Button>
-                  <Button
-                    size="small"
-                    loading={verifyingRunId === runId}
-                    onClick={() => handleRunVerify(runId)}
-                  >
-                    {report ? "重新校验" : "AI 校验"}
-                  </Button>
-                  <Button
-                    size="small"
-                    onClick={() => onWorkflowAction(runId, "rework")}
-                  >
-                    补充返工
-                  </Button>
-                  <Button
-                    size="small"
-                    onClick={() => onWorkflowAction(runId, "close")}
-                  >
-                    关闭任务
-                  </Button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
+
 
         <Composer
           key={activeId ?? ""}
@@ -1188,6 +1311,7 @@ export function MessageCenter({
           onNavigate={onNavigate}
           onMessagesRefresh={onMessagesRefresh}
         />
+        </div>
       </section>
 
       <Modal
@@ -1198,13 +1322,7 @@ export function MessageCenter({
         className="mc-lightbox-modal"
         closeOnEsc
       >
-        {lightbox && (
-          <img
-            className="mc-lightbox-image"
-            src={lightbox.url}
-            alt={lightbox.filename || "图片预览"}
-          />
-        )}
+        {lightbox && <img className="mc-lightbox-image" src={lightbox.url} alt={lightbox.filename || "图片预览"} />}
       </Modal>
     </div>
   );

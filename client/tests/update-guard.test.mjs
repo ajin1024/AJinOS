@@ -30,7 +30,7 @@ test("version switch requires an idle owned backend and locks out new writes", a
     const version = await fetch(studio.url + "/api/version", { headers: { cookie } });
     assert.equal(version.status, 200);
     assert.ok((await version.json()).current.commit);
-    const pending = fetch(studio.url + "/api/projects/orders/analyze", {
+    const pending = fetch(studio.url + "/api/projects/autoloop/analyze", {
       method: "POST",
       headers: { cookie, "x-studio-action": "1" },
     });

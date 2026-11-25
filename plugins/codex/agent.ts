@@ -1,6 +1,7 @@
 // Codex: the user's own, installed and signed in by them. A run is a `codex exec` in the background; its thread is kept
 // on disk, so a retry or an answer can go on in it, and the link opens it in the app.
 import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { commandLine, powershell, psQuote } from "../../host/command.ts";
 import { findProgram, tail, type Adapter } from "../../worker/agents.ts";
 
@@ -9,6 +10,16 @@ export const IN_THE_APP = [
   "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
   "/Applications/Codex.app/Contents/Resources/codex",
 ];
+
+function managedMcp(cwd: string) {
+  const value = process.env.AGENT_AUTOLOOP_CODEX_MCP;
+  if (!value) return [];
+  const server = JSON.parse(value) as { cwd: string; name: string; command: string; args: string[] };
+  if (path.relative(server.cwd, cwd)) return [];
+  const command = JSON.stringify(server.command);
+  const args = JSON.stringify(server.args);
+  return ["-c", `mcp_servers.${server.name}={command=${command},args=${args}}`];
+}
 
 export default {
   conversation(line) {
@@ -51,6 +62,7 @@ export default {
       ...(turn.model ? ["-m", turn.model] : []),
       ...(turn.effort ? ["-c", `model_reasoning_effort="${turn.effort}"`] : []),
       ...(turn.speed === "fast" ? ["-c", 'service_tier="fast"'] : []),
+      ...managedMcp(turn.cwd),
       // As config, because `codex exec resume` takes no -s.
       "-c",
       `sandbox_mode="${SANDBOX[turn.access]}"`,

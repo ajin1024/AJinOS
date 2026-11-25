@@ -15,7 +15,7 @@ parser.add_argument("--screenshots", type=Path)
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 script = """
-import { startStudio } from './client/server.mjs';
+import { startDemoStudio as startStudio } from './client/tests/studio-fixtures.mjs';
 const s = await startStudio({home:process.argv[1], port:0, autostart: true});
 console.log(JSON.stringify(s.url));
 process.stdin.once('data', async () => { await s.close(); process.exit(); });

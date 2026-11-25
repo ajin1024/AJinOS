@@ -40,14 +40,20 @@ function toolsFor(config: ReturnType<typeof readConfig>) {
 }
 type Tool = ReturnType<typeof toolsFor>[number];
 
-function validArguments(tool: Tool, args: any) {
+type ToolSchema = {
+  name: string;
+  inputSchema: { required: readonly string[]; properties: object };
+};
+
+function validArguments(tool: ToolSchema, args: any) {
   if (!args || typeof args !== "object" || Array.isArray(args)) return false;
   if (!tool.inputSchema.required.every((key) => Object.hasOwn(args, key))) return false;
   const properties = tool.inputSchema.properties as Record<string, any>;
   const fits = ([key, value]: [string, unknown]) => {
+    if (!Object.hasOwn(properties, key)) return false;
     const schema = properties[key];
-    if (!schema) return false;
     if (schema.type === "integer") return Number.isSafeInteger(value) && (value as number) >= schema.minimum;
+    if (schema.type === "object") return !!value && typeof value === "object" && !Array.isArray(value);
     return typeof value === "string" && value.trim().length > 0;
   };
   if (!Object.entries(args).every(fits)) return false;
@@ -78,6 +84,17 @@ function callTool(hub: Hub, name: Tool["name"], args: any) {
 export async function mcp() {
   const config = readConfig();
   const tools = toolsFor(config);
+  serveMcp("agent-autoloop", tools, (tool, args) => {
+    const hub = hubClient(config.url, usesSourceKey(tool.name) ? config.source!.key : config.owner!);
+    return callTool(hub, tool.name, args);
+  });
+}
+
+export function serveMcp<T extends ToolSchema>(
+  name: string,
+  tools: readonly T[],
+  run: (tool: T, args: Record<string, unknown>) => unknown,
+) {
   const reply = (id: unknown, body: object) => console.log(JSON.stringify({ jsonrpc: "2.0", id, ...body }));
   const refuse = (id: unknown, code: number, message: string) => reply(id, { error: { code, message } });
 
@@ -85,9 +102,8 @@ export async function mcp() {
     const tool = tools.find((tool) => tool.name === params?.name);
     const args = params?.arguments ?? {};
     if (!tool || !validArguments(tool, args)) return refuse(id, -32602, "工具名或参数不正确");
-    const hub = hubClient(config.url, usesSourceKey(tool.name) ? config.source!.key : config.owner!);
     try {
-      const result = await callTool(hub, tool.name, args);
+      const result = await run(tool, args);
       reply(id, { result: { content: [{ type: "text", text: JSON.stringify(result) }] } });
     } catch (error) {
       reply(id, { result: { isError: true, content: [{ type: "text", text: (error as Error).message }] } });
@@ -107,7 +123,7 @@ export async function mcp() {
     const { id, method, params } = request;
     if (id === undefined) return;
     if (method === "initialize") {
-      const serverInfo = { name: "agent-autoloop", version: versionName() };
+      const serverInfo = { name, version: versionName() };
       reply(id, { result: { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo } });
     } else if (method === "ping") reply(id, { result: {} });
     else if (method === "tools/list") reply(id, { result: { tools } });

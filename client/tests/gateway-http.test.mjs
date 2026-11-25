@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { startStudio } from "../server.mjs";
+import { startDemoStudio as startStudio } from "./studio-fixtures.mjs";
 
 test(
   "a confirmation outage preserves the original message for retry without asking for clarification",

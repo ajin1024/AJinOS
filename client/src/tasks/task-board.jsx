@@ -1,4 +1,6 @@
 import React from "react";
+import { IconExternalOpenStroked, IconInbox } from "@douyinfe/semi-icons";
+import { formatDate } from "../studio-helpers.mjs";
 import {
   BOARD_COLUMNS,
   boardColumnFor,
@@ -71,7 +73,25 @@ export function TaskBoard({
   onSelectCard,
   onStartReview,
   loading,
+  emptyMessage,
+  onClearFilters,
 }) {
+  if (!entries.length) {
+    return (
+      <section className="kb-board kb-board-empty" aria-label="任务看板">
+        <div className="kb-empty-content">
+          <span className="kb-empty-icon"><IconInbox size="large" aria-hidden="true" /></span>
+          <h2 role="status">{loading ? "正在加载任务…" : emptyMessage}</h2>
+          {!loading && onClearFilters && (
+            <button type="button" className="kb-clear-filters" onClick={onClearFilters}>
+              清除筛选
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   const buckets = Object.fromEntries(BOARD_COLUMNS.map((c) => [c.id, []]));
   for (const entry of entries) {
     const col = boardColumnFor(entry);
@@ -82,23 +102,18 @@ export function TaskBoard({
     <div className="kb-board" role="region" aria-label="任务看板">
       {BOARD_COLUMNS.map((col) => {
         const items = buckets[col.id];
-        const isEmptyCompact = col.compact && items.length === 0;
         return (
           <section
             key={col.id}
-            className={`kb-column ${isEmptyCompact ? "is-compact" : ""}`}
+            className="kb-column"
             data-board-col={col.id}
             aria-label={`${col.label} ${items.length}`}
           >
             <header className="kb-col-head">
               <div className="kb-col-title">
                 <ColumnIcon type={col.icon} tone={col.tone} />
-                {!isEmptyCompact && (
-                  <>
-                    <span>{col.label}</span>
-                    <em className="kb-col-count">{items.length}</em>
-                  </>
-                )}
+                <h2>{col.label}</h2>
+                <span className="kb-col-count">{items.length}</span>
               </div>
               {col.actionLabel && items.length > 0 && (
                 <button
@@ -114,17 +129,9 @@ export function TaskBoard({
             <div className="kb-col-body">
               {items.map((entry) => {
                 const subItems = cardSubItemsOf(entry);
-                const source = cardSourceLabel(entry);
-                const waitAge =
-                  col.id === "review" || col.id === "acceptance"
-                    ? formatWaitAge(entry.updatedAt)
-                    : col.id === "unplanned" && entry.workflow?.status === "paused"
-                      ? "已暂停"
-                      : col.id === "unplanned"
-                        ? "空闲"
-                        : "";
-                const highlightAge = col.id === "review";
-                const reviewReason = col.id === "review" ? reviewReasonLabel(entry) : "";
+                const reference = entry.ticket?.number ?? cardSourceLabel(entry);
+                const age = formatWaitAge(entry.updatedAt);
+                const attention = col.id === "review" ? reviewReasonLabel(entry) : "";
                 return (
                   <button
                     key={entry.key}
@@ -133,25 +140,18 @@ export function TaskBoard({
                     data-card-key={entry.key}
                     onClick={() => onSelectCard(entry)}
                   >
-                    <div className="kb-card-title">{entry.title}</div>
+                    <div className="kb-card-header">
+                      <span className="kb-card-reference" title={reference}>{reference}</span>
+                      <IconExternalOpenStroked size="small" aria-hidden="true" />
+                    </div>
+                    <div className="kb-card-title" title={entry.title}>{entry.title}</div>
+                    {attention && <span className="kb-card-attention">{attention}</span>}
                     <div className="kb-card-meta">
                       <span className="kb-meta-project" title={entry.projectName}>
                         {entry.projectName}
                       </span>
-                      <span className="kb-meta-sep">·</span>
-                      <span>{source}</span>
-                      {reviewReason && (
-                        <>
-                          <span className="kb-meta-sep">·</span>
-                          <span className="kb-meta-urgent">{reviewReason}</span>
-                        </>
-                      )}
-                      {waitAge && (
-                        <>
-                          <span className="kb-meta-sep">·</span>
-                          <span className={highlightAge ? "kb-meta-urgent" : ""}>{waitAge}</span>
-                        </>
-                      )}
+                      {entry.workflow?.status === "paused" && <span>已暂停</span>}
+                      {age && <time dateTime={entry.updatedAt} title={formatDate(entry.updatedAt)}>{age}</time>}
                     </div>
                     {subItems.length > 0 && (
                       <div className="kb-sub-list">
@@ -168,8 +168,8 @@ export function TaskBoard({
                   </button>
                 );
               })}
-              {!items.length && loading && col.id === "in_progress" && (
-                <div className="kb-col-hint">正在加载任务…</div>
+              {!items.length && (
+                <div className="kb-col-hint" aria-hidden="true">—</div>
               )}
             </div>
           </section>

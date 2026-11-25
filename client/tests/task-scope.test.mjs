@@ -33,7 +33,7 @@ test("separates scheduled infrastructure by configuration, preserving scheduled 
   assert.equal(taskKind(config, { rule: "unknown", events: [{ source: "feishu", summary: "业务需求" }] }), "business");
 });
 
-test("legacy built-in demo rounds stay in demo records rather than business activity", () => {
+test("legacy built-in demo rounds are excluded from business activity", () => {
   const run = {
     id: 8,
     agent: "demo-analysis",

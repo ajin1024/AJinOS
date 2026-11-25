@@ -117,6 +117,9 @@ The `client/` directory provides **AJinOS Studio**, a standalone desktop and loc
 
 See the [Studio guide](client/README.md) (Chinese) and [Studio architecture](docs/studio-architecture.md).
 
+- **AJinOS configuration assistant**. A new workspace starts with a single AJinOS project that uses the bundled MCP service to propose settings for review and approval in the desktop app.
+- **Executor import**: save multiple model and reasoning settings for one CLI and choose a profile when creating a task.
+
 ## How it works
 
 ![Architecture](docs/architecture.en.svg)
@@ -282,6 +285,7 @@ The hub invokes command-line tools you have already installed and signed into; i
 | `worker/` | Claim work, run agents, handle heartbeats and cancellation, read and submit receipts |
 | `cli/`, `bin/` | User commands and entry point |
 | `plugins/` | Built-in agent, event, channel, and delivery plugins |
+| `client/` | Optional AJinOS desktop client and local web frontend |
 | `examples/` | Recipes, minimal plugin templates, and task Skills |
 | `skills/agent-autoloop/` | The hub's configuration and operation manual |
 | `docs/` | Protocol, plugin guide, Studio architecture, and architecture diagrams |

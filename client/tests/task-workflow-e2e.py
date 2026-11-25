@@ -12,8 +12,8 @@ expect.set_options(timeout=20000)
 root = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix="studio-lifecycle-ui-") as temp:
     script = """
-      import { startStudio } from './client/server.mjs';
-      const studio = await startStudio({ home: process.argv[1], port: 0, autostart: true,
+      import { startDemoStudio as startStudio } from './client/tests/studio-fixtures.mjs';
+      const studio = await startStudio({ home: process.argv[1], port: 0, autostart: true, businessTasks: true,
         gatewayModel: async (kind, data) => kind === 'confirm'
           ? data.text === '模糊任务' ? {confirmed:false,question:'希望交付什么结果？'} : {confirmed:true,reason:'明确要求检查并交付结果'}
           : {project:'orders',flow:'default',certain:true,reason:'测试任务',candidates:['orders']} });
@@ -55,7 +55,6 @@ with tempfile.TemporaryDirectory(prefix="studio-lifecycle-ui-") as temp:
 
                     wait_rounds(1)
                     page.locator('[data-view="tasks"]').first.click()
-                    page.locator("#task-scope-demo").click()
                     expect(page.locator('[data-board-col="acceptance"] .kb-card')).to_have_count(1)
                     page.locator("#task-view-list").click()
                     detail = page.get_by_role("region", name="任务详情")

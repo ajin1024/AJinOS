@@ -1,6 +1,7 @@
+import { buildAgentEntry, discoverProviders, probeProvider } from "./agent-discovery.mjs";
 import { createServer } from "node:http";
 import { createServer as createProbe } from "node:net";
-import { randomBytes, randomUUID, createHash } from "node:crypto";
+import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -14,20 +15,45 @@ import { ChiefOfStaff, buildGlobalBrief } from "./chief.mjs";
 import { GatewayActivity, readWorkbenchData } from "./workbench-data.mjs";
 import { versionOf } from "./versions.mjs";
 import { TaskWorkflow } from "./task-workflow.mjs";
-import { buildAgentEntry, discoverProviders, probeProvider } from "./agent-discovery.mjs";
 import { completeFeishuQrLogin, getFeishuAuthStatus, startFeishuQrLogin } from "./feishu-auth.mjs";
 import { feishuGroupSettings } from "./feishu-group-settings.mjs";
 import { readOutput } from "./output.mjs";
 import { AttachmentStore } from "./attachments.mjs";
 import { ExecutorHealth } from "./role-routing.mjs";
 import { TaskVerifier } from "./verifier.mjs";
+import { discoveryName, ownerProof } from "./studio-mcp.mjs";
 
 import { withStudioDefaults } from "./src/island-presets.mjs";
+import { EXECUTOR_PRESETS, IMPORTED_EXECUTOR_PREFIX } from "./src/executor-presets.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const jsonFile = (file) => JSON.parse(readFileSync(file, "utf8"));
+const equalToken = (received, expected) =>
+  !!expected &&
+  received?.length === expected.length &&
+  /^[a-f0-9]{64}$/.test(received) &&
+  timingSafeEqual(Buffer.from(received, "hex"), Buffer.from(expected, "hex"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function configurationChanges(before, after, field = []) {
+  if (Object.is(before, after)) return [];
+  if (
+    before &&
+    after &&
+    typeof before === "object" &&
+    typeof after === "object" &&
+    Array.isArray(before) === Array.isArray(after)
+  ) {
+    return [...new Set([...Object.keys(before), ...Object.keys(after)])].flatMap((key) =>
+      configurationChanges(
+        Object.hasOwn(before, key) ? before[key] : undefined,
+        Object.hasOwn(after, key) ? after[key] : undefined,
+        [...field, key],
+      ),
+    );
+  }
+  return [{ field: field.join("."), before, after }];
+}
 function atomic(file, value) {
   writeFileSync(file + ".tmp", JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
   renameSync(file + ".tmp", file);
@@ -67,8 +93,7 @@ async function recognizeImages(model, config, text, images) {
     throw statusError(503, "图片识别没有完成，消息没有派发。请稍后重试，或去掉图片后再发送。");
   }
   const description = typeof output?.description === "string" ? output.description.trim() : "";
-  if (!description)
-    throw statusError(503, "图片识别没有返回可用内容，消息没有派发。请稍后重试，或去掉图片后再发送。");
+  if (!description) throw statusError(503, "图片识别没有返回可用内容，消息没有派发。请稍后重试，或去掉图片后再发送。");
   return description;
 }
 function parseAttachments(value) {
@@ -87,6 +112,7 @@ export async function startStudio({
   managed = process.env.STUDIO_CONNECT_ONLY !== "1",
   autostart = process.env.STUDIO_AUTOSTART === "1",
   gatewayModel,
+  initializeWorkspace = createDefaults,
 } = {}) {
   home = path.resolve(home);
   const env = {
@@ -97,11 +123,14 @@ export async function startStudio({
   };
   const configPath = path.join(home, "config.json"),
     workspacePath = path.join(home, "studio.json"),
+    discoveryPath = path.join(home, discoveryName),
+    draftPath = path.join(home, "studio-config-draft.json"),
     rulesPath = env.AGENT_AUTOLOOP_RULES;
   const clients = new Set(),
     facts = [],
     engineLogs = [];
   const session = randomBytes(32).toString("hex");
+  const readToken = randomBytes(32).toString("hex");
   let engine = null,
     origin = "",
     latest = null,
@@ -121,14 +150,24 @@ export async function startStudio({
     if (engineLogs.length > 80) engineLogs.shift();
   };
   mkdirSync(home, { recursive: true, mode: 0o700 });
+  function prepareProjectDirectories(projects) {
+    for (const p of projects) {
+      mkdirSync(p.cwd, { recursive: true });
+      const readme = path.join(p.cwd, "README.md");
+      if (p.service === "autoloop") {
+        if (!existsSync(readme))
+          writeFileSync(
+            readme,
+            `# ${p.name}\n\n用 ${p.name} 自带的 MCP 查看配置、校验并提交配置建议。在系统配置中审核和应用。\n`,
+          );
+      } else if (!existsSync(readme)) writeFileSync(readme, `# ${p.name}\n`);
+    }
+  }
   if (!existsSync(configPath)) {
     if (!managed) throw new Error("此数据目录没有 config.json，无法仅连接");
     if (existsSync(rulesPath)) throw new Error("目录已有规则但未初始化。请选择新的 Studio 数据目录，避免覆盖。");
-    const workspace = createDefaults(home, process.execPath);
-    for (const p of workspace.projects) {
-      mkdirSync(p.cwd, { recursive: true });
-      writeFileSync(path.join(p.cwd, "README.md"), "# " + p.name + "\n\n这是 Studio 隔离演示工作目录。\n");
-    }
+    const workspace = initializeWorkspace(home);
+    prepareProjectDirectories(workspace.projects);
     atomic(workspacePath, workspace);
     atomic(rulesPath, workspace.rules);
     const hubPort = await freePort();
@@ -164,7 +203,12 @@ export async function startStudio({
     "PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY, hash TEXT, project TEXT, topic TEXT, text TEXT, event TEXT, result TEXT, at TEXT); CREATE TABLE IF NOT EXISTS topics(id TEXT PRIMARY KEY,project TEXT,title TEXT,at TEXT);",
   );
   // Old Studio databases gain the column in place; there is no migration file to apply on upgrade.
-  if (!db.prepare("PRAGMA table_info(messages)").all().some((column) => column.name === "attachments"))
+  if (
+    !db
+      .prepare("PRAGMA table_info(messages)")
+      .all()
+      .some((column) => column.name === "attachments")
+  )
     db.exec("ALTER TABLE messages ADD COLUMN attachments TEXT");
   const attachments = new AttachmentStore({ db, home });
   const workspace = () => ({ ...jsonFile(workspacePath), rules: jsonFile(rulesPath) });
@@ -307,7 +351,8 @@ export async function startStudio({
       } catch (error) {
         if (!engineStopped) {
           online = false;
-          connectionError = managed && !engine ? "Studio 自管引擎尚未启动，点「启动引擎」后开始接收任务" : error.message;
+          connectionError =
+            managed && !engine ? "Studio 自管引擎尚未启动，点「启动引擎」后开始接收任务" : error.message;
         }
       }
     }
@@ -457,8 +502,15 @@ export async function startStudio({
     } catch {}
     if (engine && engine.exitCode === null && engine.signalCode === null)
       throw statusError(409, "引擎正在启动，请稍后");
+    const service = workspace().projects.find((p) => p.id === "autoloop" && p.service === "autoloop");
+    const serviceMcp = service && {
+      cwd: service.cwd,
+      name: "autoloop_studio",
+      command: process.execPath,
+      args: [path.join(import.meta.dirname, "studio-mcp.mjs"), "--project", home],
+    };
     engine = spawn(process.execPath, [path.join(root, "bin/agent-autoloop.ts"), "up"], {
-      env,
+      env: { ...env, ...(serviceMcp && { AGENT_AUTOLOOP_CODEX_MCP: JSON.stringify(serviceMcp) }) },
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -563,16 +615,24 @@ export async function startStudio({
     };
   }
   let writeQueue = Promise.resolve();
-  function saveConfig(body, saveRelated) {
-    const operation = writeQueue.then(async () => {
+  function enqueueConfigWrite(write) {
+    const operation = writeQueue.then(write);
+    writeQueue = operation.catch(() => {});
+    return operation;
+  }
+  function checkedWorkspace(value) {
+    try {
+      return validateWorkspace(value);
+    } catch (error) {
+      throw statusError(400, error.message);
+    }
+  }
+  function saveConfig(body, saveRelated, checkDraft) {
+    return enqueueConfigWrite(async () => {
+      checkDraft?.();
       const before = workspace();
       if (body.revision !== digest(before)) throw statusError(409, "配置已被其他窗口修改，请重新载入后再保存");
-      let next;
-      try {
-        next = validateWorkspace(body.value);
-      } catch (error) {
-        throw statusError(400, error.message);
-      }
+      const next = checkedWorkspace(body.value);
       for (const p of next.projects) {
         const previous = before.projects.find((old) => old.id === p.id);
         if (previous && previous.cwd !== p.cwd && previous.rule === p.rule)
@@ -615,9 +675,31 @@ export async function startStudio({
       scheduleRefresh();
       return { ...configuration(), restartRequired };
     });
-    writeQueue = operation.catch(() => {});
-    return operation;
   }
+  const configurationDraft = () => (existsSync(draftPath) ? jsonFile(draftPath) : null);
+  function proposeConfiguration({ revision, value, summary }) {
+    return enqueueConfigWrite(() => {
+      const before = workspace();
+      if (revision !== digest(before)) throw statusError(409, "配置已有更新，请读取新版本后再提交建议");
+      if (typeof summary !== "string" || !summary.trim() || summary.length > 500)
+        throw statusError(400, "配置建议的说明需要填写 1 到 500 字");
+      const after = checkedWorkspace(value);
+      const changes = configurationChanges(before, after);
+      if (!changes.length) throw statusError(400, "配置没有变化");
+      const existing = configurationDraft();
+      const id = digest({ revision, after, summary });
+      if (existing?.id === id) return { id };
+      if (existing) throw statusError(409, "已有一条待审核的配置建议，请先在 Studio 中处理");
+      atomic(draftPath, { id, revision, value: after, summary, changes });
+      return { id };
+    });
+  }
+  function requireDraft(id) {
+    const draft = configurationDraft();
+    if (!draft || draft.id !== id) throw statusError(409, "这条配置建议已处理，请刷新");
+    return draft;
+  }
+  const discardDraft = () => rmSync(draftPath, { force: true });
   const feishuGroups = feishuGroupSettings({ home, workspace, digest, saveConfig, atomic });
   function outputs(id) {
     return readOutput(home, id);
@@ -634,8 +716,7 @@ export async function startStudio({
         (typeof body[field] !== "string" || !/^[a-zA-Z0-9._:-]{1,55}$/.test(body[field]))
       )
         throw statusError(400, "话题编号格式不正确");
-    const resolvedAttachments =
-      body.attachments === undefined ? [] : attachments.resolveIds(body.attachments);
+    const resolvedAttachments = body.attachments === undefined ? [] : attachments.resolveIds(body.attachments);
     const attachmentMetadata = resolvedAttachments.map(publicAttachment);
     const hash = digest({
       text: body.text,
@@ -862,9 +943,23 @@ export async function startStudio({
         res.end(readFileSync(path.join(import.meta.dirname, "public", staticFiles.get(route))));
         return;
       }
-      if (!req.headers.cookie?.split(";").some((c) => c.trim() === `studio=${session}`))
-        throw statusError(401, "请从客户端首页重新连接");
       if (req.headers.origin && req.headers.origin !== origin) throw statusError(403, "拒绝跨站请求");
+      const mcpRequest = req.headers.authorization?.startsWith("Bearer ");
+      const mcpRead =
+        (req.method === "GET" && ["/api/config", "/api/mcp/overview"].includes(route)) ||
+        (req.method === "POST" && ["/api/config/validate", "/api/mcp/proposal"].includes(route));
+      const mcpWrite = req.method === "PUT" && route === "/api/config";
+      if (mcpRequest) {
+        const token = req.headers.authorization.slice("Bearer ".length);
+        const owner = (mcpRead || mcpWrite) && hubConfig().owner;
+        const ownerAllowed = !!owner && equalToken(token, ownerProof(owner, readToken));
+        if (!(mcpRead && (equalToken(token, readToken) || ownerAllowed)) && !(mcpWrite && ownerAllowed))
+          throw statusError(401, "此 MCP 连接无权执行该操作");
+      } else if (
+        route.startsWith("/api/mcp/") ||
+        !req.headers.cookie?.split(";").some((c) => c.trim() === `studio=${session}`)
+      )
+        throw statusError(401, "请从客户端首页重新连接");
       if (req.method !== "GET" && req.headers["x-studio-action"] !== "1") throw statusError(403, "缺少客户端操作标记");
       const reply = (data) => {
         res.setHeader("content-type", "application/json; charset=utf-8");
@@ -885,12 +980,39 @@ export async function startStudio({
       if (req.method === "GET" && route === "/api/version") {
         const installed = process.env.STUDIO_PACKAGED === "1";
         const version = process.env.STUDIO_INSTALLED_VERSION;
-        const current = installed && version
-          ? { label: version === "0.0.0" ? "本地安装 · 开发版" : "v" + version }
-          : await versionOf(root);
+        const current =
+          installed && version
+            ? { label: version === "0.0.0" ? "本地安装 · 开发版" : "v" + version }
+            : await versionOf(root);
         return reply({ current, installed, canSwitch: false });
       }
       if (req.method === "GET" && route === "/api/config") return reply(configuration());
+      if (req.method === "GET" && route === "/api/mcp/overview") {
+        const cfg = workspace();
+        return reply({ connected: online, managed, restartRequired, defaultProject: cfg.defaultProject ?? null });
+      }
+      if (req.method === "POST" && route === "/api/mcp/proposal")
+        return reply(await proposeConfiguration(await readBody(req)));
+      if (req.method === "GET" && route === "/api/config/draft") {
+        const draft = configurationDraft();
+        if (!draft) return reply(null);
+        const { id, summary, changes, revision } = draft;
+        return reply({ id, summary, changes, stale: revision !== digest(workspace()) });
+      }
+      if (req.method === "POST" && route === "/api/config/draft/apply") {
+        const { id } = await readBody(req);
+        return reply(await saveConfig(requireDraft(id), discardDraft, () => requireDraft(id)));
+      }
+      if (req.method === "POST" && route === "/api/config/draft/discard") {
+        const { id } = await readBody(req);
+        return reply(
+          await enqueueConfigWrite(() => {
+            requireDraft(id);
+            discardDraft();
+            return { ok: true };
+          }),
+        );
+      }
       if (req.method === "GET" && route === "/api/agents/discover") {
         const providers = await discoverProviders({ registeredAgents: workspace().rules.agents });
         return reply({ providers });
@@ -935,6 +1057,42 @@ export async function startStudio({
           }
         }
         return reply(await saveConfig({ revision: digest(current), value: next }));
+      }
+      if (req.method === "POST" && route === "/api/agents/import") {
+        const body = await readBody(req);
+        const preset = EXECUTOR_PRESETS.find((item) => item.id === body?.providerId);
+        if (!preset) throw statusError(400, "请选择执行器类型");
+        const { name, model = "", effort = "", program = "", access = "edit" } = body;
+        if (typeof name !== "string" || !name.trim()) throw statusError(400, "请填写执行器名称");
+        if (typeof model !== "string") throw statusError(400, "模型 ID 需要是文字");
+        if (effort !== "" && !preset.efforts.includes(effort)) throw statusError(400, "请选择该执行器支持的思考强度");
+        if (typeof program !== "string" || (program.trim() && !path.isAbsolute(program.trim())))
+          throw statusError(400, "CLI 程序需要填写绝对路径");
+        if (preset.use === "acp" && !program.trim()) throw statusError(400, "请填写 Antigravity CLI 的绝对路径");
+        if (!["read", "edit", "full"].includes(access)) throw statusError(400, "请选择执行权限");
+        const current = workspace();
+        const next = structuredClone(current);
+        const workerName =
+          hubConfig().worker?.name ||
+          Object.values(current.rules.agents || {}).find((a) => a?.worker)?.worker ||
+          "studio-local";
+        // Direct event types must fit the protocol's 64-character limit even with a 40-character project ID.
+        let agentId;
+        do {
+          agentId = IMPORTED_EXECUTOR_PREFIX + randomBytes(3).toString("hex").slice(0, 5);
+        } while (Object.hasOwn(next.rules.agents, agentId));
+        next.rules.agents[agentId] = {
+          name: name.trim(),
+          worker: workerName,
+          use: preset.use,
+          access,
+          ...(model.trim() && { model: model.trim() }),
+          ...(effort && { effort }),
+          ...(preset.use === "acp"
+            ? { command: [program.trim(), "acp"] }
+            : program.trim() && { program: program.trim() }),
+        };
+        return reply({ ...(await saveConfig({ revision: digest(current), value: next })), agentId });
       }
       const deleteAgentMatch = /^\/api\/agents\/([a-z][a-z0-9-]*)$/.exec(route);
       if (req.method === "DELETE" && deleteAgentMatch) {
@@ -992,8 +1150,7 @@ export async function startStudio({
         const body = await readBody(req);
         const lark = body?.lark || hubConfig().channels?.feishu?.lark || hubConfig().channels?.feishu?.chat?.lark;
         const status = await getFeishuAuthStatus({ lark });
-        if (!status.ready || !status.openId)
-          throw statusError(409, "飞书尚未完成扫码登录，请先扫码授权后再应用配置");
+        if (!status.ready || !status.openId) throw statusError(409, "飞书尚未完成扫码登录，请先扫码授权后再应用配置");
         const current = workspace();
         const next = structuredClone(current);
         next.rules.channels = next.rules.channels || {};
@@ -1022,7 +1179,14 @@ export async function startStudio({
         const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
         const backupDir = path.join(home, `backup-reset-${stamp}`);
         mkdirSync(backupDir, { recursive: true, mode: 0o700 });
-        for (const name of ["studio.json", "rules.json", "config.json", "hub.db", "studio.db"]) {
+        for (const name of [
+          "studio.json",
+          "rules.json",
+          "config.json",
+          "hub.db",
+          "studio.db",
+          path.basename(draftPath),
+        ]) {
           const src = path.join(home, name);
           if (existsSync(src)) copyFileSync(src, path.join(backupDir, name));
         }
@@ -1030,25 +1194,25 @@ export async function startStudio({
         if (managed) await stopEngine();
         db.exec("DELETE FROM messages; DELETE FROM topics; DELETE FROM gateway_facts;");
         pendingMessages.clear();
-        const fresh = createDefaults(home, process.execPath);
+        const fresh = createDefaults(home, { includeAutoloop: managed });
         if (keepProjects && Array.isArray(before.projects) && before.projects.length) {
           fresh.projects = structuredClone(before.projects);
+          if (before.defaultProject) fresh.defaultProject = before.defaultProject;
+          else delete fresh.defaultProject;
           fresh.rules.agents = structuredClone(before.rules.agents);
           const keptRuleNames = new Set(
             before.projects.flatMap((p) => [p.rule, ...(p.flows || []).map((f) => f.rule)]),
           );
           fresh.rules.rules = structuredClone(before.rules.rules.filter((r) => keptRuleNames.has(r.name)));
         } else {
-          for (const p of fresh.projects) {
-            mkdirSync(p.cwd, { recursive: true });
-            writeFileSync(path.join(p.cwd, "README.md"), "# " + p.name + "\n\n这是 Studio 隔离演示工作目录。\n");
-          }
+          prepareProjectDirectories(fresh.projects);
         }
         const validated = validateWorkspace(fresh);
         atomic(workspacePath, validated);
         atomic(rulesPath, validated.rules);
+        discardDraft();
         if (managed) {
-          for (const name of ["hub.db", "hub.db-wal", "hub.db-shm", "work", "config.json"]) {
+          for (const name of ["hub.db", "hub.db-wal", "hub.db-shm", "work"]) {
             const target = path.join(home, name);
             if (existsSync(target)) rmSync(target, { recursive: true, force: true });
           }
@@ -1156,12 +1320,8 @@ export async function startStudio({
       if (req.method === "PUT" && route === "/api/config") return reply(await saveConfig(await readBody(req)));
       if (req.method === "POST" && route === "/api/config/validate") {
         const body = await readBody(req);
-        try {
-          validateWorkspace(body.value);
-          return reply({ ok: true });
-        } catch (error) {
-          throw statusError(400, error.message);
-        }
+        checkedWorkspace(body.value);
+        return reply({ ok: true });
       }
       if (req.method === "GET" && route === "/api/history")
         return reply(await call("GET", `/v1/state?before=${Number(url.searchParams.get("before")) || 0}`));
@@ -1263,7 +1423,8 @@ export async function startStudio({
       }
       const memoryId = /^\/api\/memories\/([a-zA-Z0-9_-]{1,40})$/.exec(route)?.[1];
       if (memoryId) {
-        if (req.method === "POST") return reply({ memory: memories.update(workspace(), memoryId, await readBody(req)) });
+        if (req.method === "POST")
+          return reply({ memory: memories.update(workspace(), memoryId, await readBody(req)) });
         if (req.method === "DELETE") return reply(memories.remove(memoryId));
       }
       const draftRunId = /^\/api\/tasks\/([1-9][0-9]*)\/memory-drafts$/.exec(route)?.[1];
@@ -1351,6 +1512,7 @@ export async function startStudio({
   });
   await new Promise((resolve, reject) => server.once("error", reject).listen(port, "127.0.0.1", resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
+  atomic(discoveryPath, { url: origin, readToken });
   // Opening the client never starts the engine; only an explicit page action or the autostart option does.
   if (managed && autostart) {
     try {
@@ -1382,6 +1544,8 @@ export async function startStudio({
     ]);
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
+    if (existsSync(discoveryPath) && jsonFile(discoveryPath).readToken === readToken)
+      rmSync(discoveryPath, { force: true });
     await stopEngine();
     await streaming;
     db.close();

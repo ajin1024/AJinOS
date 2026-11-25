@@ -1,5 +1,5 @@
 // Credentials stay in the engine's private home, never in the renderer or source tree.
-import { writeFileSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 const { addKey, db } = await import("../host/runtime.ts");
 const home = process.env.AGENT_AUTOLOOP_HOME;
@@ -12,5 +12,7 @@ const config = {
   owner: addKey("owner", "studio"),
   channels: {},
 };
-writeFileSync(path.join(home, "config.json"), JSON.stringify(config, null, 2), { mode: 0o600 });
+const target = path.join(home, "config.json");
+writeFileSync(`${target}.tmp`, JSON.stringify(config, null, 2), { mode: 0o600 });
+renameSync(`${target}.tmp`, target);
 db.close();

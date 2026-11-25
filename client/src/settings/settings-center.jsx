@@ -56,6 +56,7 @@ export function SettingsCenter({
   api,
   toast,
   onSaveConfig,
+  onImportExecutor,
   onSaveProject,
   onEngineControl,
   onRestartRequired,
@@ -123,9 +124,7 @@ export function SettingsCenter({
             onEditingChange={onEditingChange}
           />
         )}
-        {active === "feishu" && (
-          <FeishuPanel api={api} toast={toast} onEditingChange={onEditingChange} />
-        )}
+        {active === "feishu" && <FeishuPanel api={api} toast={toast} onEditingChange={onEditingChange} />}
         {active === "runtime" && (
           <RuntimePanel
             config={config}
@@ -145,6 +144,7 @@ export function SettingsCenter({
             api={api}
             toast={toast}
             onSaveConfig={onSaveConfig}
+            onImportExecutor={onImportExecutor}
             onEditingChange={onEditingChange}
           />
         )}
@@ -152,7 +152,9 @@ export function SettingsCenter({
         {active === "advanced" && (
           <AdvancedPanel
             config={config}
+            api={api}
             onSaveConfig={onSaveConfig}
+            onRestartRequired={onRestartRequired}
             windowsUpdate={windowsUpdate}
             versionProgress={versionProgress}
             toast={toast}

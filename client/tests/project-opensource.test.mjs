@@ -3,11 +3,12 @@
 // accepts unsafe repo/since inputs, or leaves orphaned rules when disabled or deleted.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDefaults, validateWorkspace } from "../config.mjs";
+import { createDemoWorkspace } from "./studio-fixtures.mjs";
+import { validateWorkspace } from "../config.mjs";
 import { normalizeGitHubRepo, projectRuleNames } from "../src/gateway-config.mjs";
 
 function baseWorkspace() {
-  const cfg = createDefaults("/tmp/ajinos-oss-test", process.execPath);
+  const cfg = createDemoWorkspace("/tmp/ajinos-oss-test");
   cfg.rules.agents.claude = {
     name: "Claude Code",
     worker: "studio-local",

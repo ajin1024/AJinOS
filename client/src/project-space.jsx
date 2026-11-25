@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Button,
   Input,
-  Table,
   Tag,
   Tabs,
   TabPane,
@@ -21,6 +20,8 @@ import {
   IconFolder,
   IconArrowLeft,
   IconChevronRight,
+  IconBranch,
+  IconLayers,
   IconMore,
   IconPlay,
   IconRefresh,
@@ -431,6 +432,7 @@ function FlowDrawer({ project, config, onSaveConfig, onClose }) {
       visible={!!project}
       onCancel={() => !busy && onClose()}
       width={460}
+      motion={false}
       closeOnEsc={!busy}
       maskClosable={!busy}
     >
@@ -479,6 +481,159 @@ function FlowDrawer({ project, config, onSaveConfig, onClose }) {
   );
 }
 
+function ProjectStatus({ project }) {
+  return (
+    <span className={`ps-status${project.running ? " is-running" : ""}`}>
+      <i aria-hidden="true" />
+      {project.running ? `${project.running} 项运行` : "空闲"}
+    </span>
+  );
+}
+
+function ProjectIcon({ project }) {
+  return (
+    <span className="ps-project-icon" style={{ "--project-color": project.color || "var(--ui-accent)" }}>
+      <IconFolder aria-hidden="true" size="large" />
+    </span>
+  );
+}
+
+function ProjectAccess({ project }) {
+  return (
+    <span className="ps-access-tag" data-access={project.access}>
+      {ACCESS_NAMES[project.access] || "未配置"}
+    </span>
+  );
+}
+
+function ProjectDetails({ project, profile, onClose, onEdit, onNewTask, onAddFlow, onRemove, onAnalyze }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function analyze() {
+    setError("");
+    setBusy(true);
+    try {
+      await onAnalyze(project.id);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      visible
+      centered
+      motion={false}
+      width={560}
+      style={{ maxWidth: "calc(100% - 28px)" }}
+      maskStyle={{ backgroundColor: "color-mix(in srgb, var(--ui-overlay) 28%, transparent)" }}
+      className="ps-detail-layer"
+      title={project.name}
+      icon={<ProjectIcon project={project} />}
+      onCancel={onClose}
+      footer={
+        <div className="ps-detail-actions">
+          <Dropdown
+            trigger="click"
+            position="topLeft"
+            render={
+              <Dropdown.Menu>
+                <Dropdown.Item type="danger" onClick={onRemove}>
+                  移除项目
+                </Dropdown.Item>
+              </Dropdown.Menu>
+            }
+          >
+            <Button theme="borderless" icon={<IconMore aria-hidden="true" />} aria-label="更多项目操作" />
+          </Dropdown>
+          <Button className="ps-edit-action" size="large" theme="outline" onClick={onEdit}>
+            编辑项目
+          </Button>
+          <Button size="large" theme="solid" icon={<IconPlay aria-hidden="true" />} onClick={onNewTask}>
+            发起任务
+          </Button>
+        </div>
+      }
+    >
+      <div className="ps-detail">
+        <div className="ps-detail-meta">
+          <span>{project.id}</span>
+          <ProjectStatus project={project} />
+        </div>
+        {project.description && <p className="ps-description">{project.description}</p>}
+        <dl className="ps-detail-fields">
+          <dt>权限</dt>
+          <dd>
+            <button type="button" className="ps-access" aria-label="编辑项目权限" onClick={onEdit}>
+              <ProjectAccess project={project} />
+              <IconChevronRight aria-hidden="true" size="small" />
+            </button>
+          </dd>
+          <dt>执行器</dt>
+          <dd>{project.agent?.name || "未配置"}</dd>
+          <dt>任务流程</dt>
+          <dd className="ps-detail-flows">
+            <span>{project.flows.map((flow) => flow.name).join("、")}</span>
+            <Button
+              size="small"
+              theme="borderless"
+              icon={<IconPlus aria-hidden="true" />}
+              aria-label="添加流程"
+              onClick={onAddFlow}
+            />
+          </dd>
+        </dl>
+        <details className="ps-extra-details">
+          <summary>更多项目资料</summary>
+          <dl className="ps-detail-fields">
+            {project.openSource?.enabled && <>
+              <dt>开源仓库</dt><dd>{project.openSource.repo || "未设置"}</dd>
+              <dt>Issue 自动处理</dt><dd>{project.openSource.autoHandleIssues ? `每 ${project.openSource.pollMinutes || 5} 分钟` : "未开启"}</dd>
+              {project.openSource.since && <><dt>起始时间</dt><dd>{project.openSource.since}</dd></>}
+            </>}
+            <dt>并发任务</dt>
+            <dd>{project.baseRule.parallel || 1} 项</dd>
+            <dt>会话续接</dt>
+            <dd>{project.baseRule.resume ? "已开启" : "已关闭"}</dd>
+            <dt>项目目录</dt>
+            <dd>
+              <code>{project.cwd}</code>
+            </dd>
+            <dt>识别别名</dt>
+            <dd>{project.aliases?.join("、") || "未设置"}</dd>
+          </dl>
+          <div className="ps-section-heading">
+            <h3>项目画像</h3>
+            <Button
+              size="small"
+              theme="borderless"
+              icon={<IconRefresh aria-hidden="true" />}
+              loading={busy}
+              onClick={analyze}
+            >
+              {profile ? "更新" : "分析项目"}
+            </Button>
+          </div>
+          {error && <Banner type="danger" description={error} closeIcon={null} />}
+          <p className="ps-profile">{profile?.summary || "分析项目后，可更准确地识别和分配任务。"}</p>
+          {profile?.tags?.length > 0 && (
+            <div className="ps-tags">
+              {profile.tags.map((tag) => (
+                <Tag key={tag} color="grey">
+                  {tag}
+                </Tag>
+              ))}
+            </div>
+          )}
+        </details>
+      </div>
+    </Modal>
+  );
+}
+
 export function ProjectSpace({
   config,
   profiles,
@@ -494,9 +649,7 @@ export function ProjectSpace({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [permission, setPermission] = useState("all");
-  const [selectedId, setSelectedId] = useState(
-    () => businessProjects(config).find((p) => p.id === "agent-autoloop")?.id || businessProjects(config)[0]?.id,
-  );
+  const [detailId, setDetailId] = useState(null);
   const [editor, setEditor] = useState(null);
   const [flowProject, setFlowProject] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -507,6 +660,7 @@ export function ProjectSpace({
   useEffect(() => {
     if (openNewSignal && openNewSignal !== lastOpenNew.current) {
       lastOpenNew.current = openNewSignal;
+      setDetailId(null);
       setEditor({});
     }
   }, [openNewSignal]);
@@ -531,26 +685,13 @@ export function ProjectSpace({
       flows: flowsFor(p),
     };
   });
-  const rows = projects.filter(
+  const visibleProjects = projects.filter(
     (p) =>
       (filter === "all" || p.running > 0) &&
       (permission === "all" || p.access === permission) &&
       [p.name, p.id, p.cwd, ...(p.aliases || [])].join(" ").toLowerCase().includes(query.toLowerCase().trim()),
   );
-  const selected = rows.find((p) => p.id === selectedId) || rows[0];
-  const profile = selected && profiles[selected.id];
-
-  async function runAnalyze(id) {
-    setError("");
-    setBusy(true);
-    try {
-      await onAnalyzeProject(id);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const selected = projects.find((p) => p.id === detailId);
 
   async function confirmDelete() {
     if (!deleteTarget) return;
@@ -564,6 +705,7 @@ export function ProjectSpace({
         next.rules.rules = next.rules.rules.filter((r) => !projectRuleNames(next, p).includes(r.name));
       }
       await onSaveConfig(next);
+      setDetailId(null);
       setDeleteTarget(null);
     } catch (e) {
       setError(e.message);
@@ -572,61 +714,15 @@ export function ProjectSpace({
     }
   }
 
-  const accessTag = (p) => (
-    <Tag color={p.access === "full" ? "amber" : p.access === "read" ? "grey" : "cyan"} shape="circle">
-      {ACCESS_NAMES[p.access] || "未配置"}
-    </Tag>
-  );
+  function editProject(id) {
+    setDetailId(null);
+    setEditor({ id });
+  }
 
-  const columns = [
-    {
-      title: "项目",
-      dataIndex: "name",
-      width: 330,
-      render: (_, p) => (
-        <button type="button" className="ps-project-link" onClick={() => setSelectedId(p.id)} aria-label={`查看${p.name}`}>
-          <span className="ps-project-icon">
-            <IconFolder aria-hidden="true" />
-          </span>
-          <span className="ps-project-label">
-            <strong>
-              {p.name}
-              {p.openSource?.enabled && (
-                <Tag size="small" color={p.openSource.autoHandleIssues ? "green" : "blue"} style={{ marginLeft: 6 }}>
-                  {p.openSource.autoHandleIssues ? "开源 · Issue 自动" : "开源"}
-                </Tag>
-              )}
-            </strong>
-            <span title={p.cwd}>{p.cwd}</span>
-          </span>
-        </button>
-      ),
-    },
-    {
-      title: "状态",
-      width: 100,
-      render: (_, p) => (
-        <span className={`ps-status ${p.running ? "is-running" : ""}`}>
-          <i />
-          {p.running ? `${p.running} 项运行` : "空闲"}
-        </span>
-      ),
-    },
-    { title: "权限", width: 120, render: (_, p) => accessTag(p) },
-    { title: "流程", width: 65, render: (_, p) => <span className="ps-flow-count">{p.flows.length}</span> },
-    {
-      title: "",
-      width: 44,
-      render: (_, p) => (
-        <Button
-          theme="borderless"
-          icon={<IconChevronRight aria-hidden="true" />}
-          aria-label={`查看${p.name}详情`}
-          onClick={() => setSelectedId(p.id)}
-        />
-      ),
-    },
-  ];
+  function startTask(id) {
+    setDetailId(null);
+    onNewTask(id);
+  }
 
   return (
     <div className="ps-page-host">
@@ -677,196 +773,63 @@ export function ProjectSpace({
             {!connected && (
               <Banner type="warning" description="中台暂未连接，当前显示最近一次同步的项目。" closeIcon={null} />
             )}
-            {error && <Banner type="danger" description={error} closeIcon={null} />}
-            <div className="ps-workspace">
-              <section className="ps-list" aria-label="项目列表">
-                <Table
-                  rowKey="id"
-                  columns={columns}
-                  dataSource={rows}
-                  pagination={false}
-                  size="middle"
-                  onRow={(p) => ({
-                    className: p.id === selected?.id ? "ps-row-selected" : "",
-                    onClick: () => setSelectedId(p.id),
-                  })}
-                  empty={<Empty title="没有匹配的项目" description="试试其他关键词，或添加一个新项目。" />}
-                />
-                <div className="ps-list-footer">
-                  {rows.length === projects.length
-                    ? `共 ${projects.length} 个项目`
-                    : `显示 ${rows.length} / ${projects.length} 个项目`}
-                  <span>仅展示业务项目 · 消息接入在系统配置中管理</span>
+            <section className="ps-workspace" aria-label="项目卡片">
+              {visibleProjects.length ? (
+                <div className="ps-card-grid">
+                  {visibleProjects.map((project) => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      className="ps-project-card"
+                      aria-label={`查看${project.name}`}
+                      aria-haspopup="dialog"
+                      onClick={() => setDetailId(project.id)}
+                    >
+                      <span className="ps-card-heading">
+                        <ProjectIcon project={project} />
+                        <span className="ps-project-label">
+                          <strong title={project.name}>{project.name}</strong>
+                          <span title={project.cwd}>{project.id}</span>
+                        </span>
+                        <ProjectStatus project={project} />
+                      </span>
+                      <span className="ps-card-meta">
+                        <span className="ps-card-access">
+                          <IconLayers aria-hidden="true" />
+                          <ProjectAccess project={project} />
+                        </span>
+                        <span className="ps-flow-count">
+                          <IconBranch aria-hidden="true" />
+                          {project.flows.length} 个流程
+                        </span>
+                      </span>
+                    </button>
+                  ))}
                 </div>
-              </section>
-              {selected && (
-                <aside className="ps-detail" aria-label="项目详情">
-                  <header className="ps-detail-heading">
-                    <span className="ps-detail-icon">
-                      <IconFolder aria-hidden="true" size="extra-large" />
-                    </span>
-                    <Dropdown
-                      trigger="click"
-                      position="bottomRight"
-                      render={
-                        <Dropdown.Menu>
-                          <Dropdown.Item onClick={() => setEditor({ id: selected.id })}>编辑项目</Dropdown.Item>
-                          <Dropdown.Item type="danger" onClick={() => setDeleteTarget(selected)}>
-                            移除项目
-                          </Dropdown.Item>
-                        </Dropdown.Menu>
-                      }
-                    >
-                      <Button theme="borderless" icon={<IconMore aria-hidden="true" />} aria-label="更多项目操作" />
-                    </Dropdown>
-                  </header>
-                  <h2>{selected.name}</h2>
-                  <span className="ps-id">{selected.id}</span>
-                  <p className="ps-description">{selected.description || "尚未填写项目说明"}</p>
-                  <div className="ps-detail-actions">
-                    <Button
-                      theme="solid"
-                      icon={<IconPlay aria-hidden="true" />}
-                      onClick={() => onNewTask(selected.id)}
-                    >
-                      发起任务
-                    </Button>
-                    <Button icon={<IconSetting aria-hidden="true" />} onClick={() => setEditor({ id: selected.id })}>
-                      编辑项目
-                    </Button>
-                  </div>
-                  <section className="ps-detail-section">
-                    <h3>执行配置</h3>
-                    <dl>
-                      <dt>权限</dt>
-                      <dd>
-                        <button
-                          type="button"
-                          className="ps-access"
-                          aria-label="编辑项目权限"
-                          onClick={() => setEditor({ id: selected.id })}
-                        >
-                          {accessTag(selected)}
-                          <IconChevronRight aria-hidden="true" size="small" />
-                        </button>
-                      </dd>
-                      <dt>执行器</dt>
-                      <dd>
-                        {selected.agent
-                          ? `${selected.agent.name || selected.baseRule.to}（${formatExecutorSpec(selected.agent)}）`
-                          : "未配置"}
-                      </dd>
-                      <dt>并发任务</dt>
-                      <dd>{selected.baseRule.parallel || 1} 项</dd>
-                      <dt>会话续接</dt>
-                      <dd>{selected.baseRule.resume ? "已开启" : "已关闭"}</dd>
-                    </dl>
-                    <div className="ps-directory">
-                      <IconFolder aria-hidden="true" />
-                      <code>{selected.cwd}</code>
-                    </div>
-                  </section>
-                  <section className="ps-detail-section">
-                    <div className="ps-section-heading">
-                      <h3>开源与 GitHub Issue</h3>
-                      <Button size="small" theme="borderless" onClick={() => setEditor({ id: selected.id })}>
-                        配置
-                      </Button>
-                    </div>
-                    {selected.openSource?.enabled ? (
-                      <dl>
-                        <dt>仓库地址</dt>
-                        <dd>
-                          {selected.openSource.repo ? (
-                            <code>{selected.openSource.repo}</code>
-                          ) : (
-                            <span className="ps-muted">未填写</span>
-                          )}
-                        </dd>
-                        <dt>自动处理</dt>
-                        <dd>
-                          {selected.openSource.autoHandleIssues ? (
-                            <Tag size="small" color="green" shape="circle">
-                              已开启 · 每 {selected.openSource.pollMinutes || 5} 分钟
-                            </Tag>
-                          ) : (
-                            <Tag size="small" color="grey" shape="circle">
-                              未开启
-                            </Tag>
-                          )}
-                        </dd>
-                        {selected.openSource.autoHandleIssues && selected.openSource.since && (
-                          <>
-                            <dt>拉取起点</dt>
-                            <dd>
-                              <code>{selected.openSource.since}</code>
-                            </dd>
-                          </>
-                        )}
-                      </dl>
-                    ) : (
-                      <p className="ps-muted" style={{ margin: 0, fontSize: 12.5 }}>
-                        非开源项目（点右上角「配置」可绑定 GitHub 仓库并开启 Issue 定时自动处理）。
-                      </p>
-                    )}
-                  </section>
-                  <section className="ps-detail-section">
-                    <div className="ps-section-heading">
-                      <h3>
-                        任务流程 <span>{selected.flows.length}</span>
-                      </h3>
-                      <Button
-                        size="small"
-                        theme="borderless"
-                        icon={<IconPlus aria-hidden="true" />}
-                        aria-label="添加流程"
-                        onClick={() => setFlowProject(selected)}
-                      />
-                    </div>
-                    {selected.flows.map((f) => (
-                      <div className="ps-flow" key={f.id}>
-                        <span className="ps-flow-dot" />
-                        <span>{f.name}</span>
-                        <Tag size="small" color="grey">
-                          {f.id === "default" ? "默认" : "自定义"}
-                        </Tag>
-                      </div>
-                    ))}
-                  </section>
-                  <section className="ps-detail-section">
-                    <div className="ps-section-heading">
-                      <h3>项目画像</h3>
-                      <Button
-                        size="small"
-                        theme="borderless"
-                        icon={<IconRefresh aria-hidden="true" />}
-                        loading={busy}
-                        onClick={() => runAnalyze(selected.id)}
-                      >
-                        {profile ? "更新" : "分析项目"}
-                      </Button>
-                    </div>
-                    <p className="ps-profile">{profile?.summary || "分析项目后，可更准确地识别和分配任务。"}</p>
-                    {profile?.tags?.length > 0 && (
-                      <div className="ps-tags">
-                        {profile.tags.map((tag) => (
-                          <Tag key={tag} color="grey">
-                            {tag}
-                          </Tag>
-                        ))}
-                      </div>
-                    )}
-                    <div className="ps-aliases">
-                      <span>识别别名</span>
-                      <p>{selected.aliases?.join("、") || "未设置"}</p>
-                    </div>
-                  </section>
-                </aside>
+              ) : (
+                <Empty title="没有匹配的项目" description="试试其他关键词，或添加一个新项目。" />
               )}
-            </div>
+            </section>
           </>
         )}
       </div>
+
+      {selected && !editor && !flowProject && !deleteTarget && (
+        <ProjectDetails
+          key={selected.id}
+          project={selected}
+          profile={profiles[selected.id]}
+          onClose={() => setDetailId(null)}
+          onEdit={() => editProject(selected.id)}
+          onNewTask={() => startTask(selected.id)}
+          onAddFlow={() => setFlowProject(selected)}
+          onRemove={() => {
+            setError("");
+            setDeleteTarget(selected);
+          }}
+          onAnalyze={onAnalyzeProject}
+        />
+      )}
 
       <FlowDrawer
         project={flowProject}
@@ -878,6 +841,10 @@ export function ProjectSpace({
       <Modal
         title="移除项目"
         visible={!!deleteTarget}
+        centered
+        motion={false}
+        closeOnEsc={!busy}
+        maskClosable={!busy}
         onOk={confirmDelete}
         onCancel={() => !busy && setDeleteTarget(null)}
         okText="移除配置"
@@ -885,6 +852,7 @@ export function ProjectSpace({
         okType="danger"
         confirmLoading={busy}
       >
+        {error && <Banner type="danger" description={error} closeIcon={null} />}
         <p className="sc-muted">
           移除「{deleteTarget?.name}」及其绑定规则。历史事实和执行记录会保留；如存在关联引用会被校验阻止。
         </p>

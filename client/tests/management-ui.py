@@ -1,5 +1,5 @@
 # Prevent canvas shortcuts from opening nested dialogs, keep the 4-item top navigation,
-# enforce read-only executors, and verify direct navigation + gateway preview/persistence.
+# check independent executor imports, and verify direct navigation + gateway preview/persistence.
 import json
 import os
 from pathlib import Path
@@ -19,12 +19,16 @@ def run_test(url):
         browser = p.chromium.launch(channel="msedge", headless=True)
         page = browser.new_page(viewport={"width": 1600, "height": 1000})
         page.set_default_timeout(10000)
-        errors, writes = [], []
+        errors, writes, discoveries = [], [], []
         page.on("pageerror", lambda error: errors.append(str(error)))
 
         def protect_workspace(route):
             request = route.request
+            if request.url.endswith(("/api/agents/discover", "/api/agents/probe")):
+                discoveries.append(request.url)
             if request.method in ("GET", "HEAD"):
+                route.continue_()
+            elif request.url.endswith("/api/agents/import") and not target_url:
                 route.continue_()
             elif request.url.endswith("/api/config") and request.method == "PUT":
                 body = request.post_data_json
@@ -46,7 +50,7 @@ def run_test(url):
         for name, expected_hash, heading in [
             ("消息接收管理", "#settings/connections", "来源与通知"),
             ("项目管理", "#projects", None),
-            ("模型执行器查看", "#settings/agents", "执行器与模型"),
+            ("模型执行器管理", "#settings/agents", "执行器与模型"),
             ("项目网关管理", "#settings/gateway", "项目识别网关"),
             ("规则与定时", "#settings/rules", "规则与定时"),
         ]:
@@ -59,9 +63,45 @@ def run_test(url):
             else:
                 expect(page.get_by_role("button", name="添加项目", exact=True)).to_be_visible()
 
-        # Verify agents view is strictly read-only.
+        # Verify static import templates and selection in the normal task entry.
         page.locator('[data-settings-section="agents"]').click()
-        expect(page.locator('[data-action="agent"], [data-action="agent-new"], [data-action="model-preset"], [data-action="agent-delete"]')).to_have_count(0)
+        if not target_url:
+            for example, name, model in [
+                ("Sol 6.2 · 高", "我的 Sol 执行器", "gpt-6.2-sol"),
+                ("Astra 6.2 · 高", "我的 Astra 执行器", "gpt-6.2-astra"),
+            ]:
+                page.get_by_role("button", name="快捷导入", exact=True).click()
+                dialog = page.get_by_role("dialog", name="快捷导入执行器")
+                dialog.get_by_role("button", name=example, exact=True).click()
+                expect(dialog.get_by_label("模型 ID")).to_have_value(model)
+                expect(dialog.get_by_label("思考强度")).to_have_value("high")
+                dialog.get_by_label("执行器名称").fill(name)
+                with page.expect_response(lambda res: res.url.endswith("/api/agents/import")) as response:
+                    dialog.get_by_role("button", name="导入执行器", exact=True).click()
+                assert response.value.ok, response.value.text()
+                expect(dialog).to_have_count(0)
+                expect(page.locator(".sc-executor-item").filter(has_text=name)).to_contain_text(model)
+            page.reload()
+            expect(page.get_by_text("我的 Sol 执行器", exact=True)).to_be_visible()
+            expect(page.get_by_text("我的 Astra 执行器", exact=True)).to_be_visible()
+            page.set_viewport_size({"width": 390, "height": 800})
+            sol = page.locator(".sc-executor-item").filter(has_text="我的 Sol 执行器")
+            sol.locator("summary").click()
+            sol.get_by_role("button", name="复用配置导入").click()
+            dialog = page.get_by_role("dialog", name="快捷导入执行器")
+            expect(dialog.get_by_label("模型 ID")).to_have_value("gpt-6.2-sol")
+            expect(dialog.get_by_label("思考强度")).to_have_value("high")
+            assert dialog.evaluate("el => el.getBoundingClientRect().width <= window.innerWidth")
+            dialog.get_by_role("button", name="取消", exact=True).click()
+            page.set_viewport_size({"width": 1600, "height": 1000})
+            page.get_by_role("button", name="新建任务", exact=True).click()
+            page.locator("#new-task-form select[name=project]").select_option("orders")
+            executors = page.locator("#new-task-form select[name=executor] option")
+            expect(executors.filter(has_text="我的 Sol 执行器")).to_have_count(1)
+            expect(executors.filter(has_text="我的 Astra 执行器")).to_have_count(1)
+            page.locator("#dialog-cancel").click()
+            expect(page.locator("#new-task-form")).to_have_count(0)
+        assert not discoveries, discoveries
 
         # Verify gateway preview & save.
         page.locator('[data-settings-section="gateway"]').click()
@@ -84,14 +124,14 @@ def run_test(url):
 
         assert not errors, errors
         browser.close()
-        print("Direct canvas navigation, 4-tab header, read-only executors, gateway preview and responsive checks passed.")
+        print("Direct canvas navigation, executor settings, gateway preview and responsive checks passed.")
 
 if target_url:
     run_test(target_url)
 else:
     with tempfile.TemporaryDirectory(prefix="studio-mgmt-ui-") as home:
         script = """
-          import { startStudio } from './client/server.mjs';
+          import { startDemoStudio as startStudio } from './client/tests/studio-fixtures.mjs';
           const studio = await startStudio({home: process.argv[1], port: 0, autostart: true});
           console.log(JSON.stringify({url: studio.url}));
           process.stdin.once('data', async () => { await studio.close(); process.exit(0); });

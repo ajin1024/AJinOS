@@ -6,13 +6,14 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { createDefaults, validateWorkspace } from "../config.mjs";
+import { createDemoWorkspace } from "./studio-fixtures.mjs";
+import { validateWorkspace } from "../config.mjs";
 import { Gateway } from "../gateway.mjs";
 import { GatewayModel } from "../gateway-model.mjs";
 import { ExecutorHealth, resolveRoleCandidates, selectExecutionTarget } from "../role-routing.mjs";
 
 function makeRoleConfig() {
-  const config = createDefaults("C:/workspace/studio", process.execPath);
+  const config = createDemoWorkspace("C:/workspace/studio");
   config.rules.agents["cc-deepseek"] = {
     name: "CC · DeepSeek",
     worker: "studio-local",

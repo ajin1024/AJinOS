@@ -117,6 +117,8 @@ agent-autoloop try
 
 详见 [AJinOS Studio 使用说明](client/README.md) 与 [Studio 架构说明](docs/studio-architecture.md)。
 
+- **AJinOS 配置助手**。首次初始化只创建默认项目 AJinOS。项目通过安装包自带的 MCP 提交配置建议，用户在桌面端审核并应用。
+
 ## 工作原理
 
 ![架构图](docs/architecture.svg)
@@ -282,6 +284,7 @@ agent-autoloop ticket reopen T-000003  # 号码不变
 | `worker/` | 接单程序：领活、运行 Agent、心跳与停止、读取和提交回执 |
 | `cli/`、`bin/` | 用户命令及启动入口 |
 | `plugins/` | 内置 Agent、事件、通道和交付插件 |
+| `client/` | 可选的 AJinOS 桌面客户端与本地网页前端 |
 | `examples/` | 场景模板、最小插件模板和任务 Skill |
 | `skills/agent-autoloop/` | 中台的正式配置与操作手册 |
 | `docs/` | 通信协议、插件开发、Studio 架构与架构图 |

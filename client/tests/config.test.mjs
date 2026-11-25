@@ -1,10 +1,11 @@
 // Prevent invalid configurations from replacing working rules and ambiguous messages from reaching the wrong project.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDefaults, validateWorkspace, resolveProject, eventFor } from "../config.mjs";
+import { validateWorkspace, resolveProject, eventFor } from "../config.mjs";
+import { createDemoWorkspace } from "./studio-fixtures.mjs";
 
 test("project routing uses registered evidence and refuses ambiguity", () => {
-  const config = createDefaults("/workspace/studio", process.execPath);
+  const config = createDemoWorkspace("/workspace/studio");
   assert.equal(resolveProject(config.projects, "订单支付失败").project.id, "orders");
   assert.equal(resolveProject(config.projects, "继续处理", "content").project.id, "content");
   assert.equal(resolveProject(config.projects, "订单和素材都需要处理").project, null);
@@ -13,7 +14,7 @@ test("project routing uses registered evidence and refuses ambiguity", () => {
 });
 
 test("a project cannot borrow another rule or silently change its directory", () => {
-  const config = createDefaults("/workspace/studio", process.execPath);
+  const config = createDemoWorkspace("/workspace/studio");
   assert.doesNotThrow(() => validateWorkspace(config));
   config.projects[0].cwd = "/another/project";
   assert.throws(() => validateWorkspace(config), /目录/);
@@ -23,7 +24,7 @@ test("a project cannot borrow another rule or silently change its directory", ()
 });
 
 test("validation preserves optional protocol settings and rejects invalid agent references", () => {
-  const config = createDefaults("/workspace/studio", process.execPath);
+  const config = createDemoWorkspace("/workspace/studio");
   config.rules.rules[0].emits = { source: "local", types: ["followup.*"] };
   config.rules.rules[0].tell = "never";
   const valid = validateWorkspace(config);
@@ -33,7 +34,7 @@ test("validation preserves optional protocol settings and rejects invalid agent 
 });
 
 test("event IDs are stable per message while topics are isolated by project", () => {
-  const config = createDefaults("/workspace/studio", process.execPath);
+  const config = createDemoWorkspace("/workspace/studio");
   const message = { id: "message-1", topic: "topic-1", text: "继续处理" };
   const a = eventFor(config, config.projects[0], message);
   const b = eventFor(config, config.projects[1], message);
@@ -45,7 +46,7 @@ test("event IDs are stable per message while topics are isolated by project", ()
 });
 
 test("gateway model and effort overrides are validated and preserved", () => {
-  const config = createDefaults("/workspace/studio", process.execPath);
+  const config = createDemoWorkspace("/workspace/studio");
   config.gateway = { enabled: true, agent: "claude", model: "claude-sonnet-4-6", effort: "medium" };
   const valid = validateWorkspace(config);
   assert.equal(valid.gateway.model, "claude-sonnet-4-6");
@@ -58,7 +59,7 @@ test("gateway model and effort overrides are validated and preserved", () => {
 });
 
 test("autoAcceptMinutes is validated and preserved in runtime settings", () => {
-  const config = createDefaults("/workspace/studio", process.execPath);
+  const config = createDemoWorkspace("/workspace/studio");
   config.runtime.autoAcceptMinutes = 30;
   assert.equal(validateWorkspace(config).runtime.autoAcceptMinutes, 30);
   config.runtime.autoAcceptMinutes = 0;
@@ -70,7 +71,7 @@ test("autoAcceptMinutes is validated and preserved in runtime settings", () => {
 });
 
 test("nodeExecutors binds concrete executors to profile, chief and memory nodes with strict validation", () => {
-  const config = createDefaults("/workspace/studio", process.execPath);
+  const config = createDemoWorkspace("/workspace/studio");
   config.rules.agents["cc-fast"] = {
     name: "CC · 快速",
     worker: "studio-local",

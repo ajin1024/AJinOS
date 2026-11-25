@@ -1,3 +1,4 @@
+import { ManualAgentsPanel } from "./manual-agents-panel.jsx";
 import React, { useEffect, useMemo, useState } from "react";
 import { Banner, Button, Empty, Input, InputNumber, Modal, Radio, RadioGroup, Select, SideSheet, Switch, Tag } from "@douyinfe/semi-ui";
 import { IconDelete, IconEdit, IconPlus, IconRefresh } from "@douyinfe/semi-icons";
@@ -484,7 +485,7 @@ function buildNodeDraft(config) {
   };
 }
 
-export function AgentsPanel({ config, snapshot, state, api, toast, onSaveConfig, onEditingChange }) {
+function EngineSettings({ config, snapshot, state, api, toast, onSaveConfig, onEditingChange }) {
   const allBase = Object.entries(config.rules?.agents || {}).filter(([id]) => !generatedOwner(config, "agent", id));
   const modelExecutors = allBase.filter(([, agent]) => agent && agent.use !== "command");
   const commandExecutors = allBase.filter(([, agent]) => agent && agent.use === "command");
@@ -1382,5 +1383,15 @@ export function AgentsPanel({ config, snapshot, state, api, toast, onSaveConfig,
         </p>
       </Modal>
     </div>
+  );
+}
+
+export function AgentsPanel(props) {
+  const [advanced, setAdvanced] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setAdvanced(!advanced)}>{advanced ? "返回快捷导入" : "引擎探测与角色设置"}</Button>
+      {advanced ? <EngineSettings {...props} /> : <ManualAgentsPanel {...props} />}
+    </>
   );
 }

@@ -12,7 +12,12 @@ const {
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 const zlib = require("node:zlib");
-if (process.env.STUDIO_DESKTOP_PROFILE) app.setPath("userData", process.env.STUDIO_DESKTOP_PROFILE);
+const { existsSync } = require("node:fs");
+const currentProfile = app.getPath("userData");
+const legacyProfile = path.join(app.getPath("appData"), "阿锦 Auto");
+const previousProfile = app.isPackaged && !existsSync(currentProfile) && existsSync(legacyProfile) ? legacyProfile : currentProfile;
+app.setPath("userData", process.env.STUDIO_DESKTOP_PROFILE || previousProfile);
+app.setName("AJinOS");
 let win,
   backend,
   tray,

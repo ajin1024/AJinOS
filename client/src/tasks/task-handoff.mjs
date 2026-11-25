@@ -1,5 +1,5 @@
 import { businessProjects, flowsFor, projectDisplayRules } from "../gateway-config.mjs";
-import { formatExecutorSpec } from "../studio-helpers.mjs";
+import { EFFORT_NAMES } from "../executor-presets.mjs";
 
 const MAX_HANDOFF_TEXT = 3800;
 
@@ -35,14 +35,14 @@ export function executorChoicesFor(config, projectId) {
   return Object.entries(routes).map(([id, route]) => {
     const agent = agents[id] || {};
     const name = agent.name || id;
-    const spec = formatExecutorSpec(agent);
+    const details = [name, agent.model, EFFORT_NAMES[agent.effort] || agent.effort].filter(Boolean);
     return {
       id,
       name,
       use: agent.use || "",
       rule: route.rule,
       inherited: Boolean(route.inherited),
-      label: spec ? `${name}（${spec}）` : name,
+      label: details.join(" · "),
     };
   });
 }

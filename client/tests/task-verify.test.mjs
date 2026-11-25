@@ -6,12 +6,13 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createDefaults, validateWorkspace } from "../config.mjs";
-import { startStudio } from "../server.mjs";
+import { createDemoWorkspace } from "./studio-fixtures.mjs";
+import { validateWorkspace } from "../config.mjs";
+import { startDemoStudio as startStudio } from "./studio-fixtures.mjs";
 import { TaskVerifier } from "../verifier.mjs";
 
 function makeConfig() {
-  const config = createDefaults("C:/workspace/studio", process.execPath);
+  const config = createDemoWorkspace("C:/workspace/studio");
   config.rules.agents["cc-deepseek"] = {
     name: "CC · DeepSeek",
     worker: "studio-local",

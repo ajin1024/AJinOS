@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { startStudio } from "../server.mjs";
+import { startDemoStudio as startStudio } from "./studio-fixtures.mjs";
 
 test("Studio Chief API answers global brief and executes a 2-step cross-project plan end-to-end", { timeout: 90000 }, async () => {
   const home = mkdtempSync(path.join(tmpdir(), "studio-chief-http-"));

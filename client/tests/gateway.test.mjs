@@ -5,7 +5,8 @@ import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { createDefaults, validateWorkspace, eventFor } from "../config.mjs";
+import { validateWorkspace, eventFor } from "../config.mjs";
+import { createDemoWorkspace } from "./studio-fixtures.mjs";
 import { Gateway, projectSnapshot, flowsFor } from "../gateway.mjs";
 
 test("message integrations are excluded from new project recognition without breaking existing topic bindings", async (t) => {
@@ -25,7 +26,7 @@ test("message integrations are excluded from new project recognition without bre
 
 function fixture(t, model) {
   const home = mkdtempSync(path.join(tmpdir(), "studio-gateway-"));
-  const config = createDefaults(home, process.execPath);
+  const config = createDemoWorkspace(home);
   for (const p of config.projects) {
     mkdirSync(p.cwd, { recursive: true });
     writeFileSync(path.join(p.cwd, "README.md"), p.id === "orders" ? "退款到账与交易履约服务" : "营销短片与镜头生产");

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Banner, Button, Select, Tag } from "@douyinfe/semi-ui";
+import { IconFolder, IconKanban, IconLayers, IconList, IconSearch } from "@douyinfe/semi-icons";
+import { Banner, Button, Tag } from "@douyinfe/semi-ui";
 import { businessProjects } from "../gateway-config.mjs";
 import { groupTasks } from "../task-list.mjs";
 import { taskKind } from "../task-scope.mjs";
@@ -126,7 +127,7 @@ export function TaskCenter({
       intake,
     }));
 
-  // Compute total "待我处理" count across business + demo + intakes + orphan cards
+  // Keep questions from older demo runs answerable after removing their dedicated tab.
   const orphanCards = orphanCardsOf(state.cards || [], [...businessGroups, ...demoGroups]);
   const actionableTasks = [
     ...businessGroups.filter(isHumanActionable),
@@ -196,8 +197,7 @@ export function TaskCenter({
       .filter(matchesNeedle)
       .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
   } else {
-    const baseGroups =
-      scope === "business" ? businessGroups : scope === "demo" ? demoGroups : backgroundGroups;
+    const baseGroups = scope === "background" ? backgroundGroups : businessGroups;
     const scopedIntakes = scope === "business" ? allIntakes : [];
     entries = [...baseGroups, ...scopedIntakes]
       .filter((g) => projectFilter === "all" || g.project === projectFilter)
@@ -220,8 +220,15 @@ export function TaskCenter({
         : "待我处理列表"
       : "任务列表";
 
-  const activeProjectLabel = projectFilter === "all" ? "全部项目" : projectName(projectFilter);
+  const showChief = viewMode === "chief";
   const showBoard = viewMode === "board" && !(scope === "todo" && todoMode === "history");
+  const hasFilters = Boolean(needle || projectFilter !== "all" || (scope !== "todo" && statusFilter !== "all"));
+
+  function clearFilters() {
+    onSearchQueryChange("");
+    onProjectFilterChange("all");
+    if (scope !== "todo") onStatusFilterChange("all");
+  }
 
   function openBoardEntry(entry) {
     if (!entry) return;
@@ -231,49 +238,13 @@ export function TaskCenter({
 
   return (
     <div className="pending-page task-list-page tc-page">
-      <div className="pending-tools">
-        <div className="kb-header-row">
-          <h1 className="kb-page-title">
-            任务看板 · {activeProjectLabel}
-          </h1>
-          <div className="kb-view-switch" role="group" aria-label="视图切换">
-            <button
-              type="button"
-              id="task-view-board"
-              className={viewMode === "board" ? "active" : ""}
-              aria-pressed={viewMode === "board"}
-              onClick={() => setViewMode("board")}
-            >
-              看板
-            </button>
-            <button
-              type="button"
-              id="task-view-list"
-              className={viewMode === "list" ? "active" : ""}
-              aria-pressed={viewMode === "list"}
-              onClick={() => setViewMode("list")}
-            >
-              列表
-            </button>
-            <button
-              type="button"
-              id="task-view-chief"
-              className={viewMode === "chief" ? "active" : ""}
-              aria-pressed={viewMode === "chief"}
-              onClick={() => setViewMode("chief")}
-            >
-              总管统筹
-            </button>
-          </div>
-        </div>
-
-        <div className="task-tools">
-          <div className="filters" role="tablist" aria-label="任务视图">
+      <div className="tc-tools">
+        <div className="tc-toolbar">
+          <div className="tc-scopes" role="tablist" aria-label="任务分类">
             {[
               ["business", "业务任务", null],
               ["todo", "待我处理", todoTotalCount],
               ["background", "后台运行", null],
-              ["demo", "演示记录", null],
             ].map(([id, label, count]) => (
               <button
                 key={id}
@@ -282,18 +253,83 @@ export function TaskCenter({
                 id={`task-scope-${id}`}
                 data-action="task-scope"
                 data-id={id}
-                aria-selected={scope === id}
-                aria-pressed={scope === id}
-                className={`filter ${scope === id ? "active" : ""}`}
-                onClick={() => onScopeChange(id)}
+                aria-selected={!showChief && scope === id}
+                onClick={() => {
+                  if (showChief) setViewMode("board");
+                  onScopeChange(id);
+                }}
               >
                 <span>{label}</span>
-                {count ? <span className="nav-count">{count}</span> : null}
+                {count ? <span className="tc-scope-count">{count}</span> : null}
               </button>
             ))}
           </div>
 
-          <div className="task-list-tools">
+          <div className="tc-view-actions" role="group" aria-label="视图切换">
+            <div className="kb-view-switch">
+              <button
+                type="button"
+                id="task-view-board"
+                aria-pressed={showBoard}
+                onClick={() => {
+                  if (scope === "todo") setTodoMode("pending");
+                  setViewMode("board");
+                }}
+              >
+                <IconKanban size="small" aria-hidden="true" /> 看板
+              </button>
+              <button
+                type="button"
+                id="task-view-list"
+                aria-pressed={!showChief && !showBoard}
+                onClick={() => setViewMode("list")}
+              >
+                <IconList size="small" aria-hidden="true" /> 列表
+              </button>
+            </div>
+            <button
+              type="button"
+              id="task-view-chief"
+              className="tc-chief-button"
+              aria-pressed={showChief}
+              onClick={() => setViewMode("chief")}
+            >
+              <IconLayers size="small" aria-hidden="true" /> 总管统筹
+            </button>
+          </div>
+        </div>
+
+        {!showChief && (
+          <div className="tc-filters">
+            <div className="tc-search">
+              <IconSearch size="small" aria-hidden="true" />
+              <input
+                id="task-search"
+                type="search"
+                placeholder="搜索任务、项目或轮次编号"
+                aria-label="搜索任务"
+                value={searchQuery}
+                onChange={(e) => onSearchQueryChange(e.target.value)}
+              />
+            </div>
+
+            <div className="tc-project-filter">
+              <IconFolder size="small" aria-hidden="true" />
+              <select
+                id="project-filter"
+                aria-label="按项目查看"
+                value={projectFilter}
+                onChange={(e) => onProjectFilterChange(e.target.value)}
+              >
+                <option value="all">所有项目</option>
+                {businessProjects(config).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {scope === "todo" ? (
               <div className="filters" aria-label="处理状态">
                 <button
@@ -316,58 +352,41 @@ export function TaskCenter({
                 </button>
               </div>
             ) : (
-              <Select
+              <select
                 id="task-status-filter"
                 aria-label="任务状态"
                 value={statusFilter}
-                onChange={(value) => onStatusFilterChange(String(value ?? ""))}
-                style={{ width: 170 }}
-                optionList={[
-                  { value: "all", label: "全部状态" },
-                  {
-                    label: "常用分组",
-                    children: [
-                      { value: "group:todo", label: "待我处理" },
-                      { value: "group:active", label: "进行中（执行 / 排队）" },
-                      { value: "group:acceptance", label: "待验收 / 待核实" },
-                      { value: "group:ended", label: "已结束" },
-                    ],
-                  },
-                  {
-                    label: "精确状态",
-                    children: Object.entries(workflowStatuses).map(([id, label]) => ({ value: id, label })),
-                  },
-                  {
-                    label: "流转阶段",
-                    children: Object.entries(taskStages).map(([id, label]) => ({ value: id, label })),
-                  },
-                ]}
-              />
+                onChange={(e) => onStatusFilterChange(e.target.value)}
+              >
+                <option value="all">全部状态</option>
+                <optgroup label="常用分组">
+                  <option value="group:todo">待我处理</option>
+                  <option value="group:active">进行中（执行 / 排队）</option>
+                  <option value="group:acceptance">待验收 / 待核实</option>
+                  <option value="group:ended">已结束</option>
+                </optgroup>
+                <optgroup label="精确状态">
+                  {Object.entries(workflowStatuses).map(([id, label]) => (
+                    <option key={id} value={id}>
+                      {label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="流转阶段">
+                  {Object.entries(taskStages).map(([id, label]) => (
+                    <option key={id} value={id}>
+                      {label}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
             )}
 
-            <Select
-              id="project-filter"
-              aria-label="按项目查看"
-              value={projectFilter}
-              onChange={(value) => onProjectFilterChange(String(value ?? ""))}
-              style={{ width: 150 }}
-              optionList={[
-                { value: "all", label: "所有项目" },
-                ...businessProjects(config).map((p) => ({ value: p.id, label: p.name })),
-              ]}
-            />
-
-            <input
-              id="task-search"
-              type="search"
-              className="task-search"
-              placeholder="搜索任务、项目或轮次编号"
-              aria-label="搜索任务"
-              value={searchQuery}
-              onChange={(e) => onSearchQueryChange(e.target.value)}
-            />
+            {(!(tasksLoading || taskLoadError) || entries.length > 0) && (
+              <span className="tc-task-count">共 {entries.length} 项任务</span>
+            )}
           </div>
-        </div>
+        )}
 
         {!snapshot.connected && (
           <Banner
@@ -390,13 +409,15 @@ export function TaskCenter({
         )}
       </div>
 
-      {viewMode === "chief" ? (
+      {showChief ? (
         <ChiefPanel api={api} toast={toast} connected={snapshot.connected} />
       ) : showBoard ? (
         <TaskBoard
           entries={entries}
           selectedKey={selected?.key}
           loading={tasksLoading}
+          emptyMessage={taskLoadError ? "暂时无法读取任务" : hasFilters ? "没有匹配的任务" : "暂无任务"}
+          onClearFilters={hasFilters && !taskLoadError ? clearFilters : undefined}
           onSelectCard={openBoardEntry}
           onStartReview={openBoardEntry}
         />
