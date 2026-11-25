@@ -1,0 +1,27 @@
+{
+  "name": "ajinos-studio",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "AJinOS Studio — Local desktop workspace powered by Agent Autoloop",
+  "main": "desktop.cjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "desktop": "node desktop-launch.mjs",
+    "setup:desktop": "node node_modules/electron/install.js",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node build.mjs --check && node --check server.mjs && node --check config.mjs && node --check src/app.js && node --check src/island-world.js && node --check desktop.cjs",
+    "build": "node build.mjs",
+    "package:windows": "node package-windows.mjs"
+  },
+  "devDependencies": {
+    "@douyinfe/semi-icons": "^2.104.0",
+    "@douyinfe/semi-ui": "^2.104.0",
+    "electron": "45.2.3",
+    "electron-builder": "26.18.1",
+    "esbuild": "^0.28.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.187.0"
+  }
+}

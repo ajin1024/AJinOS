@@ -1,0 +1,27 @@
+{
+  "timezone": "Asia/Shanghai",
+  "sources": { "app": { "name": "应用" } },
+  "agents": { "a1": { "name": "甲", "worker": "w1", "use": "claude", "model": "m1" } },
+  "channels": { "chat": { "name": "聊天", "answerers": ["me"] } },
+  "rules": [
+    {
+      "name": "普通",
+      "when": { "source": "app", "types": ["normal.*"] },
+      "to": "a1",
+      "cwd": "~/x",
+      "prompt": "处理。",
+      "parallel": 3
+    },
+    {
+      "name": "工单",
+      "when": { "source": "app", "types": ["ticket.*"] },
+      "to": "a1",
+      "cwd": "~/x",
+      "prompt": "按流程做。",
+      "parallel": 3,
+      "flow": ["受理", "修复", { "name": "验证", "required": false }]
+    },
+    { "name": "巡检", "when": { "cron": "*/5 * * * *" }, "to": "a1", "cwd": "~/x", "prompt": "看一眼。" }
+  ],
+  "elsewhere": []
+}

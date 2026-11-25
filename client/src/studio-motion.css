@@ -1,0 +1,160 @@
+:root {
+  --studio-motion-feedback: 100ms;
+  --studio-motion-enter: 170ms;
+  --studio-motion-exit: 120ms;
+  --studio-motion-ease: cubic-bezier(0.2, 0.72, 0.25, 1);
+}
+
+.studio-header :is(.nav-item, .button, .studio-status-capsule),
+.mc-page :is(.mc-conversation, .mc-filter-chip, .mc-icon-button, .mc-option-toggle),
+.sc-nav-item,
+.ps-project-link,
+.kb-card {
+  transition:
+    background-color var(--studio-motion-feedback) ease,
+    border-color var(--studio-motion-feedback) ease,
+    color var(--studio-motion-feedback) ease;
+}
+
+.studio-header :is(button, a):focus-visible,
+.mc-page :is(button, a, .mc-timeline):focus-visible {
+  outline: 2px solid var(--ui-accent-line);
+  outline-offset: -2px;
+}
+
+.studio-status-capsule > .semi-icon:last-child,
+.mc-option-toggle > .semi-icon {
+  transition: transform var(--studio-motion-feedback) var(--studio-motion-ease);
+}
+.studio-status-capsule[aria-expanded="true"] > .semi-icon:last-child,
+.mc-option-toggle[aria-expanded="true"] > .semi-icon {
+  transform: rotate(180deg);
+}
+
+.studio-capsule-dropdown {
+  transform-origin: top right;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-4px) scale(0.985);
+  transition:
+    transform var(--studio-motion-exit) var(--studio-motion-ease),
+    opacity var(--studio-motion-exit) ease,
+    visibility 0s var(--studio-motion-exit);
+}
+.studio-capsule-dropdown[data-open="true"] {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition:
+    transform var(--studio-motion-enter) var(--studio-motion-ease),
+    opacity var(--studio-motion-enter) ease,
+    visibility 0s;
+}
+.studio-status-popover {
+  width: min(296px, calc(100vw - 24px));
+}
+
+.semi-modal-content-animate-show {
+  animation: studio-dialog-in var(--studio-motion-enter) var(--studio-motion-ease) both;
+}
+.semi-modal-content-animate-hide {
+  animation: studio-dialog-out var(--studio-motion-exit) ease-in both;
+  pointer-events: none;
+}
+.semi-sidesheet-animation-content_show_right {
+  animation: studio-sheet-in var(--studio-motion-enter) var(--studio-motion-ease) both;
+}
+.semi-sidesheet-animation-content_hide_right {
+  animation: studio-sheet-out var(--studio-motion-exit) ease-in both;
+  pointer-events: none;
+}
+.semi-modal-mask-animate-show,
+.semi-sidesheet-animation-mask_show {
+  animation-duration: var(--studio-motion-enter);
+}
+.semi-modal-mask-animate-hide,
+.semi-sidesheet-animation-mask_hide {
+  animation-duration: var(--studio-motion-exit);
+}
+
+@keyframes studio-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes studio-dialog-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+}
+@keyframes studio-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes studio-sheet-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+@keyframes studio-feedback-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+#toast:not([hidden]),
+.mc-jump-latest,
+.mc-advanced,
+.ps-editor {
+  animation: studio-feedback-in var(--studio-motion-feedback) ease-out both;
+}
+
+@media (max-width: 650px) {
+  .studio-header {
+    position: relative;
+  }
+  .studio-header .studio-capsule-wrap {
+    position: static;
+  }
+  .studio-header .studio-capsule-dropdown {
+    right: 10px;
+    top: 100%;
+  }
+  .studio-header #nav .nav-item {
+    padding-block: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-progress .icon,
+  #toast:not([hidden]),
+  .mc-jump-latest,
+  .mc-advanced,
+  .ps-editor {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1330" viewBox="0 0 1200 1330" role="img" aria-labelledby="title desc">
+  <title id="title">AJinOS Studio · 架构分层（总管统筹 + 长期记忆 + 项目识别网关 + Hub 内核）</title>
+  <desc id="desc">在零依赖 Hub 调度内核之外，Studio 客户端层由总管统筹层、长期记忆档案、项目识别网关与可信执行规则构成；所有执行仍严格通过既有 HTTP 协议交给 Hub、Worker 与 Agent，验收关闭同步 Hub 原生工单。</desc>
+  <defs>
+    <style>
+      text{font-family:"Microsoft YaHei","PingFang SC",sans-serif;fill:#203343;font-size:16px}
+      .title{font-size:30px;font-weight:700}.sub{font-size:15px;fill:#5c7180}
+      .h{font-size:20px;font-weight:700}.label{font-size:14px;font-weight:700;fill:#637786}
+      .small{font-size:14px;fill:#536b7a}.plan{fill:#fff7eb;stroke:#bd7124;stroke-width:1.5}
+      .chief{fill:#eef4ff;stroke:#3b66b0;stroke-width:1.6}
+      .existing{fill:#eef8f7;stroke:#51867e;stroke-width:1.5}.box{fill:#fff;stroke:#b8c9d2;stroke-width:1.5}
+      .edge{fill:none;stroke:#597988;stroke-width:2;marker-end:url(#arrow)}
+      .planned-edge{fill:none;stroke:#bd7124;stroke-width:2;stroke-dasharray:6 4;marker-end:url(#orange)}
+      .chief-edge{fill:none;stroke:#3b66b0;stroke-width:2;marker-end:url(#blue)}
+      .dark{fill:#233e50}.white{fill:#fff}.pale{fill:#d4e3eb}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#597988"/></marker>
+    <marker id="orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#bd7124"/></marker>
+    <marker id="blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#3b66b0"/></marker>
+  </defs>
+  <rect width="1200" height="1330" rx="20" fill="#f4f7f9"/>
+  <text x="40" y="53" class="title">AJinOS Studio · 架构分层</text>
+  <text x="40" y="83" class="sub">总管统筹 + 长期记忆 + 可配置识别网关，全部位于内核之外，严格通过 /v1 协议驱动确定性调度内核。</text>
+  <rect x="760" y="35" width="20" height="16" rx="4" class="chief"/>
+  <text x="788" y="49" class="small">总管与记忆</text>
+  <rect x="900" y="35" width="20" height="16" rx="4" class="plan"/>
+  <text x="928" y="49" class="small">识别网关</text>
+  <rect x="1020" y="35" width="20" height="16" rx="4" class="existing"/>
+  <text x="1048" y="49" class="small">内核与执行</text>
+  <text x="760" y="80" class="small">大脑层可配置 Claude Code / Codex 模型与思考强度</text>
+
+  <rect x="24" y="108" width="1152" height="862" rx="18" fill="#fff" stroke="#cbd8df"/>
+  <text x="45" y="138" class="label">STUDIO 客户端层 · 在调度内核之外（桌面端 / 网页 / 飞书私聊共用）</text>
+
+  <!-- Row 1: Chief of Staff & Long-term Memory -->
+  <rect x="48" y="156" width="540" height="122" rx="12" class="chief"/>
+  <text x="68" y="186" class="h">◎ 总管统筹层（Chief of Staff）</text>
+  <text x="68" y="214">零消耗全局简报 · 只读进度问答（不派后厨）</text>
+  <text x="68" y="240">复合目标拆解为无环多步计划（DAG）· 确认后按依赖推进</text>
+  <text x="68" y="264" class="small">上游结论摘要以只读交接块传给下游 · 桌面端与飞书私聊统一入口</text>
+
+  <rect x="612" y="156" width="540" height="122" rx="12" class="chief"/>
+  <text x="632" y="186" class="h">◎ 长期记忆档案（MemoryStore）</text>
+  <text x="632" y="214">全局偏好 · 项目历史决策 · 踩坑经验（可审计可归档）</text>
+  <text x="632" y="240">任务结束后 AI 提炼草案（draft）→ 本人确认生效（active）</text>
+  <text x="632" y="264" class="small">仅新话题首条消息按预算只读注入，绝不挤占原话、不改规则权限</text>
+
+  <!-- Row 2: Project profiles & Trusted catalog -->
+  <rect x="48" y="302" width="330" height="106" rx="12" class="plan"/>
+  <text x="68" y="332" class="h">① 项目预分析与画像库</text>
+  <text x="68" y="360">只读项目说明与目录结构生成画像</text>
+  <text x="68" y="386" class="small">保留资料指纹与版本，不扫描敏感文件</text>
+
+  <rect x="402" y="302" width="366" height="106" rx="12" class="box"/>
+  <text x="422" y="332" class="h">可信项目与流程目录</text>
+  <text x="422" y="360">项目 / 流程 → 既有规则与分档配置</text>
+  <text x="422" y="386" class="small">目录、Agent、Skill 与权限只由本机规则决定</text>
+
+  <rect x="792" y="302" width="360" height="106" rx="12" class="plan"/>
+  <text x="812" y="332" class="h">可配置网关大脑层</text>
+  <text x="812" y="360">支持 Claude Code / Codex 隔离调用</text>
+  <text x="812" y="386" class="small">可选 gateway.agent / model / effort 覆盖</text>
+
+  <!-- Row 3: Session entry -->
+  <rect x="48" y="440" width="1104" height="72" rx="12" class="existing"/>
+  <text x="68" y="469" class="h">② 消息入口：桌面端 / 飞书私聊 / 总管计划推进</text>
+  <text x="68" y="495" class="small">先检查本人拦截词（blockedTerms）；总管问答直接回复；任务消息核验已有归属或进入首次会话识别。</text>
+  <path d="M318 278V438" class="chief-edge"/>
+  <path d="M880 278V438" class="chief-edge"/>
+
+  <path d="M280 512V556" class="edge"/>
+  <text x="292" y="542" class="small">已有归属（话题 / 任务 / 会话）</text>
+  <path d="M802 512V556" class="planned-edge"/>
+  <text x="814" y="542" class="small">无已有归属 · 首次会话</text>
+
+  <!-- Row 4: Routing -->
+  <rect x="48" y="560" width="464" height="132" rx="12" class="box"/>
+  <text x="68" y="590" class="h">③ 查已有绑定，直接续接</text>
+  <text x="68" y="618">话题 / 任务 / 执行器会话 → 原项目与流程</text>
+  <text x="68" y="646">已有话题续聊不重复注入长期记忆块</text>
+  <text x="68" y="672" class="small">标识无效或跨项目冲突直接报错，不偷偷换项目</text>
+
+  <rect x="580" y="560" width="572" height="132" rx="12" class="plan"/>
+  <text x="600" y="590" class="h">③ 需求确认与智能分诊</text>
+  <text x="600" y="618">目标不清先追问；清晰后在登记范围内选项目、流程与等级</text>
+  <text x="600" y="646">首次派发自动附带全局 + 项目生效记忆（只读资料块）</text>
+  <text x="600" y="672" class="small">不明确返回候选卡片结束本轮，零进程等待</text>
+
+  <path d="M280 692V742" class="edge"/>
+  <path d="M860 692V742" class="planned-edge"/>
+
+  <!-- Row 5: Event dispatch -->
+  <rect x="48" y="746" width="1104" height="100" rx="12" class="box"/>
+  <text x="68" y="776" class="h">④ 校验归属 → 保存绑定与事实 → 发出标准事件</text>
+  <text x="68" y="804">严格指令数据分离：用户原话、长期记忆与上游交接摘要仅进入事件资料文件，绝不改写规则权限。</text>
+  <text x="68" y="830" class="small">消息 ID 幂等去重；总管监听 Hub 状态刷新，上游完成后自动推进下游 DAG 步骤。</text>
+
+  <rect x="48" y="864" width="1104" height="82" rx="10" fill="#f0f4f7"/>
+  <text x="68" y="896">Studio 事实（studio.db）：项目画像 / 话题归属 / 长期记忆 / 协作计划 / 人工流转记录</text>
+  <text x="68" y="926" class="small">↕ 双向同步：验收通过、关闭与重开同步调用 Hub /v1/tickets；CLI 关单/重开实时反映到 Studio</text>
+
+  <!-- Row 6: Hub Kernel & Worker -->
+  <path d="M600 946V998" class="edge"/>
+  <text x="616" y="984" class="small">标准 HTTP + JSON 协议（/v1）</text>
+  <rect x="48" y="1002" width="708" height="110" rx="14" class="dark"/>
+  <text x="70" y="1036" class="h white">⑤ Hub 确定性调度内核（零外部依赖）</text>
+  <text x="70" y="1066" class="white">收事件 · 按可信规则分派 · 并发与 8 跳熔断 · 事实日志 · 原生工单（T-xxxxxx）</text>
+  <text x="70" y="1093" class="small pale">不读项目文件、不调用模型、不主动外连；挂起等回答时零进程、零 Token 消耗。</text>
+  <path d="M756 1057H800" class="edge"/>
+  <rect x="804" y="1002" width="348" height="110" rx="14" class="existing"/>
+  <text x="824" y="1036" class="h">⑥ Worker &amp; 插件生态</text>
+  <text x="824" y="1066">Claude / Codex / ACP / DSH / CLI</text>
+  <text x="824" y="1093" class="small">领活、续接会话、提交结构化验收回执</text>
+
+  <text x="48" y="1152" class="label">既有外部来源（GitHub / GitLab / Webhook / 定时 / 卡片回答 / 复查）→ 直连 Hub，不经过首次会话识别</text>
+  <line x1="48" y1="1173" x2="1152" y2="1173" stroke="#cedae1"/>
+  <text x="48" y="1205" class="small">安全红线：外部事件与记忆文本只作只读资料；删除/停服/花钱/对外发消息经 askFirst 审批卡片签字放行。</text>
+  <text x="48" y="1235" class="small">验收闭环：AI 报告 done + 结构化验收依据仅进入待验收，必须本人签收才关闭 Hub 原生工单，支持退回返工与重开。</text>
+  <text x="48" y="1272" class="label">全生命周期：需求确认 → 项目归属 / 总管拆单 → 执行处理 → 结果验收 → 关闭工单 &amp; 提炼长期记忆</text>
+</svg>

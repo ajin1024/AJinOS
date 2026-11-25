@@ -1,0 +1,61 @@
+.task-workflow,
+.task-intake {
+  padding: 18px;
+  border: 1px solid var(--line, #deded9);
+  border-radius: 12px;
+  margin: 12px 0;
+  background: var(--panel, #fff);
+  color: var(--text, #242424);
+}
+.task-stages {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted, #777);
+  margin-bottom: 16px;
+}
+.task-stages .current {
+  color: var(--blue, #315fd0);
+  font-weight: 700;
+}
+.task-stages i {
+  font-style: normal;
+  opacity: 0.45;
+}
+.task-workflow-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.task-workflow-heading > span:last-child {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted, #777);
+}
+.task-workflow p,
+.task-intake p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 10px 0;
+}
+.task-workflow-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.task-workflow-history {
+  margin-top: 16px;
+  font-size: 12px;
+}
+.task-workflow-history li {
+  margin: 12px 0;
+}
+.task-workflow-history small {
+  color: var(--muted, #777);
+}

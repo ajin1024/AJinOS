@@ -1,0 +1,1211 @@
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Button, Modal, Select, Tag } from "@douyinfe/semi-ui";
+import {
+  IconChevronDown,
+  IconChevronLeft,
+  IconClose,
+  IconComment,
+  IconImage,
+  IconLoading,
+  IconPlus,
+  IconSearch,
+  IconSend,
+} from "@douyinfe/semi-icons";
+import { businessProjects } from "../gateway-config.mjs";
+import { executorChoicesFor, flowChoicesFor } from "../tasks/task-handoff.mjs";
+import { CardReplyForm } from "../tasks/card-reply-form.jsx";
+import {
+  buildConversations,
+  countActionableConversations,
+  filterConversations,
+} from "./messages-model.mjs";
+
+const MAX_ATTACHMENTS = 8;
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_TEXT = 4000;
+const STATUS_COLORS = {
+  needs_decision: "amber",
+  needs_acceptance: "amber",
+  needs_confirmation: "amber",
+  needs_project: "amber",
+  running: "green",
+  blocked: "red",
+  failed: "red",
+  done: "grey",
+  idle: "grey",
+};
+const FILTERS = [
+  ["all", "全部"],
+  ["actionable", "待处理"],
+  ["running", "进行中"],
+  ["done", "已结束"],
+];
+const EXAMPLES = [
+  "把订单列表加上批量发货",
+  "检查一下今天线上有没有报错",
+  "整理一份本周项目进展",
+];
+const RUN_STATE_LABELS = {
+  queued: "排队中",
+  claimed: "执行中",
+  unknown: "状态待确认",
+  done: "已完成",
+  nothing: "无需处理",
+  cancelled: "已停止",
+};
+const RUN_STATE_COLORS = {
+  queued: "amber",
+  claimed: "green",
+  unknown: "amber",
+  done: "green",
+  nothing: "grey",
+  cancelled: "red",
+};
+
+function timeLabel(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function projectName(config, id) {
+  return config?.projects?.find((project) => project.id === id)?.name || id || "";
+}
+
+function originalAttachmentIds(intake) {
+  return (intake?.input?.attachments || [])
+    .map((attachment) => (typeof attachment === "string" ? attachment : attachment?.id))
+    .filter(Boolean);
+}
+
+function readFileBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      resolve(result.includes(",") ? result.slice(result.indexOf(",") + 1) : result);
+    };
+    reader.onerror = () => reject(new Error("读取图片失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function StatusTag({ conversation }) {
+  if (!conversation) return null;
+  return (
+    <Tag size="small" shape="circle" color={STATUS_COLORS[conversation.status] || "grey"}>
+      {conversation.statusLabel}
+    </Tag>
+  );
+}
+
+function AttachmentGrid({ attachments, onPreview }) {
+  if (!attachments?.length) return null;
+  return (
+    <div className="mc-attachment-grid">
+      {attachments.map((attachment) => (
+        <button
+          key={attachment.id || attachment.url}
+          type="button"
+          className="mc-attachment-thumb"
+          title={attachment.filename || "查看大图"}
+          onClick={() => onPreview(attachment)}
+        >
+          <img src={attachment.url} alt={attachment.filename || "图片附件"} loading="lazy" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RunBubble({ run, config, onInspectRun }) {
+  if (!run) return null;
+  const executor = config?.rules?.agents?.[run.agent]?.name || run.agent || "执行器";
+  const detail = run.summary || run.error || run.events?.at(-1)?.summary || "";
+  return (
+    <article className="mc-row mc-row-left">
+      <button type="button" className="mc-bubble mc-bubble-left mc-run" onClick={() => onInspectRun(run.id)}>
+        <div className="mc-run-head">
+          <strong>轮次 #{run.id}</strong>
+          <Tag size="small" shape="circle" color={RUN_STATE_COLORS[run.state] || "grey"}>
+            {RUN_STATE_LABELS[run.state] || run.state || "未知"}
+          </Tag>
+          <small>{executor}</small>
+        </div>
+        {detail && <p className="mc-run-summary">{detail}</p>}
+        <span className="mc-bubble-link">查看执行详情 →</span>
+      </button>
+    </article>
+  );
+}
+
+function IntakeBubble({ intake, config, toast, onResubmit, onDismiss }) {
+  const [busy, setBusy] = useState(false);
+  const [pickedProject, setPickedProject] = useState(intake?.input?.project || "");
+
+  useEffect(() => {
+    setPickedProject(intake?.input?.project || "");
+  }, [intake?.id, intake?.input?.project]);
+
+  if (!intake) return null;
+  const projects = businessProjects(config || {});
+  const state = intake.state;
+  const candidates = intake.candidates || [];
+
+  async function run(patch) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onResubmit(intake, patch);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function dismiss() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onDismiss(intake.id);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="mc-row mc-row-left">
+      <div className="mc-bubble mc-bubble-left mc-intake-bubble">
+        <div className="mc-intake-head">
+          <Tag size="small" shape="circle" color={state === "failed" || state === "interrupted" ? "red" : "amber"}>
+            {state === "needsConfirmation"
+              ? "需求确认"
+              : state === "needsProject"
+                ? "选择项目"
+                : state === "failed" || state === "interrupted"
+                  ? "没有派发成功"
+                  : "正在识别"}
+          </Tag>
+        </div>
+        {intake.text && <p className="mc-intake-text">{intake.text}</p>}
+        {intake.reason && <p className="mc-intake-reason">{intake.reason}</p>}
+
+        {(state === "confirming" || state === "routing" || state === "pending") && (
+          <div className="mc-progress">
+            <IconLoading size="small" aria-hidden="true" />
+            <span>正在识别需求与项目，请稍候…</span>
+          </div>
+        )}
+
+        {state === "needsConfirmation" && (
+          <div className="mc-intake-actions">
+            <div className="mc-actions-row">
+              <Button size="small" theme="solid" loading={busy} onClick={() => run({ requirementsConfirmed: true })}>
+                按原意确认并直接派发
+              </Button>
+            </div>
+            <p className="mc-quiet">如果还要补充，直接在下方输入框说明。</p>
+          </div>
+        )}
+
+        {state === "needsProject" && (
+          <div className="mc-intake-actions">
+            {candidates.length > 0 && (
+              <div className="mc-candidate-chips" role="group" aria-label="候选项目">
+                {candidates.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`mc-candidate-chip ${pickedProject === id ? "active" : ""}`}
+                    onClick={() => setPickedProject(id)}
+                  >
+                    {projectName(config, id) || id}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="mc-actions-row">
+              <Select
+                className="mc-project-select"
+                aria-label="选择业务项目"
+                value={pickedProject}
+                onChange={(value) => setPickedProject(String(value ?? ""))}
+                optionList={[
+                  { value: "", label: "选择项目…" },
+                  ...projects.map((project) => ({ value: project.id, label: project.name })),
+                ]}
+                style={{ width: 220 }}
+              />
+              <Button
+                size="small"
+                theme="solid"
+                loading={busy}
+                disabled={!pickedProject}
+                onClick={() => run({ project: pickedProject })}
+              >
+                用这个项目重新提交
+              </Button>
+            </div>
+            <p className="mc-quiet">会复用原来的消息和图片重新提交。</p>
+          </div>
+        )}
+
+        {(state === "failed" || state === "interrupted") && (
+          <div className="mc-intake-actions">
+            <div className="mc-actions-row">
+              <Button size="small" loading={busy} onClick={() => run({})}>
+                原样重试
+              </Button>
+              <Button size="small" disabled={busy} onClick={dismiss}>
+                忽略
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function initialComposerDraft(conversation) {
+  const input = conversation?.intake?.input;
+  return {
+    title: conversation?.title || "未发送的草稿",
+    text: "",
+    attachments: [],
+    project: input?.project || "",
+    flow: input?.flow || "",
+    executor: input?.executor || "",
+    complexity: input?.complexity || "",
+    requirementsConfirmed: input?.requirementsConfirmed === true,
+    advancedOpen: false,
+    busy: false,
+    error: "",
+  };
+}
+
+export function hasComposerDraft(draft) {
+  return Boolean(draft?.text.trim() || draft?.attachments.length);
+}
+
+function Composer({
+  conversation,
+  draft,
+  updateDraft,
+  textareaRef,
+  config,
+  api,
+  toast,
+  connected,
+  onNavigate,
+  onMessagesRefresh,
+}) {
+  const { text, attachments, project, flow, executor, complexity, requirementsConfirmed, advancedOpen, busy, error } = draft;
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef(null);
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const patchDraft = (patch) => updateDraft((current) => ({ ...current, ...patch }));
+
+  const continuingTopic = conversation?.kind === "card" ? "" : conversation?.topic || "";
+  const isContinuation = Boolean(continuingTopic);
+
+  const projects = businessProjects(config || {});
+  const flowChoices = flowChoicesFor(config, project);
+  const executorChoices = executorChoicesFor(config, project);
+  const defaultFlowChoice = flowChoices.find((choice) => choice.id === "default");
+  const availableFlows = flowChoices.filter((choice) => choice.id !== "default");
+  const showPrimaryExecutor = executorChoices.length > 1;
+  const uploading = attachments.some((attachment) => attachment.status === "uploading");
+  const uploadFailed = attachments.some((attachment) => attachment.status === "error");
+  const textLength = [...text].length;
+
+  function updateAttachments(updater) {
+    updateDraft((current) => ({ ...current, attachments: updater(current.attachments) }));
+  }
+
+  async function uploadFile(file, key) {
+    try {
+      if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw new Error("只支持 PNG、JPEG、WebP、GIF 图片");
+      if (file.size > MAX_ATTACHMENT_BYTES) throw new Error("图片不能超过 20 MB");
+      const dataBase64 = await readFileBase64(file);
+      const record = await api("/attachments", "POST", { dataBase64, filename: file.name || "image" });
+      updateAttachments((current) =>
+        current.map((attachment) =>
+          attachment.key === key ? { ...record, key, status: "done" } : attachment,
+        ),
+      );
+    } catch (uploadError) {
+      updateAttachments((current) =>
+        current.map((attachment) =>
+          attachment.key === key
+            ? { ...attachment, status: "error", error: uploadError.message }
+            : attachment,
+        ),
+      );
+      if (mounted.current) toast(uploadError.message, true);
+    }
+  }
+
+  async function addFiles(files) {
+    const images = [...files].filter((file) => String(file.type).startsWith("image/"));
+    if (!images.length) {
+      toast("只能添加图片文件", true);
+      return;
+    }
+    const room = MAX_ATTACHMENTS - attachments.length;
+    if (room <= 0) {
+      toast(`一次最多添加 ${MAX_ATTACHMENTS} 张图片`, true);
+      return;
+    }
+    if (images.length > room) toast(`一次最多添加 ${MAX_ATTACHMENTS} 张图片，只加入前 ${room} 张`, true);
+    const batch = images.slice(0, room).map((file) => ({
+      file,
+      item: { key: crypto.randomUUID(), filename: file.name || "图片", status: "uploading" },
+    }));
+    updateAttachments((current) => [...current, ...batch.map(({ item }) => item)]);
+    for (const { file, item } of batch) await uploadFile(file, item.key);
+  }
+
+  function removeAttachment(key) {
+    updateAttachments((current) => current.filter((attachment) => attachment.key !== key));
+  }
+
+  function handlePaste(event) {
+    const files = [...(event.clipboardData?.items || [])]
+      .filter((item) => item.kind === "file" && String(item.type).startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (!files.length) return;
+    event.preventDefault();
+    void addFiles(files);
+  }
+
+  function handleDragOver(event) {
+    if (![...(event.dataTransfer?.types || [])].includes("Files")) return;
+    event.preventDefault();
+    setDragActive(true);
+  }
+
+  function handleDragLeave(event) {
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    setDragActive(false);
+  }
+
+  function handleDrop(event) {
+    event.preventDefault();
+    setDragActive(false);
+    void addFiles(event.dataTransfer?.files || []);
+  }
+
+  async function send() {
+    const content = text.trim();
+    if (!content || busy) return;
+    if (!connected) {
+      toast("引擎未连接，暂时不能发送", true);
+      return;
+    }
+    if (uploading) {
+      toast("图片还在上传，请稍候再发送", true);
+      return;
+    }
+    if (uploadFailed) {
+      toast("有图片上传失败，请移除后再发送", true);
+      return;
+    }
+    if (textLength > MAX_TEXT) {
+      toast(`任务说明最多 ${MAX_TEXT} 字`, true);
+      return;
+    }
+    patchDraft({ busy: true, error: "" });
+    try {
+      const intakeInput = conversation?.kind === "intake" ? conversation.intake?.input || {} : {};
+      const messageId = crypto.randomUUID();
+      const attachmentIds = [
+        ...new Set([
+          ...originalAttachmentIds(conversation?.intake),
+          ...attachments.filter((attachment) => attachment.status === "done").map((attachment) => attachment.id),
+        ]),
+      ].slice(0, MAX_ATTACHMENTS);
+      const answer = await api("/messages", "POST", {
+        id: messageId,
+        topic: continuingTopic || "new",
+        text: content,
+        project: isContinuation
+          ? conversation?.project || intakeInput.project || undefined
+          : project || undefined,
+        ...(isContinuation
+          ? { requirementsConfirmed: true }
+          : {
+              requirementsConfirmed,
+              ...(flow ? { flow } : {}),
+              ...(executor ? { executor } : {}),
+              ...(complexity ? { complexity } : {}),
+            }),
+        ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
+      });
+      if (mounted.current) {
+        if (answer.needsProject || answer.needsConfirmation) {
+          onNavigate({ view: "messages", topic: `intake:${messageId}` });
+        } else {
+          toast(`已交给 ${projectName(config, answer.project) || "对应项目"}`);
+          onNavigate({ view: "messages", topic: answer.topic });
+        }
+      }
+      const sentKeys = new Set(attachments.map((attachment) => attachment.key));
+      updateDraft((current) => {
+        const remaining = current.attachments.filter((attachment) => !sentKeys.has(attachment.key));
+        const remainingText = current.text === text ? "" : current.text;
+        return remaining.length || remainingText
+          ? { ...current, text: remainingText, attachments: remaining, busy: false }
+          : null;
+      });
+      await onMessagesRefresh?.();
+    } catch (sendError) {
+      patchDraft({ busy: false, error: sendError.message });
+    }
+  }
+
+  function handleKeyDown(event) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent?.isComposing) return;
+    event.preventDefault();
+    void send();
+  }
+
+  return (
+    <div
+      className={`mc-composer ${dragActive ? "drag-active" : ""}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isContinuation ? (
+        <div className="mc-composer-context">
+          <span className="mc-context-dot" aria-hidden="true" />
+          <span>正在续接此话题</span>
+          {conversation?.projectName && (
+            <Tag size="small" shape="circle">
+              {conversation.projectName}
+            </Tag>
+          )}
+          <button
+            type="button"
+            className="mc-link-button"
+            onClick={() => onNavigate({ view: "messages", topic: null })}
+          >
+            切换新对话
+          </button>
+        </div>
+      ) : (
+        <div className="mc-composer-options">
+          <label className="mc-option">
+            <span>目标项目</span>
+            <Select
+              size="small"
+              value={project}
+              onChange={(value) => {
+                patchDraft({ project: String(value ?? ""), flow: "", executor: "" });
+              }}
+              optionList={[
+                { value: "", label: "自动识别" },
+                ...projects.map((item) => ({ value: item.id, label: item.name })),
+              ]}
+              style={{ width: 170 }}
+            />
+          </label>
+          <button
+            type="button"
+            className="mc-option-toggle"
+            aria-expanded={advancedOpen}
+            onClick={() => patchDraft({ advancedOpen: !advancedOpen })}
+          >
+            高级选项
+            <IconChevronDown size="small" aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      {!isContinuation && advancedOpen && (
+        <div className="mc-advanced">
+          {showPrimaryExecutor && (
+            <label className="mc-option">
+              <span>执行器 / 模型</span>
+              <Select
+                size="small"
+                value={executor}
+                onChange={(value) => patchDraft({ executor: String(value ?? "") })}
+                optionList={[
+                  { value: "", label: `默认（${defaultFlowChoice?.agentName || "按项目规则"}）` },
+                  ...executorChoices.map((choice) => ({ value: choice.id, label: choice.label })),
+                ]}
+                style={{ width: 190 }}
+              />
+            </label>
+          )}
+          {!showPrimaryExecutor && availableFlows.length > 0 && (
+            <label className="mc-option">
+              <span>处理流程</span>
+              <Select
+                size="small"
+                value={flow}
+                onChange={(value) => patchDraft({ flow: String(value ?? "") })}
+                optionList={[
+                  { value: "", label: defaultFlowChoice?.label || "默认流程" },
+                  ...availableFlows.map((choice) => ({ value: choice.id, label: choice.label })),
+                ]}
+                style={{ width: 170 }}
+              />
+            </label>
+          )}
+          <label className="mc-option">
+            <span>复杂度</span>
+            <Select
+              size="small"
+              value={complexity}
+              onChange={(value) => patchDraft({ complexity: String(value ?? "") })}
+              optionList={[
+                { value: "", label: "自动判断" },
+                { value: "simple", label: "简单处理" },
+                { value: "complex", label: "复杂处理" },
+              ]}
+              style={{ width: 130 }}
+            />
+          </label>
+          <label className="mc-checkbox">
+            <input
+              type="checkbox"
+              checked={requirementsConfirmed}
+              onChange={(event) => patchDraft({ requirementsConfirmed: event.target.checked })}
+            />
+            <span>我确定目标，跳过需求确认</span>
+          </label>
+        </div>
+      )}
+
+      {attachments.length > 0 && (
+        <div className="mc-composer-grid">
+          {attachments.map((attachment) => (
+            <div key={attachment.key} className={`mc-composer-thumb ${attachment.status}`}>
+              {attachment.status === "done" ? (
+                <img src={attachment.url} alt={attachment.filename || "图片附件"} />
+              ) : (
+                <span className="mc-attachment-state">
+                  {attachment.status === "error" ? "上传失败" : "上传中…"}
+                </span>
+              )}
+              <button
+                type="button"
+                className="mc-attachment-remove"
+                aria-label={`移除 ${attachment.filename || "图片"}`}
+                onClick={() => removeAttachment(attachment.key)}
+              >
+                <IconClose size="small" aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <textarea
+        ref={textareaRef}
+        className="mc-textarea"
+        aria-label="任务说明"
+        rows={3}
+        value={text}
+        placeholder={
+          isContinuation
+            ? "继续说明这次要改什么；Enter 发送，Shift+Enter 换行…"
+            : "输入你要完成的事；可以粘贴或拖入截图，Enter 发送…"
+        }
+        onChange={(event) => patchDraft({ text: event.target.value, error: "" })}
+        onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
+      />
+
+      {error && <span className="mc-error" role="alert">{error}</span>}
+      {!connected && <span className="mc-composer-offline">引擎未连接。可以先写，连接后再发送。</span>}
+
+      <div className="mc-composer-toolbar">
+        <div className="mc-composer-tools">
+          <button
+            type="button"
+            className="mc-icon-button"
+            title="添加图片"
+            aria-label="添加图片"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <IconImage size="small" aria-hidden="true" />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            hidden
+            onChange={(event) => {
+              void addFiles(event.target.files || []);
+              event.target.value = "";
+            }}
+          />
+          <span className="mc-composer-hint">Enter 发送 · Shift+Enter 换行 · 可粘贴或拖入截图</span>
+          {textLength >= MAX_TEXT * 0.9 && <span className="mc-count">{textLength}/{MAX_TEXT}</span>}
+        </div>
+        <Button
+          theme="solid"
+          icon={<IconSend size="small" aria-hidden="true" />}
+          loading={busy}
+          disabled={!text.trim() || textLength > MAX_TEXT || uploading || uploadFailed || !connected}
+          onClick={() => void send()}
+        >
+          {busy ? "正在发送…" : "发送"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function MessageCenter({
+  config,
+  snapshot,
+  state,
+  allRuns,
+  messages,
+  composerDrafts,
+  changeComposerDraft,
+  route,
+  api,
+  toast,
+  drafts,
+  submittingCards,
+  onDraftChange,
+  onCardSubmit,
+  onWorkflowAction,
+  onInspectRun,
+  onNavigate,
+  onIntakeDismiss,
+  onMessagesRefresh,
+  composerFocusSignal,
+  appliedComposerFocus,
+}) {
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [lightbox, setLightbox] = useState(null);
+  const [verifyingRunId, setVerifyingRunId] = useState(null);
+  const [localVerifyReports, setLocalVerifyReports] = useState({});
+
+  async function handleRunVerify(runId) {
+    if (!api || !runId || verifyingRunId === runId) return;
+    setVerifyingRunId(runId);
+    try {
+      const res = await api(`/tasks/${runId}/verify`, "POST", {});
+      if (res?.report) {
+        setLocalVerifyReports((prev) => ({ ...prev, [runId]: res.report }));
+      }
+      toast?.("AI 独立校验已完成");
+    } catch (error) {
+      toast?.(error.message || "AI 校验失败", true);
+    } finally {
+      setVerifyingRunId(null);
+    }
+  }
+  const [showConversations, setShowConversations] = useState(false);
+  const [hasNewItems, setHasNewItems] = useState(false);
+  const listRef = useRef(null);
+  const conversationRef = useRef(null);
+  const previousPane = useRef(false);
+  const textareaRef = useRef(null);
+  const timelineRef = useRef(null);
+  const timelineContentRef = useRef(null);
+  const followLatest = useRef(true);
+  const previousTimeline = useRef(null);
+
+  const conversations = useMemo(
+    () =>
+      buildConversations({
+        config,
+        messages: messages || [],
+        topics: snapshot?.topics || [],
+        intakes: snapshot?.taskIntakes || [],
+        runs: allRuns || [],
+        cards: state?.cards || [],
+        taskWorkflows: snapshot?.taskWorkflows || [],
+      }),
+    [
+      config,
+      messages,
+      snapshot?.topics,
+      snapshot?.taskIntakes,
+      allRuns,
+      state?.cards,
+      snapshot?.taskWorkflows,
+    ],
+  );
+
+  const filtered = useMemo(
+    () => filterConversations(conversations, { filter, search }),
+    [conversations, filter, search],
+  );
+
+  const activeId = route?.view === "messages" ? route.topic || null : null;
+  const activeConversation = activeId ? conversations.find((item) => item.id === activeId) || null : null;
+  const messageBadge = countActionableConversations(conversations);
+  const composerDraft = composerDrafts.get(activeId) || initialComposerDraft(activeConversation);
+  const detachedDraft = activeId && !activeConversation && composerDrafts.has(activeId);
+  const detachedDrafts = [...composerDrafts].filter(([id, draft]) =>
+    id && hasComposerDraft(draft) && !conversations.some((conversation) => conversation.id === id)
+  );
+  const updateComposerDraft = (update) =>
+    changeComposerDraft(activeId, (current) => update(current || initialComposerDraft(activeConversation)));
+  const timelineItems = activeConversation?.items;
+  const lastItemKey = timelineItems?.at(-1)?.key;
+
+  useLayoutEffect(() => {
+    setShowConversations(false);
+  }, [activeId, composerFocusSignal]);
+
+  useLayoutEffect(() => {
+    const paneChanged = previousPane.current !== showConversations;
+    previousPane.current = showConversations;
+    if (!showConversations && composerFocusSignal !== appliedComposerFocus.current) {
+      textareaRef.current?.focus();
+      appliedComposerFocus.current = composerFocusSignal;
+    } else if (paneChanged) {
+      const pane = showConversations ? listRef.current : conversationRef.current;
+      const toggle = pane?.querySelector("button.mc-narrow-back");
+      if (toggle?.getClientRects().length) toggle.focus({ preventScroll: true });
+    }
+  }, [composerFocusSignal, showConversations]);
+
+  function scrollToLatest() {
+    const element = timelineRef.current;
+    if (element?.clientHeight) element.scrollTop = element.scrollHeight;
+  }
+
+  useLayoutEffect(() => {
+    const previous = previousTimeline.current;
+    previousTimeline.current = { activeId, keys: new Set(timelineItems?.map(({ key }) => key)) };
+    if (!previous || previous.activeId !== activeId || !previous.keys.size) {
+      followLatest.current = true;
+      setHasNewItems(false);
+    } else if (!followLatest.current && lastItemKey && !previous.keys.has(lastItemKey)) {
+      setHasNewItems(true);
+    }
+    if (followLatest.current) scrollToLatest();
+  }, [activeId, timelineItems, showConversations]);
+
+  useEffect(() => {
+    const observer = new ResizeObserver(() => {
+      if (followLatest.current) scrollToLatest();
+    });
+    observer.observe(timelineRef.current);
+    observer.observe(timelineContentRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  function rememberScroll(event) {
+    const element = event.currentTarget;
+    if (!element.clientHeight) return;
+    followLatest.current = element.scrollHeight - element.clientHeight - element.scrollTop <= 32;
+    if (followLatest.current) setHasNewItems(false);
+  }
+
+  function jumpToLatest() {
+    followLatest.current = true;
+    setHasNewItems(false);
+    scrollToLatest();
+    timelineRef.current.focus({ preventScroll: true });
+  }
+
+  function openConversation(id) {
+    setShowConversations(false);
+    onNavigate({ view: "messages", topic: id });
+  }
+
+  function startNewConversation() {
+    setFilter("all");
+    setSearch("");
+    setShowConversations(false);
+    onNavigate({ view: "messages", topic: null });
+  }
+
+  async function resubmitIntake(intake, patch = {}) {
+    const input = intake?.input || {};
+    const content = String(input.text || intake?.text || "").trim();
+    if (!content) throw new Error("这条消息没有可以重新提交的文字");
+    const messageId = crypto.randomUUID();
+    const attachmentIds = originalAttachmentIds(intake);
+    const answer = await api("/messages", "POST", {
+      id: messageId,
+      topic: input.topic && input.topic !== "new" ? input.topic : "new",
+      text: content,
+      project: patch.project || input.project || undefined,
+      requirementsConfirmed: patch.requirementsConfirmed ?? input.requirementsConfirmed === true,
+      ...(input.flow ? { flow: input.flow } : {}),
+      ...(input.executor ? { executor: input.executor } : {}),
+      ...(input.complexity ? { complexity: input.complexity } : {}),
+      ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
+    });
+    if (answer.needsProject || answer.needsConfirmation) {
+      toast(answer.reason || "还需要你确认需求或选择项目", true);
+      onNavigate({ view: "messages", topic: `intake:${messageId}` });
+    } else {
+      toast(`已交给 ${projectName(config, answer.project) || "对应项目"}`);
+      onNavigate({ view: "messages", topic: answer.topic });
+    }
+    await onMessagesRefresh?.();
+  }
+
+  function renderItem(item) {
+    if (item.type === "user_message") {
+      return (
+        <article className="mc-row mc-row-user" key={item.key}>
+          <div className="mc-bubble mc-bubble-user">
+            <p>{item.message.text}</p>
+            <AttachmentGrid attachments={item.message.attachments} onPreview={setLightbox} />
+            <time>{timeLabel(item.message.at)}</time>
+          </div>
+        </article>
+      );
+    }
+    if (item.type === "run") {
+      return <RunBubble key={item.key} run={item.run} config={config} onInspectRun={onInspectRun} />;
+    }
+    if (item.type === "card") {
+      return (
+        <article className="mc-row mc-row-left" key={item.key}>
+          <div className="mc-bubble mc-bubble-left mc-card-bubble">
+            <CardReplyForm
+              card={item.card}
+              draft={drafts?.get(String(item.card.id)) || { choice: "", text: "" }}
+              submitting={submittingCards?.has(String(item.card.id)) || false}
+              connected={Boolean(snapshot?.connected)}
+              onDraftChange={onDraftChange}
+              onSubmit={onCardSubmit}
+            />
+            <time>{timeLabel(item.card.createdAt || item.card.at)}</time>
+          </div>
+        </article>
+      );
+    }
+    if (item.type === "intake_status") {
+      return (
+        <IntakeBubble
+          key={item.key}
+          intake={item.intake}
+          config={config}
+          toast={toast}
+          onResubmit={resubmitIntake}
+          onDismiss={onIntakeDismiss}
+        />
+      );
+    }
+    return null;
+  }
+
+  const timelineEmpty = activeConversation
+    ? activeConversation.items.length === 0
+    : Boolean(activeId);
+
+  return (
+    <div className="mc-page" data-narrow-pane={showConversations ? "list" : "conversation"}>
+      <aside ref={listRef} className="mc-sidebar" id="mc-conversation-list" aria-label="会话列表">
+        <div className="mc-sidebar-head">
+          <div className="mc-sidebar-title">
+            <IconComment aria-hidden="true" />
+            <h2>消息</h2>
+            {messageBadge > 0 && <span className="mc-badge">{messageBadge}</span>}
+          </div>
+          <div className="mc-head-actions">
+            <Button className="mc-narrow-back" size="small" onClick={() => setShowConversations(false)}>
+              返回对话
+            </Button>
+            <Button size="small" theme="solid" icon={<IconPlus size="small" aria-hidden="true" />} onClick={startNewConversation}>
+              新对话
+            </Button>
+          </div>
+        </div>
+
+        <div className="mc-search">
+          <IconSearch size="small" aria-hidden="true" />
+          <input
+            type="search"
+            value={search}
+            placeholder="搜索对话或关键词"
+            onChange={(event) => setSearch(event.target.value)}
+            aria-label="搜索对话"
+          />
+        </div>
+
+        <div className="mc-filters" role="group" aria-label="筛选会话">
+          {FILTERS.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={`mc-filter-chip ${filter === value ? "active" : ""}`}
+              aria-pressed={filter === value}
+              onClick={() => setFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mc-list">
+          {detachedDrafts.map(([id, draft]) => (
+            <button
+              key={id}
+              type="button"
+              className={activeId === id ? "mc-conversation active" : "mc-conversation"}
+              aria-current={activeId === id ? "true" : undefined}
+              onClick={() => openConversation(id)}
+            >
+              <span className="mc-conversation-title">{draft.title}</span>
+              <span className="mc-conversation-preview">
+                <strong className="mc-draft-label">草稿 · </strong>{draft.text.trim() || "图片附件"}
+              </span>
+            </button>
+          ))}
+          {filtered.length === 0 && detachedDrafts.length === 0 && (
+            <div className="mc-list-empty">
+              {conversations.length === 0 ? "还没有对话，点「新对话」开始吧" : "没有符合条件的对话"}
+            </div>
+          )}
+          {filtered.map((conversation) => (
+              <button
+                key={conversation.id}
+                type="button"
+                className={`mc-conversation ${activeId === conversation.id ? "active" : ""}`}
+                aria-current={activeId === conversation.id ? "true" : undefined}
+                onClick={() => openConversation(conversation.id)}
+              >
+                <div className="mc-conversation-top">
+                  <span className="mc-conversation-title">{conversation.title}</span>
+                  <StatusTag conversation={conversation} />
+                </div>
+                <span className="mc-conversation-preview">
+                  {hasComposerDraft(composerDrafts.get(conversation.id)) && <strong className="mc-draft-label">草稿 · </strong>}
+                  {conversation.preview || "暂无内容"}
+                </span>
+                <span className="mc-conversation-meta">
+                  {conversation.projectName && <span className="mc-project-label">{conversation.projectName}</span>}
+                  <time>{timeLabel(conversation.updatedAt)}</time>
+                </span>
+              </button>
+          ))}
+        </div>
+      </aside>
+
+      <section ref={conversationRef} className="mc-main" aria-label="对话内容">
+        <header className="mc-conversation-head">
+          <Button
+            className="mc-narrow-back"
+            size="small"
+            icon={<IconChevronLeft size="small" aria-hidden="true" />}
+            aria-controls="mc-conversation-list"
+            onClick={() => setShowConversations(true)}
+          >
+            对话列表
+          </Button>
+          <div className="mc-head-title">
+            <h1>{activeConversation?.title || (detachedDraft ? composerDraft.title : "新对话")}</h1>
+            <div className="mc-head-tags">
+              {activeConversation?.projectName && (
+                <Tag size="small" shape="circle">
+                  {activeConversation.projectName}
+                </Tag>
+              )}
+              <StatusTag conversation={activeConversation} />
+              {activeConversation?.latestRun && (
+                <span className="mc-head-rid">轮次 #{activeConversation.latestRun.id}</span>
+              )}
+            </div>
+          </div>
+          <div className="mc-head-actions">
+            {activeConversation?.latestRun && (
+              <Button
+                size="small"
+                onClick={() => onInspectRun(activeConversation.latestRun.id)}
+              >
+                查看执行详情
+              </Button>
+            )}
+          </div>
+        </header>
+
+        <div className="mc-timeline-region">
+          <div className="mc-timeline" ref={timelineRef} onScroll={rememberScroll} tabIndex={0} aria-label="对话记录">
+            <div className="mc-timeline-content" ref={timelineContentRef}>
+              {!activeConversation && !activeId && (
+                <div className="mc-empty">
+                  <div className="mc-empty-card">
+                    <IconComment size="extra-large" aria-hidden="true" />
+                    <h2>这里可以直接开始一个新任务</h2>
+                    <p>
+                      说说你想做什么，也可以附上截图。系统会尝试匹配项目，需要你决定时会在这里询问。
+                    </p>
+                    <div className="mc-examples">
+                      {EXAMPLES.map((example) => (
+                        <button
+                          key={example}
+                          type="button"
+                          className="mc-example"
+                          onClick={() => {
+                            updateComposerDraft((current) => ({
+                              ...current,
+                              text: current.text.trim() ? current.text + "\n" + example : example,
+                            }));
+                            textareaRef.current?.focus();
+                          }}
+                        >
+                          {example}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeConversation && activeConversation.items.map(renderItem)}
+
+              {timelineEmpty && (
+                <div className="mc-empty-line">
+                  {detachedDraft
+                    ? "原对话已结束。可以继续编辑草稿，将它作为新任务发送。"
+                    : activeConversation
+                    ? "这段对话还没有消息，在下方继续输入即可。"
+                    : "正在载入这段对话……如果一直没出现，它可能已经被清理。"}
+                </div>
+              )}
+            </div>
+          </div>
+          {hasNewItems && (
+            <button className="mc-jump-latest button" type="button" onClick={jumpToLatest}>
+              查看新消息 <IconChevronDown size="small" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+
+        {activeConversation?.status === "needs_acceptance" && activeConversation.latestRun && (() => {
+          const runId = activeConversation.latestRun.id;
+          const report = localVerifyReports[runId] || snapshot?.taskVerifications?.[runId] || null;
+          return (
+            <div className="mc-acceptance" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+              {report && (
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    background: "var(--semi-color-fill-0)",
+                    border: "1px solid var(--semi-color-border)",
+                    fontSize: 12,
+                    display: "grid",
+                    gap: 4,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <strong>AI 校验</strong>
+                      <Tag
+                        size="small"
+                        color={report.verdict === "pass" ? "green" : report.verdict === "fail" ? "red" : "amber"}
+                      >
+                        {{ pass: "建议通过", warn: "有提醒项", fail: "发现问题" }[report.verdict] || report.verdict}
+                      </Tag>
+                      {report.mode === "auto" && <Tag size="small" color="grey">自动</Tag>}
+                    </div>
+                    <span className="sc-muted">
+                      {report.executor}
+                      {report.economyActive ? " · 省钱模式" : ""}
+                      {report.degraded ? " · 已降级" : ""}
+                    </span>
+                  </div>
+                  <div>{report.summary}</div>
+                  {Array.isArray(report.findings) && report.findings.length > 0 && (
+                    <div className="sc-muted">
+                      {report.findings.map((f) => `• ${f.point}`).join("  ")}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <span>这一轮已经完成，请验收实际结果：</span>
+                <div className="mc-actions-row">
+                  <Button
+                    size="small"
+                    theme="solid"
+                    onClick={() => onWorkflowAction(runId, "accept")}
+                  >
+                    验收通过
+                  </Button>
+                  <Button
+                    size="small"
+                    loading={verifyingRunId === runId}
+                    onClick={() => handleRunVerify(runId)}
+                  >
+                    {report ? "重新校验" : "AI 校验"}
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => onWorkflowAction(runId, "rework")}
+                  >
+                    补充返工
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => onWorkflowAction(runId, "close")}
+                  >
+                    关闭任务
+                  </Button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        <Composer
+          key={activeId ?? ""}
+          conversation={activeConversation}
+          draft={composerDraft}
+          updateDraft={updateComposerDraft}
+          textareaRef={textareaRef}
+          config={config}
+          api={api}
+          toast={toast}
+          connected={Boolean(snapshot?.connected)}
+          onNavigate={onNavigate}
+          onMessagesRefresh={onMessagesRefresh}
+        />
+      </section>
+
+      <Modal
+        visible={Boolean(lightbox)}
+        footer={null}
+        onCancel={() => setLightbox(null)}
+        width={880}
+        className="mc-lightbox-modal"
+        closeOnEsc
+      >
+        {lightbox && (
+          <img
+            className="mc-lightbox-image"
+            src={lightbox.url}
+            alt={lightbox.filename || "图片预览"}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+}
