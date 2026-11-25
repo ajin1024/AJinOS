@@ -40,6 +40,12 @@ try {
       cp(path.join(root, name), path.join(app, name), { recursive: true }),
     ),
     copyFile(path.join(root, "LICENSE"), path.join(app, "LICENSE")),
+    mkdir(path.join(app, "examples"), { recursive: true }).then(() =>
+      copyFile(
+        path.join(root, "examples", "watch-github-issues.mjs"),
+        path.join(app, "examples", "watch-github-issues.mjs"),
+      ),
+    ),
     ...modules.map((name) => copyFile(path.join(client, name), path.join(appClient, name))),
     cp(path.join(client, "assets"), path.join(appClient, "assets"), { recursive: true }),
     cp(path.join(client, "src"), path.join(appClient, "src"), { recursive: true }),

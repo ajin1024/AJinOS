@@ -1,7 +1,7 @@
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { parseRules } from "../protocol/rules.ts";
-import { flowsFor, flowType, buildExecutionRoutes } from "./src/gateway-config.mjs";
+import { flowsFor, flowType, buildExecutionRoutes, syncOpenSourceIssueRoutes } from "./src/gateway-config.mjs";
 
 import { withStudioDefaults, assignIslandStyles, ISLAND_STYLES } from "./src/island-presets.mjs";
 
@@ -73,6 +73,10 @@ export function validateWorkspace(given) {
     throw new Error("项目配置必须是对象，projects 必须是列表");
   const config = structuredClone(given);
   buildExecutionRoutes(config, (value) => createHash("sha256").update(value).digest("hex").slice(0, 24));
+  syncOpenSourceIssueRoutes(config, {
+    node: process.execPath,
+    watcherScript: path.resolve(here, "../examples/watch-github-issues.mjs"),
+  });
   if (!Number.isInteger(config.runtime?.capacity) || config.runtime.capacity < 1 || config.runtime.capacity > 64)
     throw new Error("Worker 容量需要是 1 到 64 的整数");
   if (

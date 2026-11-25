@@ -208,6 +208,17 @@ async function saveProjectValues(id, v) {
     description: v.description || "",
     color: v.color || "#a5e7c5",
   };
+  if (v.openSourceEnabled || String(v.openSourceRepo || "").trim()) {
+    project.openSource = {
+      enabled: Boolean(v.openSourceEnabled),
+      repo: String(v.openSourceRepo || "").trim(),
+      autoHandleIssues: Boolean(v.openSourceEnabled && v.autoHandleIssues),
+      pollMinutes: Number(v.pollMinutes || 5),
+      ...(String(v.issueSince || "").trim() ? { since: String(v.issueSince).trim() } : {}),
+    };
+  } else {
+    delete project.openSource;
+  }
   if (!p && next.projects.some((item) => item.id === project.id)) throw new Error("项目编号已存在");
   const conflict = next.rules.rules.find((item) => item.name === project.rule && item.name !== p?.rule);
   if (conflict) throw new Error("规则名称已被其他规则使用");

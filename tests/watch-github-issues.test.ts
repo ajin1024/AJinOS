@@ -82,6 +82,15 @@ test("watch-github-issues.mjs forwards optional search filter and rejects invali
   assert.equal(problem, undefined);
   assert.deepEqual(result.events, []);
 
+  const customType = runWatcher(
+    ["owner/repo", "--type", "issues.opened.ajinos"],
+    [{ number: 7, title: "Custom type", url: "https://github.com/owner/repo/issues/7", body: "hello" }],
+  );
+  assert.equal(customType.status, 0, customType.stderr);
+  const parsedCustom = resultFrom(readMessage(customType.stdout), {});
+  assert.equal(parsedCustom.problem, undefined);
+  assert.equal(parsedCustom.result.events?.[0]?.type, "issues.opened.ajinos");
+
   const bad = runWatcher(["not a repo"], []);
   assert.notEqual(bad.status, 0);
 });

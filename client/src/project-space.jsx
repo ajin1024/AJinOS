@@ -26,7 +26,14 @@ import {
   IconRefresh,
   IconSetting,
 } from "@douyinfe/semi-icons";
-import { businessProjects, flowsFor, projectDisplayRules, projectRuleNames } from "./gateway-config.mjs";
+import {
+  businessProjects,
+  flowsFor,
+  normalizeGitHubRepo,
+  OPEN_SOURCE_POLL_MINUTES,
+  projectDisplayRules,
+  projectRuleNames,
+} from "./gateway-config.mjs";
 import { ACCESS_NAMES, agentOptionsOf, deriveProjectId, folderNameFromPath, formatExecutorSpec } from "./studio-helpers.mjs";
 
 const required = (message) => [{ required: true, whitespace: true, message }];
@@ -53,8 +60,21 @@ function ProjectEditor({ project, config, agentOptions, onSave, onBack }) {
     role: project?.role || "project",
     color: project?.color || "#a5e7c5",
     prompt: rule.prompt || "根据本轮资料处理任务，保留已完成步骤，需要决定时交回 ask。",
+    openSourceEnabled: Boolean(project?.openSource?.enabled),
+    openSourceRepo: project?.openSource?.repo || "",
+    autoHandleIssues: Boolean(project?.openSource?.autoHandleIssues),
+    pollMinutes: project?.openSource?.pollMinutes || 5,
+    issueSince: project?.openSource?.since || "",
   });
   const [selectedAgentId, setSelectedAgentId] = useState(agent);
+  const [openSourceEnabled, setOpenSourceEnabled] = useState(initial.current.openSourceEnabled);
+  const [autoHandleIssues, setAutoHandleIssues] = useState(initial.current.autoHandleIssues);
+
+  function todaySinceIso() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T00:00:00+08:00`;
+  }
 
   // Adding a project starts with the folder's name; an entered name is never overwritten.
   function prefillNameFromFolder(path) {
@@ -203,6 +223,94 @@ function ProjectEditor({ project, config, agentOptions, onSave, onBack }) {
                 options={Object.entries(ACCESS_NAMES).map(([value, label]) => ({ value, label }))}
               />
               <div className="ps-policy-note">完整权限允许任务直接访问本机；其他项目保留各自的权限设置。</div>
+            </section>
+          </div>
+
+          <div className="ps-form-columns" style={{ marginTop: 16 }}>
+            <section>
+              <h3>开源与 GitHub Issue</h3>
+              <p className="ps-muted">标记为开源项目后，可自动定时拉取 GitHub 新 Issue 作为独立数据源并交给本项目处理。</p>
+              <Form.Switch
+                field="openSourceEnabled"
+                label="这是开源项目"
+                onChange={(checked) => {
+                  setOpenSourceEnabled(Boolean(checked));
+                  if (!checked) {
+                    setAutoHandleIssues(false);
+                    formApi.current?.setValue("autoHandleIssues", false);
+                  }
+                }}
+              />
+              {openSourceEnabled && (
+                <Form.Input
+                  field="openSourceRepo"
+                  name="openSourceRepo"
+                  label="开源仓库地址（GitHub）"
+                  placeholder="例如：https://github.com/ajin1024/AJinOS 或 ajin1024/AJinOS"
+                  rules={[
+                    {
+                      validator: (_, value, callback) => {
+                        const text = String(value || "").trim();
+                        if (!text) {
+                          if (formApi.current?.getValue("autoHandleIssues")) {
+                            return callback("开启自动处理 Issue 前请填写开源仓库地址");
+                          }
+                          return callback();
+                        }
+                        try {
+                          normalizeGitHubRepo(text);
+                          return callback();
+                        } catch (err) {
+                          return callback(err.message);
+                        }
+                      },
+                    },
+                  ]}
+                  extraText="支持完整 GitHub 链接或 owner/repo，保存时自动规范化。"
+                />
+              )}
+            </section>
+            <section>
+              {openSourceEnabled && (
+                <>
+                  <h3>Issue 自动处理</h3>
+                  <p className="ps-muted">通过本机已登录的 gh CLI 定时拉取新 Issue；无新 Issue 不花 Token，仅本地修改并通知验收，不自动提交或推送。</p>
+                  <Form.Switch
+                    field="autoHandleIssues"
+                    label="启用定时拉取并自动处理新 Issue"
+                    onChange={(checked) => {
+                      const next = Boolean(checked);
+                      setAutoHandleIssues(next);
+                      if (next && !String(formApi.current?.getValue("issueSince") || "").trim()) {
+                        formApi.current?.setValue("issueSince", todaySinceIso());
+                      }
+                    }}
+                  />
+                  {autoHandleIssues && (
+                    <>
+                      <Form.Select
+                        field="pollMinutes"
+                        label="轮询间隔"
+                        style={{ width: "100%" }}
+                        optionList={OPEN_SOURCE_POLL_MINUTES.map((m) => ({
+                          value: m,
+                          label: m === 60 ? "每 60 分钟（整点）" : `每 ${m} 分钟`,
+                        }))}
+                      />
+                      <Form.Input
+                        field="issueSince"
+                        name="issueSince"
+                        label="仅拉取此时间后的新 Issue（可选）"
+                        placeholder="2026-11-25T00:00:00+08:00"
+                        extraText="默认从今天开始，避免把历史旧 Issue 一次性全部派发；留空则拉取全部开放 Issue。"
+                      />
+                      <div className="ps-policy-note">
+                        安全边界：来自 GitHub Issue 的正文只作不可信资料传入，自动处理权限上限锁定为「修改文件（edit）」。
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
             </section>
           </div>
 
@@ -481,7 +589,14 @@ export function ProjectSpace({
             <IconFolder aria-hidden="true" />
           </span>
           <span className="ps-project-label">
-            <strong>{p.name}</strong>
+            <strong>
+              {p.name}
+              {p.openSource?.enabled && (
+                <Tag size="small" color={p.openSource.autoHandleIssues ? "green" : "blue"} style={{ marginLeft: 6 }}>
+                  {p.openSource.autoHandleIssues ? "开源 · Issue 自动" : "开源"}
+                </Tag>
+              )}
+            </strong>
             <span title={p.cwd}>{p.cwd}</span>
           </span>
         </button>
@@ -650,6 +765,50 @@ export function ProjectSpace({
                       <IconFolder aria-hidden="true" />
                       <code>{selected.cwd}</code>
                     </div>
+                  </section>
+                  <section className="ps-detail-section">
+                    <div className="ps-section-heading">
+                      <h3>开源与 GitHub Issue</h3>
+                      <Button size="small" theme="borderless" onClick={() => setEditor({ id: selected.id })}>
+                        配置
+                      </Button>
+                    </div>
+                    {selected.openSource?.enabled ? (
+                      <dl>
+                        <dt>仓库地址</dt>
+                        <dd>
+                          {selected.openSource.repo ? (
+                            <code>{selected.openSource.repo}</code>
+                          ) : (
+                            <span className="ps-muted">未填写</span>
+                          )}
+                        </dd>
+                        <dt>自动处理</dt>
+                        <dd>
+                          {selected.openSource.autoHandleIssues ? (
+                            <Tag size="small" color="green" shape="circle">
+                              已开启 · 每 {selected.openSource.pollMinutes || 5} 分钟
+                            </Tag>
+                          ) : (
+                            <Tag size="small" color="grey" shape="circle">
+                              未开启
+                            </Tag>
+                          )}
+                        </dd>
+                        {selected.openSource.autoHandleIssues && selected.openSource.since && (
+                          <>
+                            <dt>拉取起点</dt>
+                            <dd>
+                              <code>{selected.openSource.since}</code>
+                            </dd>
+                          </>
+                        )}
+                      </dl>
+                    ) : (
+                      <p className="ps-muted" style={{ margin: 0, fontSize: 12.5 }}>
+                        非开源项目（点右上角「配置」可绑定 GitHub 仓库并开启 Issue 定时自动处理）。
+                      </p>
+                    )}
                   </section>
                   <section className="ps-detail-section">
                     <div className="ps-section-heading">

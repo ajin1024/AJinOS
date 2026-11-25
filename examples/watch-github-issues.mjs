@@ -4,14 +4,28 @@
 // No cursor file is needed: event IDs (`issue-<number>`) are stable, so the Hub deduplicates repeats.
 //
 // Usage:
-//   node examples/watch-github-issues.mjs <owner/repo> [search-query]
+//   node examples/watch-github-issues.mjs <owner/repo> [search-query] [--type <event-type>]
 // Example:
 //   node examples/watch-github-issues.mjs ajin1024/AJinOS "created:>=2026-11-25T00:00:00+08:00"
 import { execFileSync } from "node:child_process";
 
-const [repo, search = ""] = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+let eventType = "issues.opened";
+const positional = [];
+for (let i = 0; i < rawArgs.length; i++) {
+  if (rawArgs[i] === "--type") {
+    eventType = rawArgs[++i] || "";
+    continue;
+  }
+  positional.push(rawArgs[i]);
+}
+const [repo, search = ""] = positional;
 if (!repo || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
-  console.error("Usage: node watch-github-issues.mjs <owner/repo> [search-query]");
+  console.error("Usage: node watch-github-issues.mjs <owner/repo> [search-query] [--type <event-type>]");
+  process.exit(2);
+}
+if (!/^[a-z0-9_.-]{1,64}$/.test(eventType)) {
+  console.error("Invalid --type event type");
   process.exit(2);
 }
 
@@ -35,7 +49,7 @@ if (!Array.isArray(parsed)) {
 
 const events = parsed.map((issue) => ({
   id: `issue-${issue.number}`,
-  type: "issues.opened",
+  type: eventType,
   subject: `#${issue.number}`,
   summary: cut(issue.title, 200),
   detail: cut(issue.body, 4000),
