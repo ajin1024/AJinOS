@@ -133,6 +133,15 @@
   animation: studio-feedback-in var(--studio-motion-feedback) ease-out both;
 }
 
+@media (width < 960px) and (prefers-reduced-motion: no-preference) {
+  .mc-page[data-narrow-pane="list"] .mc-sidebar,
+  .mc-page[data-narrow-pane="conversation"] .mc-main,
+  .sc-shell[data-nav-open="true"] .sc-nav,
+  .sc-shell[data-nav-open="false"] .sc-main {
+    animation: studio-feedback-in var(--studio-motion-feedback) ease-out both;
+  }
+}
+
 @media (max-width: 650px) {
   .studio-header {
     position: relative;

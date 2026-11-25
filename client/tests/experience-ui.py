@@ -95,6 +95,10 @@ with studio_home('studio-experience-') as home:
                 expect(composer).to_be_in_viewport()
                 page.get_by_role("button", name="对话列表").press("Enter")
                 expect(page.get_by_role("complementary", name="会话列表")).to_be_visible()
+                sidebar = page.get_by_role("complementary", name="会话列表")
+                assert sidebar.evaluate("el => getComputedStyle(el).animationName") != "none"
+                page.emulate_media(reduced_motion="reduce")
+                expect(sidebar).to_have_css("animation-name", "none")
                 expect(page.get_by_role("button", name="返回对话")).to_be_focused()
                 page.evaluate("window.testFocusComposer()")
                 expect(composer).to_be_focused()
