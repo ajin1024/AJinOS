@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile, rename, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rename, mkdtemp, realpath, rm } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -192,8 +192,16 @@ export class VersionManager {
       await git(destination, "remote", "set-url", "origin", state.source);
       const client = path.join(destination, "client");
       // npm's JS entry point avoids cmd.exe argument interpolation on Windows.
-      const npm =
-        process.env.STUDIO_NPM_CLI || path.join(path.dirname(node()), "node_modules", "npm", "bin", "npm-cli.js");
+      const bin = path.dirname(node());
+      let npm = process.env.STUDIO_NPM_CLI;
+      if (!npm) {
+        const entry = path.join("node_modules", "npm", "bin", "npm-cli.js");
+        if (process.platform === "win32") npm = path.join(bin, entry);
+        else {
+          const linked = await optional(() => realpath(path.join(bin, "npm")));
+          npm = path.basename(linked) === "npm-cli.js" ? linked : path.resolve(bin, "../lib", entry);
+        }
+      }
       if (!existsSync(npm)) throw new Error("找不到 npm-cli.js，请用带 npm 的 Node.js 启动桌面端");
       await command(node(), [npm, "ci", "--include=dev", "--no-audit", "--no-fund"], client, 600000);
       const packageInfo = JSON.parse(await readFile(path.join(client, "package.json"), "utf8"));
