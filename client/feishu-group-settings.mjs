@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import {
   addScanRules,
@@ -12,6 +12,7 @@ import {
   matchesGroup,
   readFeishu,
   readerId,
+  removeScanRules,
   scanInterval,
   searchFeishuGroups,
 } from "./feishu-groups.mjs";
@@ -234,6 +235,22 @@ export function feishuGroupSettings({ home, workspace, digest, saveConfig, atomi
           groups: settings.groups.map((group) => ({ ...group, enabledSince: since })),
         });
       });
+      return view();
+    },
+    async remove(body) {
+      const value = load();
+      const current = value?.current ?? workspace();
+      const revision = value?.revision ?? restorable(current)?.revision ?? digest([current, null]);
+      if (body?.revision !== revision) throw error(409, "渠道状态有更新，请重新打开后再移除");
+      const next = structuredClone(current);
+      if (next.rules.channels) delete next.rules.channels.feishu;
+      removeScanRules(next);
+      await saveConfig({ value: next, revision: digest(current) }, () => {
+        if (existsSync(file)) rmSync(file, { force: true });
+      });
+      chats.clear();
+      members.clear();
+      previews.clear();
       return view();
     },
     async save(body) {

@@ -421,6 +421,21 @@ export function buildConversations({
   return result.sort((left, right) => timeOf(right.updatedAt) - timeOf(left.updatedAt) || left.id.localeCompare(right.id));
 }
 
+const hasTicketNumber = (task) =>
+  Boolean(task?.ticket?.number || task?.runs?.findLast((run) => run.ticketNumber)?.ticketNumber);
+
+/** The receipt cards the total feed shows: current work only, never a ticket the owner already closed. */
+export function recentReceipts(receipts, limit = 8) {
+  return (receipts || [])
+    .filter(
+      (task) =>
+        (task?.topic || hasTicketNumber(task)) &&
+        task?.workflow?.status !== "closed" &&
+        task?.workflow?.stage !== "ended",
+    )
+    .slice(0, limit);
+}
+
 /** Apply the message-center filter chips and keyword search without reordering the conversation list. */
 export function filterConversations(list, { filter = "all", search = "", project = "" } = {}) {
   const needle = String(search || "")

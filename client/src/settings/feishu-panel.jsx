@@ -72,6 +72,9 @@ export function FeishuPanel({ api, toast, snapshot, config, onSaveConfig, onSave
   const [drawer, setDrawer] = useState(null);
   const [sourceEditor, setSourceEditor] = useState(null);
   const [setupOpen, setSetupOpen] = useState(false);
+  const [feishuAdding, setFeishuAdding] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [notificationChannels, setNotificationChannels] = useState([]);
   const [savingInterval, setSavingInterval] = useState(false);
   const [restoreOpen, setRestoreOpen] = useState(false);
@@ -79,9 +82,16 @@ export function FeishuPanel({ api, toast, snapshot, config, onSaveConfig, onSave
   const [auth, setAuth] = useState(null);
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState("");
+  const [authChecking, setAuthChecking] = useState(false);
   const [qr, setQr] = useState(null);
   const addButton = useRef(null);
   const authorized = Boolean(auth?.userReady && auth?.openId);
+  const canScan = Boolean(auth?.installed && auth?.botReady);
+  const feishuRegistered = Boolean(config?.rules?.channels?.feishu);
+  const feishuConfigured = Boolean(settings?.configured);
+  const feishuRestore = Boolean(settings?.restore);
+  const showFeishu = feishuRegistered || feishuConfigured || feishuRestore || feishuAdding;
+  const canRemove = feishuRegistered || feishuConfigured || feishuRestore;
   const owner = settings?.owner ?? (authorized ? { id: auth.openId, name: "本人", kind: "user" } : null);
   const wrongAccount = authorized && settings?.owner && settings.owner.id !== auth.openId;
   const intervalChanged = settings?.configured && settings.interval !== null && Number(interval) !== settings.interval;
@@ -101,11 +111,14 @@ export function FeishuPanel({ api, toast, snapshot, config, onSaveConfig, onSave
   }
 
   async function loadAuth() {
+    setAuthChecking(true);
     try {
       setAuthError("");
       setAuth(await api("/feishu/auth/status"));
     } catch (cause) {
       setAuthError(cause.message);
+    } finally {
+      setAuthChecking(false);
     }
   }
 
@@ -119,9 +132,9 @@ export function FeishuPanel({ api, toast, snapshot, config, onSaveConfig, onSave
     return () => { current = false; };
   }, [snapshot.connected, snapshot.restartRequired]);
   useEffect(() => {
-    onEditingChange?.(Boolean(drawer || sourceEditor || setupOpen || restoreOpen || qr || intervalChanged || savingInterval));
+    onEditingChange?.(Boolean(drawer || sourceEditor || setupOpen || restoreOpen || removeOpen || qr || intervalChanged || savingInterval));
     return () => onEditingChange?.(false);
-  }, [drawer, sourceEditor, setupOpen, restoreOpen, qr, intervalChanged, savingInterval, onEditingChange]);
+  }, [drawer, sourceEditor, setupOpen, restoreOpen, removeOpen, qr, intervalChanged, savingInterval, onEditingChange]);
 
   async function authorization(action) {
     setAuthBusy(action);
@@ -207,10 +220,52 @@ export function FeishuPanel({ api, toast, snapshot, config, onSaveConfig, onSave
     toast(!snapshot.connected ? "连接已保存，启动引擎后生效" : restartRequired ? "连接已保存，重启引擎后生效" : "连接已保存");
   }
 
+  function addFeishu() {
+    setSetupOpen(false);
+    setFeishuAdding(true);
+  }
+
+  async function removeFeishu() {
+    if (!canRemove) {
+      setFeishuAdding(false);
+      setRemoveOpen(false);
+      return;
+    }
+    setRemoving(true);
+    try {
+      let current = settings;
+      if (!current) {
+        current = await api("/feishu-groups");
+        updateSettings(current);
+      }
+      if (!current?.revision) throw new Error("渠道状态读取失败，请重新打开页面后再试");
+      const result = await api("/feishu/remove", "POST", { revision: current.revision });
+      updateSettings(result, false);
+      if (result.configuration) onSavedConfig?.({ ...result.configuration, restartRequired: result.restartRequired });
+      setFeishuAdding(false);
+      setRemoveOpen(false);
+      toast("已移除飞书渠道");
+    } catch (cause) {
+      toast(cause.message, true);
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   const notification = auth?.notification;
   const hasNotification = notification?.configured && notification.accountMatches;
   const canConfigureNotification = notification?.canConfigure ?? (snapshot.managed && snapshot.connected);
   const groups = settings?.groups ?? [];
+  const restoreGroupCount = settings?.restore?.groups?.length ?? 0;
+  const removeParts = [
+    notification?.configured && "私聊通知",
+    settings?.configured && `群聊采集${groups.length ? `（${groups.length} 个群聊）` : ""}`,
+  ].filter(Boolean);
+  const removeDescription = removeParts.length
+    ? `移除后会停止${removeParts.join("和")}，已保存的飞书渠道设置会被清除。`
+    : feishuRestore
+      ? `移除后会清除已保存的群聊采集设置（${restoreGroupCount} 个群聊），之后可以重新添加。`
+      : "移除后会清除飞书渠道的登记信息，之后可以重新添加。";
 
   return (
     <div className="sc-container channels-page" data-drawer-open={Boolean(drawer)}>
@@ -227,6 +282,7 @@ export function FeishuPanel({ api, toast, snapshot, config, onSaveConfig, onSave
         </button>
       </header>
       <DesktopReceiver />
+      {showFeishu && (
       <section className="sc-card channels-card" aria-labelledby="feishu-channel-name">
         <div className="channels-identity">
           <span className="channels-feishu-icon" aria-hidden="true"><IconFeishuLogo size="extra-large" /></span>
@@ -234,19 +290,35 @@ export function FeishuPanel({ api, toast, snapshot, config, onSaveConfig, onSave
             <div className="channels-provider">
               <h2 id="feishu-channel-name">飞书</h2>
               {authorized && <span className="channels-badge is-success"><IconTickCircle aria-hidden="true" />已授权</span>}
+              {!canRemove && <span className="channels-badge">待配置</span>}
             </div>
             <p className="channels-account">
               {authorized && <IconUser size="small" aria-hidden="true" />}
-              {authorized ? (auth.userName || "飞书账号") : auth ? (auth.installed ? "待授权" : "未找到飞书 CLI") : authError ? "授权状态读取失败" : "正在检查授权…"}
+              {authorized ? (auth.userName || "飞书账号") : auth
+                ? !auth.installed ? "未找到飞书 CLI" : !auth.botReady ? "飞书应用未绑定" : "待扫码授权"
+                : authError ? "授权状态读取失败" : "正在检查授权…"}
             </p>
           </div>
-          {(authorized || auth?.installed) && (
+          {(authorized || canScan) && (
             <Button className="channels-row-action" size="small" theme={authorized ? "borderless" : "solid"}
               disabled={Boolean(drawer || qr || (authBusy && authBusy !== "qr"))} loading={authBusy === "qr"} onClick={() => authorization("qr")}>
               {authorized ? "重新扫码授权" : "扫码授权"}
             </Button>
           )}
         </div>
+        {auth && !authorized && !canScan && (
+          <div className="channels-guide" role="note" aria-label="飞书接入指引">
+            <strong>{auth.installed ? "飞书应用还没绑定" : "本机还没装飞书 CLI"}</strong>
+            <ol>
+              {!auth.installed && <li>在终端运行 <code>npm install -g @larksuite/cli</code> 安装飞书 CLI。</li>}
+              <li>运行 <code>lark-cli config init --new</code>，按提示创建或绑定飞书应用。</li>
+              <li>装好后点「重新检查」，再点「扫码授权」。</li>
+            </ol>
+            <div className="channels-guide-actions">
+              <Button size="small" loading={authChecking} onClick={loadAuth}>重新检查</Button>
+            </div>
+          </div>
+        )}
         <div className="channels-purpose">
           <IconComment aria-hidden="true" /><span>私聊通知</span>
           {hasNotification && auth.restartRequired && canConfigureNotification ? (
@@ -262,7 +334,7 @@ export function FeishuPanel({ api, toast, snapshot, config, onSaveConfig, onSave
             </Button>
           ) : (
             <span className="channels-row-action sc-muted">
-              {!authorized ? "请先扫码授权" : !auth.ready ? "飞书应用未就绪" : !snapshot.connected ? "请先启动引擎" : "请在引擎端配置"}
+              {!authorized ? (canScan ? "请先扫码授权" : "请先按上面的指引装好飞书") : !auth.ready ? "飞书应用未就绪" : !snapshot.connected ? "请先启动引擎" : "请在引擎端配置"}
             </span>
           )}
         </div>
@@ -285,7 +357,16 @@ export function FeishuPanel({ api, toast, snapshot, config, onSaveConfig, onSave
             <IconPlus aria-hidden="true" /> 添加采集群
           </button>}
         </div>
+        <div className="channels-remove-row">
+          {canRemove ? (
+            <Button theme="borderless" type="danger" size="small" disabled={Boolean(drawer) || removing}
+              onClick={() => setRemoveOpen(true)}>移除飞书渠道</Button>
+          ) : (
+            <Button theme="borderless" size="small" onClick={() => setFeishuAdding(false)}>取消添加</Button>
+          )}
+        </div>
       </section>
+      )}
       {notificationChannels.length > 0 && (
         <section className="sc-card channels-card channels-external" aria-labelledby="external-channel-title">
           <h2 id="external-channel-title">外部通知</h2>
@@ -370,8 +451,14 @@ export function FeishuPanel({ api, toast, snapshot, config, onSaveConfig, onSave
       )}
       {setupOpen && (
         <NotificationChannelSheet api={api} snapshot={snapshot} onClose={() => setSetupOpen(false)} onSaved={savedNotification}
+          onAddFeishu={addFeishu} feishuActive={showFeishu}
           onCustomSource={() => { setSetupOpen(false); setSourceEditor({ kind: "source" }); }} />
       )}
+      <Modal title="移除飞书渠道" visible={removeOpen} okText="移除" cancelText="取消" okType="danger"
+        confirmLoading={removing} onOk={removeFeishu} onCancel={() => !removing && setRemoveOpen(false)}>
+        <p>{removeDescription}</p>
+        <p className="sc-muted">移除后可以从「添加其他来源」重新接入飞书。</p>
+      </Modal>
       <Modal title="恢复群聊采集" visible={restoreOpen} onOk={restoreGroups} onCancel={() => !restoring && setRestoreOpen(false)}
         okText="恢复采集" cancelText="取消" confirmLoading={restoring}>
         <p className="sc-muted">从恢复时开始采集以下群的新消息。</p>

@@ -709,6 +709,52 @@
   background: var(--ui-panel);
 }
 
+.channels-guide {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 13px 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.channels-guide > strong {
+  font-size: 14px;
+}
+
+.channels-guide ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ui-secondary);
+}
+
+.channels-guide code {
+  font: inherit;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--ui-soft);
+  overflow-wrap: anywhere;
+}
+
+.channels-guide-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.channels-remove-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 0 16px;
+  border-top: 1px solid var(--ui-line);
+}
+
+.channels-feishu-entry {
+  margin-bottom: 10px;
+}
+
 @media (max-width: 959px) {
   #app #main > .sc-channel-shell {
     --channels-drawer-width: min(100vw, 610px);

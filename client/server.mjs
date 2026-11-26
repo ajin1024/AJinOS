@@ -1403,6 +1403,10 @@ export async function startStudio({
         return reply(await feishuGroups.enable(await readBody(req)));
       if (req.method === "POST" && route === "/api/feishu-groups/restore")
         return reply(await feishuGroups.restore(await readBody(req)));
+      if (req.method === "POST" && route === "/api/feishu/remove") {
+        const view = await feishuGroups.remove(await readBody(req));
+        return reply({ ...view, configuration: configuration(), restartRequired });
+      }
       const groupMembers = /^\/api\/feishu-groups\/(oc_[\w-]+)\/members$/.exec(route);
       if (req.method === "GET" && groupMembers) return reply(await feishuGroups.members(groupMembers[1]));
       const workflowMatch = /^\/api\/tasks\/(\d+)\/actions$/.exec(route);

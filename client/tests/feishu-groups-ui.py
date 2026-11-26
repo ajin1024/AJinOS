@@ -111,7 +111,16 @@ with tempfile.TemporaryDirectory(prefix="studio-feishu-table-") as home:
             page.route("**/api/feishu/auth/complete", lambda route: route.fulfill(json={"ok": route.request.post_data_json == {"deviceCode": "test-device"}}))
             page.goto(page.url.split("#", 1)[0] if args.cdp else url)
             page.goto(page.url.split("#", 1)[0] + "#settings/feishu")
+
+            def add_feishu():
+                page.get_by_role("button", name="添加其他来源").click()
+                picker = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="添加其他来源"))
+                expect(picker).to_be_visible()
+                picker.get_by_role("button", name="飞书").first.click()
+                expect(page.get_by_role("region", name="飞书", exact=True)).to_be_visible()
+
             expect(page.get_by_role("heading", name="消息渠道")).to_be_visible()
+            expect(page.get_by_role("region", name="飞书", exact=True)).to_have_count(0)
             receiver = page.get_by_role("region", name="桌面端消息接收器")
             expect(receiver.get_by_text("内置", exact=True)).to_be_visible()
             notify = receiver.get_by_role("switch", name="系统通知提醒")
@@ -124,6 +133,7 @@ with tempfile.TemporaryDirectory(prefix="studio-feishu-table-") as home:
             receiver.get_by_role("button", name="前往消息中心").click()
             expect(page).to_have_url(page.url.split("#", 1)[0] + "#messages")
             page.goto(page.url.split("#", 1)[0] + "#settings/feishu")
+            add_feishu()
             page.locator("#rail-theme").click()
             page.locator('[data-theme-choice="light"]').click()
             expect(page.get_by_text("已授权", exact=True)).to_be_visible()
@@ -150,7 +160,8 @@ with tempfile.TemporaryDirectory(prefix="studio-feishu-table-") as home:
                 page.screenshot(path=args.screenshots / "AJinOS-Feishu-Card.png", animations="disabled")
             page.get_by_role("button", name="添加其他来源").click()
             picker = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="添加其他来源"))
-            expect(picker.get_by_role("heading", name="更多平台，敬请期待")).to_be_visible()
+            expect(picker.get_by_role("heading", name="选择要接入的来源")).to_be_visible()
+            expect(picker.get_by_role("button", name="飞书")).to_be_enabled()
             for platform in ("钉钉", "企微", "Slack", "Discord"):
                 platform_option = picker.get_by_role("button", name=platform)
                 expect(platform_option).to_be_disabled()
@@ -172,6 +183,7 @@ with tempfile.TemporaryDirectory(prefix="studio-feishu-table-") as home:
             expect(source).not_to_be_visible()
             expect(page.get_by_text(source_name, exact=True)).to_be_visible()
             page.locator("[data-settings-section='feishu']").click()
+            add_feishu()
             page.get_by_role("button", name="添加采集群").click()
             drawer = page.get_by_role("complementary", name="添加采集群")
             enable = drawer.get_by_role("button", name="启用采集", exact=True)

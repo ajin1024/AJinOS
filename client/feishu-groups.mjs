@@ -40,6 +40,12 @@ export function hasScanRules(workspace) {
   return workspace.rules.agents[readerId] || workspace.rules.rules.some((rule) => scheduleNames.includes(rule.name));
 }
 
+export function removeScanRules(workspace) {
+  if (workspace.rules.agents) delete workspace.rules.agents[readerId];
+  // Every rule pointing at the collector goes with it, so the workspace stays valid.
+  workspace.rules.rules = (workspace.rules.rules || []).filter((rule) => rule.to !== readerId);
+}
+
 export function groupsFor(settings) {
   return settings.groups.map(({ id, name, mode, targets, enabledSince }) => ({
     id,

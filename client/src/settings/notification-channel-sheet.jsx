@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import { Banner, Button, SideSheet } from "@douyinfe/semi-ui";
-import { IconChevronRight, IconLink, IconTickCircle } from "@douyinfe/semi-icons";
+import { IconChevronRight, IconFeishuLogo, IconLink, IconTickCircle } from "@douyinfe/semi-icons";
 import { channelAddress, notificationPlatforms, otherPlatformSetupOpen } from "../channel-platforms.mjs";
 
-export function NotificationChannelSheet({ api, snapshot, onClose, onSaved, onCustomSource }) {
+export function NotificationChannelSheet({ api, snapshot, onClose, onSaved, onCustomSource, onAddFeishu, feishuActive = false }) {
   const [platform, setPlatform] = useState("");
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
@@ -60,10 +60,21 @@ export function NotificationChannelSheet({ api, snapshot, onClose, onSaved, onCu
           </ol>}
           {step === 1 && (
             <>
-              <h2>{otherPlatformSetupOpen ? "选择要接入的平台" : "更多平台，敬请期待"}</h2>
+              <h2>{otherPlatformSetupOpen ? "选择要接入的平台" : "选择要接入的来源"}</h2>
               <p className="sc-muted">
-                {otherPlatformSetupOpen ? "把 AJinOS 通知发到你选定的群或频道。" : "当前可在消息渠道首页接入飞书。"}
+                {otherPlatformSetupOpen ? "把 AJinOS 通知发到你选定的群或频道。" : "飞书可在本机扫码接入，其他平台敬请期待。"}
               </p>
+              {onAddFeishu && (
+                <button className="channels-setup-custom channels-feishu-entry" type="button" disabled={saving}
+                  onClick={() => onAddFeishu()}>
+                  <IconFeishuLogo aria-hidden="true" />
+                  <span>
+                    <strong>飞书</strong>
+                    <small>{feishuActive ? "已接入，管理私聊通知和群聊采集" : "私聊通知与群聊采集"}</small>
+                  </span>
+                  <IconChevronRight size="small" aria-hidden="true" />
+                </button>
+              )}
               <div className="channels-platform-grid">
                 {Object.entries(notificationPlatforms).map(([id, provider]) => (
                   <button type="button" key={id} disabled={!otherPlatformSetupOpen} onClick={() => choose(id, provider)}>
