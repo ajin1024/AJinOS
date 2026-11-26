@@ -146,9 +146,11 @@ npm test
 
 ### 构建 Windows 安装包
 
-在 Windows x64 上使用带许可证文件的 Node.js 24 发行版。进入 `client/`，运行 `npm ci`、`npm run setup:desktop` 和 `npm run package:windows`。产物位于 `client/dist/AJinOS-Setup-x64.exe`，按当前 Windows 用户安装。安装包未签名，Windows 可能显示未知发布者提示。
+在 Windows x64 上使用带许可证文件的 Node.js 24 发行版。进入 `client/`，运行 `npm ci`、`npm run setup:desktop` 和 `npm run package:windows`。产物位于 `client/dist/AJinOS-Setup-x64.exe`。首次安装会预填当前 Windows 用户的默认程序目录，也可以选择其他空目录。应用内更新沿用已安装的目录。安装包未签名，Windows 可能显示未知发布者提示。
 
-在未安装过 AJinOS 的 Windows 用户下，可以运行 `python tests/windows-installer-e2e.py` 验证安装、默认项目、内置 MCP 和引擎启停。测试使用临时安装目录和数据目录。
+检测到已有安装时，向导默认保留数据并预填原安装目录。也可以选「备份原有数据并全新安装」，确认后会将原有默认数据目录移到同级的 `.agent-autoloop-studio.backup-日期-时间`，再在下次启动时初始化。
+
+在未安装过 AJinOS 的 Windows 桌面会话中，安装 Python Playwright 和 pywin32 后，运行 `python tests/windows-installer-e2e.py` 验证目录选择、重装选项、静默升级、内置 MCP 和引擎启停。测试使用临时安装目录和数据目录。
 
 ## 建筑样式与模型预设
 

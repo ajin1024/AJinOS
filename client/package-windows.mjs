@@ -94,8 +94,9 @@ try {
       extraResources: [{ from: node, to: "node" }],
       win: { signExecutable: false, icon: path.join(client, "assets", "icon.ico") },
       nsis: {
-        oneClick: true,
+        oneClick: false,
         perMachine: false,
+        include: path.join(client, "installer.nsh"),
         shortcutName: "AJinOS",
         installerIcon: path.join(client, "assets", "icon.ico"),
         uninstallerIcon: path.join(client, "assets", "icon.ico"),
