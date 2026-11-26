@@ -79,8 +79,14 @@ export function prepareWorktree({
   } catch {
     throw new Error(`在 ${repoRoot} 创建 worktree 失败：仓库还没有任何提交`);
   }
-  const realCwd = realpathSync(cwd);
-  const rel = path.relative(repoRoot, realCwd);
+  // Git reports the path from the repository root, so Windows short (8.3) path forms can't make two absolute
+  // spellings of the same directory look different. realpath alone does not guarantee that on CI runners.
+  let rel: string;
+  try {
+    rel = runGit(cwd, ["rev-parse", "--show-prefix"]).replace(/[\\/]+$/, "");
+  } catch {
+    throw new Error(`在 ${cwd} 创建 worktree 失败：读不到所在子目录`);
+  }
   const slug = `${safeName(path.basename(repoRoot), "repo")}-${createHash("sha256").update(repoRoot).digest("hex").slice(0, 8)}`;
   const safeKey = safeName(key, "task");
   const branch = `autoloop/${safeKey}`;
