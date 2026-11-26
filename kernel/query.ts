@@ -159,7 +159,7 @@ export function cardView(card: Row, env: Environment, ref: string | null = null,
 
 export function jobOf(view: View, run: Row, env: Environment): Job {
   const rules = configuration(view, run.rules_version);
-  const { name, cwd, skill, prompt, emits, flow, access, model, effort, speed } = ruleOf(rules, run.rule)!;
+  const { name, cwd, skill, prompt, emits, flow, access, workspace, model, effort, speed } = ruleOf(rules, run.rule)!;
   const events = eventsOf(view, run.id);
   const eventIds = events.map((event) => event.id);
   const thread = { rule: run.rule, lane: run.lane };
@@ -183,7 +183,7 @@ export function jobOf(view: View, run: Row, env: Environment): Job {
       run.ticket == null
         ? null
         : { id: run.ticket, number: ticketNumber(run.ticket), round: ticketRound, steps: passedSteps },
-    rule: { name, cwd, skill, prompt, emits, flow },
+    rule: { name, cwd, skill, prompt, emits, flow, ...(workspace !== undefined ? { workspace } : {}) },
     agent: {
       ...rules.agents[run.agent],
       ...(access !== undefined ? { access } : {}),

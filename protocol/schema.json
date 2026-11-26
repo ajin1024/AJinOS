@@ -502,6 +502,9 @@
             "cwd": {
               "type": "string"
             },
+            "workspace": {
+              "enum": ["shared", "worktree"]
+            },
             "skill": {
               "type": "string"
             },

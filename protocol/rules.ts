@@ -13,6 +13,7 @@ export class RulesError extends Error {
 }
 
 const ACCESS = ["read", "edit", "full"];
+const WORKSPACES = ["shared", "worktree"];
 const TELLS = ["always", "needed", "never"];
 const ID = /^[a-z][a-z0-9-]*$/;
 const TYPE_PATTERN = /^(\*|[a-z][a-z0-9_.-]{0,63}(\.\*)?)$/;
@@ -96,6 +97,7 @@ function checkRule(issues: string[], rules: Rules, rule: Rule, names: Set<string
     ["channels", isSomeWords, "要是通道编号的列表", true],
     ["flow", isFlow, FLOW, true],
     ["access", (value) => ACCESS.includes(value as string), `只能是 ${ACCESS.join("、")}`, true],
+    ["workspace", (value) => WORKSPACES.includes(value as string), `只能是 ${WORKSPACES.join("、")}`, true],
     ["model", isText, NOT_EMPTY, true],
     ["effort", isText, NOT_EMPTY, true],
     ["speed", isText, NOT_EMPTY, true],

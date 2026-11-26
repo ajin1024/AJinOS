@@ -7,7 +7,7 @@ export type Job = {
   attempt: number;
   taskReportVersion?: 1;
   ticket?: { id: number; number: string; round: number; steps?: TaskStep[] } | null;
-  rule: Pick<Rule, "name" | "cwd" | "skill" | "prompt" | "emits" | "flow">;
+  rule: Pick<Rule, "name" | "cwd" | "skill" | "prompt" | "emits" | "flow" | "workspace">;
   agent: {
     id: string;
     name: string;

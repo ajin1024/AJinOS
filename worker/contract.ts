@@ -6,6 +6,7 @@ import { InputError } from "../kernel/errors.ts";
 import type { Job } from "../protocol/job.ts";
 import { missingFlowSteps } from "../protocol/task-status.ts";
 import { parseResult, type Result } from "../protocol/validate.ts";
+import type { PreparedWorktree } from "./worktree.ts";
 
 const FAILED = ["没跑成", "FAILED"];
 const NOTHING = ["没事可做", "NOTHING"];
@@ -26,8 +27,12 @@ function describeEvent({ sourceName, type, subject, link }: Job["context"]["even
   return `- ${`${sourceName} ${type} ${subject}`.trim()}${link ? `（${link}）` : ""}`;
 }
 
-export function promptFor(job: Job, contextFile: string) {
+export function promptFor(job: Job, contextFile: string, worktree?: PreparedWorktree) {
   const { rule, context, askFirst, session, ticket } = job;
+  const worktreeLine = worktree
+    ? `这一轮在独立 Git worktree 中运行：目录 ${worktree.cwd}，分支 ${worktree.branch}（主目录 ${worktree.mainDir} 的源码不会被改动；已忽略的 node_modules 可能链接自该目录，不要在链接上直接跑 npm install/ci）。` +
+      "同一工单的后续轮次会复用这个 worktree；完成改动后留在当前分支即可，不要切回主目录，也不要自行推送。"
+    : "";
   const flow = rule.flow ?? [];
   const flowLine = flow.length
     ? `这条规则要求按步骤办理：${flow.map((step, index) => `${index + 1}. ${step.name}${step.required === false ? "（可选）" : ""}`).join("、")}。` +
@@ -57,6 +62,7 @@ export function promptFor(job: Job, contextFile: string) {
     `Agent 自动化中台按规则「${rule.name}」把这件活派给你。发生了：`,
     ...(happened.length ? happened : ["- 定时到了"]),
     ...(ticketLine ? [ticketLine] : []),
+    ...(worktreeLine ? [worktreeLine] : []),
     "",
     [skill, rule.prompt ?? ""].join("").trim(),
     ...(flowLine ? ["", flowLine] : []),

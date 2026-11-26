@@ -2,6 +2,7 @@
 // here, in protocol/rules.ts.
 import type { FlowStep } from "../protocol/task-status.ts";
 export type Access = "read" | "edit" | "full";
+export type Workspace = "shared" | "worktree";
 export type Source = { name: string; adapter?: string };
 type AgentOptions = {
   model?: string;
@@ -25,6 +26,7 @@ type RuleOptions = RuleWords & {
   emits?: EventFilter;
   flow?: FlowStep[];
   access?: Access;
+  workspace?: Workspace;
   model?: string;
   effort?: string;
   speed?: string;

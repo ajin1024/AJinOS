@@ -134,7 +134,9 @@ function assignQueued(draft: Draft, run: Row) {
   const config = draft.view.get("config", "rules")!;
   const rule = ruleOf(config.value as Rules, run.rule);
   if (!rule) return;
-  const session = rule.to === run.agent ? {} : nulls("session", "resume");
+  const previous = ruleOf(configuration(draft.view, run.rules_version), run.rule);
+  const same = rule.to === run.agent && (rule.workspace ?? "shared") === (previous?.workspace ?? "shared");
+  const session = same ? {} : nulls("session", "resume");
   put(draft, "runs", run.id, { agent: rule.to, rules_version: config.version, ...session });
 }
 const threadOf = (run: Row) => ({ rule: run.rule, lane: run.lane, grp: run.grp, ticket: run.ticket ?? null });
@@ -149,7 +151,11 @@ function settleSession(draft: Draft, run: Row) {
   let session = carried;
   if (!session && rule?.resume) {
     const [last] = rows(draft.view, "runs", { ...thread, state: ["done", "nothing", "cancelled"] }, 1, true);
-    if (last?.state !== "cancelled" && last?.agent === rule.to) session = last.session;
+    const lastRule = last ? ruleOf(configuration(draft.view, last.rules_version), last.rule) : undefined;
+    const sameWorkspace =
+      (rule.workspace ?? "shared") === (lastRule?.workspace ?? "shared") &&
+      (rule.workspace !== "worktree" || last?.ticket === run.ticket);
+    if (last?.state !== "cancelled" && last?.agent === rule.to && sameWorkspace) session = last.session;
   }
   if (!session) return;
   const going = rows(draft.view, "runs", { ...thread, state: ["claimed", "unknown"] });

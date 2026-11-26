@@ -29,6 +29,7 @@ import { adapterFor, type Adapter, type Reading, type Turn, type Usage } from ".
 import { flowProblem, promptFor, readMessage, repairPrompt, resultFrom } from "./contract.ts";
 import { loadUsage, saveUsage, usageDelta } from "./usage.ts";
 import { archiveConversation } from "./conversation.ts";
+import { prepareWorktree, type PreparedWorktree } from "./worktree.ts";
 
 const RUNS = path.join(HOME, "worker", "runs");
 const NOTHING: Usage = { input: 0, output: 0, cached: 0, cost: 0 };
@@ -55,6 +56,7 @@ type Entry = {
   attempt: number;
   job: Job;
   dir: string;
+  worktree?: PreparedWorktree;
   prompt: string;
   turn: number;
   session: string;
@@ -108,6 +110,12 @@ function agentEnvironment(entry: Entry) {
     AGENT_AUTOLOOP_HOME: HOME,
     AGENT_AUTOLOOP_RUN: String(entry.run),
     AGENT_AUTOLOOP_CONTEXT: path.join(entry.dir, "context.json"),
+    ...(entry.worktree
+      ? {
+          AGENT_AUTOLOOP_WORKTREE: entry.worktree.cwd,
+          AGENT_AUTOLOOP_WORKTREE_BRANCH: entry.worktree.branch,
+        }
+      : {}),
   };
 }
 
@@ -214,6 +222,18 @@ export function createWorker({
       }
     });
 
+  /** Resolves the run's working directory, creating or reusing a per-ticket git worktree when the rule asks for one. */
+  function resolveWorkspace(entry: Entry) {
+    const baseCwd = entry.job.rule.cwd.replace(/^~(?=[/\\])/, homedir());
+    if (entry.job.rule.workspace !== "worktree") return baseCwd;
+    if (!entry.worktree) {
+      const key = entry.job.ticket?.number ?? `run-${entry.run}`;
+      entry.worktree = prepareWorktree({ cwd: baseCwd, key });
+      save(entry);
+    }
+    return entry.worktree.cwd;
+  }
+
   /** Starts a turn of the agent: a process that outlives this one, leaving its output and exit code in files. */
   function launch(entry: Entry, adapter: Adapter, prompt: string) {
     entry.turn += 1;
@@ -225,7 +245,7 @@ export function createWorker({
     delete entry.why;
     save(entry);
     const { rule, agent } = entry.job;
-    const cwd = rule.cwd.replace(/^~(?=[/\\])/, homedir());
+    const cwd = resolveWorkspace(entry);
     const turn: Turn = {
       prompt,
       session: entry.session,
@@ -333,7 +353,8 @@ export function createWorker({
     try {
       writeFileSync(path.join(dir, "context.json"), JSON.stringify(job.context, null, 2), { mode: 0o600 });
       const adapter = await adapterFor(job.agent.use);
-      entry.prompt = promptFor(job, path.join(dir, "context.json"));
+      resolveWorkspace(entry);
+      entry.prompt = promptFor(job, path.join(dir, "context.json"), entry.worktree);
       save(entry);
       launch(entry, adapter, entry.prompt);
     } catch (error) {
@@ -452,8 +473,9 @@ export function createWorker({
     }
     if (entry.turn === 0) {
       // The worker stopped while starting it, before anything was launched.
-      if (!entry.prompt) entry.prompt = promptFor(entry.job, path.join(entry.dir, "context.json"));
       try {
+        resolveWorkspace(entry);
+        if (!entry.prompt) entry.prompt = promptFor(entry.job, path.join(entry.dir, "context.json"), entry.worktree);
         writeFileSync(path.join(entry.dir, "context.json"), JSON.stringify(entry.job.context, null, 2), {
           mode: 0o600,
         });
