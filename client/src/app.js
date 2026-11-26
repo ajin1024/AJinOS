@@ -8,19 +8,18 @@ import messageCenterCss from "./messages/message-center.css";
 import { createStudioShell } from "./studio-shell.jsx";
 import {
   buildConversations,
-  countActionableConversations,
+  buildMessageInbox,
+  buildMessageReceipts,
   diffDesktopNotifications,
 } from "./messages/messages-model.mjs";
 import { taskKind, taskLinksFromFacts } from "./task-scope.mjs";
-import { groupTasks, relationFromFacts, taskFollowup } from "./task-list.mjs";
+import { relationFromFacts, taskFollowup } from "./task-list.mjs";
 import { workflowFor, savedWorkflow, taskActions } from "./task-workflow.mjs";
 import { projectDisplayRules, businessProjects } from "./gateway-config.mjs";
-import { Workbench, installWorkbenchStyles } from "./workbench.js";
 import { withStudioDefaults, assignIslandStyles } from "./island-presets.mjs";
 import { agentOptionsOf, deriveProjectId, folderNameFromPath, parseHashRoute, parseList, routeToHash } from "./studio-helpers.mjs";
 import { buildHandoffRequest } from "./tasks/task-handoff.mjs";
 
-installWorkbenchStyles();
 const dialogStyle = document.createElement("style");
 dialogStyle.textContent =
   dialogCss + "\n" + themeCss + "\n" + workflowCss + "\n" + workspaceCss + "\n" + messageCenterCss;
@@ -45,10 +44,7 @@ function confirmDesktopReady() {
 }
 
 let shell = null;
-let workbench = null;
-let workbenchHost = null;
 let reactEditing = false;
-let openNewProjectSignal = 0;
 
 let config = null;
 let profiles = {};
@@ -73,6 +69,7 @@ const taskLinks = {};
 let historyRuns = [];
 let historyHasMore = null;
 let historyCursor = null;
+const historyTickets = new Map();
 
 // Message center timeline and its light polling on live snapshots.
 let messageRows = [];
@@ -126,7 +123,7 @@ async function api(path, method = "GET", body) {
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || `请求失败 ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(data.error || `请求失败 ${response.status}`), { status: response.status });
   return data;
 }
 
@@ -175,15 +172,19 @@ async function loadConfig() {
   return result;
 }
 
-async function save(next, { profileProject } = {}) {
-  assignIslandStyles(next.projects);
-  const result = await api("/config", "PUT", { value: next, revision, profileProject });
+function applySavedConfiguration(result) {
   config = result.value;
   profiles = result.profiles || {};
   revision = result.revision;
-  snapshot.restartRequired = result.restartRequired;
+  if (result.restartRequired !== undefined) snapshot.restartRequired = result.restartRequired;
   render();
-  toast(result.restartRequired ? "配置已保存；Worker 容量将在重启自管引擎后生效" : "配置已保存，规则将自动载入");
+}
+
+async function save(next, { profileProject } = {}) {
+  assignIslandStyles(next.projects);
+  const result = await api("/config", "PUT", { value: next, revision, profileProject });
+  applySavedConfiguration(result);
+  toast(result.restartRequired ? "配置已保存，部分设置将在重启引擎后生效" : "配置已保存，规则将自动载入");
 }
 
 async function importExecutor(draft) {
@@ -310,12 +311,10 @@ function navigate(target) {
   drawerObservedTask = null;
   drawerCustomEntry = null;
   const previousView = route.view;
-  const next = typeof target === "string" ? parseHashRoute(target) : { ...route, ...target };
-  if (next.view !== "projects") delete next.projectId;
-  if (next.view === "settings" && !next.section) next.section = "runtime";
+  const next = parseHashRoute(typeof target === "string" ? target : routeToHash(target));
   if (next.view === "tasks") {
     if (next.tasksTab === "inbox") taskScope = "todo";
-    else if (!next.tasksTab) next.tasksTab = taskScope === "todo" ? "inbox" : "list";
+    if (next.tasksTab === "list" && taskScope === "todo") taskScope = "business";
   }
   route = next;
   const hash = "#" + routeToHash(route);
@@ -326,7 +325,7 @@ function navigate(target) {
 
 // Native shell shortcuts and the tray can ask the message composer for focus.
 function focusComposer() {
-  navigate({ view: "messages", topic: null });
+  if (route.view === "messages") navigate({ view: "messages", topic: null });
   composerFocusSignal += 1;
   render();
 }
@@ -343,15 +342,25 @@ function currentConversations() {
     intakes: snapshot.taskIntakes || [],
     runs: allTaskRuns(),
     cards: state().cards || [],
-    tickets: state().tickets || [],
+    tickets: currentTickets(),
     taskWorkflows: snapshot.taskWorkflows || [],
   });
+}
+
+function currentInbox(conversations = currentConversations()) {
+  const receipts = buildMessageReceipts({
+    config, runs: allTaskRuns(), topics: snapshot.topics || [], routes: snapshot.workbench?.routes,
+    relations: taskRelations, links: taskLinks, cards: state().cards, timers: state().timers,
+    tickets: currentTickets(), taskWorkflows: snapshot.taskWorkflows,
+  });
+  const inbox = buildMessageInbox({ conversations, receipts, cards: state().cards, intakes: snapshot.taskIntakes });
+  return { inbox, receipts };
 }
 
 function syncDesktopNotifications() {
   if (!config) return;
   const conversations = currentConversations();
-  const count = countActionableConversations(conversations);
+  const count = currentInbox(conversations).inbox.total;
   if (count !== desktopBadgeCount) {
     desktopBadgeCount = count;
     window.studio?.setBadge?.(count)?.catch?.(() => {});
@@ -379,27 +388,49 @@ function allTaskRuns() {
   return [...new Map([...historyRuns, ...state().runs].map((r) => [r.id, r])).values()];
 }
 
+function currentTickets() {
+  const tickets = new Map(historyTickets);
+  for (const ticket of state().tickets || []) tickets.set(ticket.id, ticket);
+  return [...tickets.values()];
+}
+
+const canHaveOlderTickets = () => (state().tickets || []).filter((ticket) => ticket.state === "closed").length >= 20;
+
+function unreadTickets() {
+  if (!canHaveOlderTickets()) return [];
+  const known = new Set(currentTickets().map((ticket) => ticket.id));
+  return [...new Set(allTaskRuns().map((run) => run.ticket).filter((id) => id && !known.has(id)))];
+}
+
 async function loadTaskData(force = false) {
-  if (tasksLoading || (taskLoadError && !force)) return;
+  if (!snapshot.connected || tasksLoading || (taskLoadError && !force)) return;
   const needsRelation = (r) =>
     ((taskScope !== "business" && route.view === "tasks") ||
       taskKind(config, r, { topics: snapshot.topics, routes: snapshot.workbench?.routes }) === "business") &&
     taskRelations[r.id] === undefined;
-  if (!(historyHasMore ?? state().hasMore) && !allTaskRuns().some(needsRelation)) return;
+  if (!(historyHasMore ?? state().hasMore) && !unreadTickets().length && !allTaskRuns().some(needsRelation)) return;
   tasksLoading = true;
   taskLoadError = "";
   try {
     historyRuns = allTaskRuns();
-    while ((historyHasMore ?? state().hasMore) && ["tasks", "overview"].includes(route.view)) {
+    while ((historyHasMore ?? state().hasMore) && route.view === "tasks") {
       const before = historyCursor ?? state().nextBefore;
       const data = await api("/history?before=" + before);
       historyRuns.push(...data.runs);
       historyHasMore = data.hasMore;
       historyCursor = data.nextBefore;
-      if (["tasks", "overview"].includes(route.view)) render();
+      if (route.view === "tasks") render();
+    }
+    // Hub snapshots contain all open tickets and at most 20 closed tickets.
+    const missingTickets = unreadTickets();
+    for (let i = 0; i < missingTickets.length && route.view === "tasks"; i += 4) {
+      await Promise.all(missingTickets.slice(i, i + 4).map(async (id) => {
+        const ticket = await api(`/tickets/${id}`);
+        historyTickets.set(id, ticket);
+      }));
     }
     const missing = allTaskRuns().filter(needsRelation);
-    for (let i = 0; i < missing.length && ["tasks", "overview"].includes(route.view); i += 4) {
+    for (let i = 0; i < missing.length && route.view === "tasks"; i += 4) {
       await Promise.all(
         missing.slice(i, i + 4).map(async (run) => {
           const why = await api(`/runs/${run.id}/why`);
@@ -412,7 +443,7 @@ async function loadTaskData(force = false) {
     taskLoadError = error.message;
   } finally {
     tasksLoading = false;
-    if (["tasks", "overview"].includes(route.view)) render();
+    if (route.view === "tasks") render();
   }
 }
 
@@ -422,6 +453,8 @@ async function inspectRun(id) {
   drawerRunId = numId;
   drawerObservedTask = null;
   const run = allTaskRuns().find((r) => r.id === numId);
+  drawerObservedTask = computeDrawerTask(numId);
+  render();
   if (run && taskRelations[numId] === undefined) {
     try {
       const why = await api(`/runs/${numId}/why`);
@@ -431,6 +464,7 @@ async function inspectRun(id) {
       /* Drawer still renders with run snapshot. */
     }
   }
+  if (drawerRunId !== numId) return;
   drawerObservedTask = computeDrawerTask(numId);
   render();
 }
@@ -451,7 +485,7 @@ function computeDrawerTask(targetRunId = drawerRunId) {
     links: taskLinks,
     cards: state().cards,
     timers: state().timers,
-    tickets: state().tickets || [],
+    tickets: currentTickets(),
   });
   if (related) {
     related.workflow = workflowFor(related, savedWorkflow(related, snapshot.taskWorkflows));
@@ -485,9 +519,13 @@ function inspectEntry(entry) {
   render();
 }
 
-function buildDrawerTask() {
+function buildDrawerTask(receipts) {
   if (drawerCustomEntry) return drawerCustomEntry;
   if (!drawerRunId || !config) return null;
+  if (route.tasksTab === "overview") {
+    const task = receipts.find((entry) => entry.runs.some((run) => run.id === drawerRunId));
+    if (task) return task;
+  }
   if (
     drawerObservedTask &&
     !drawerObservedTask.runs.some((r) => ["queued", "claimed", "unknown"].includes(r.state))
@@ -524,6 +562,7 @@ async function handleCardSubmit(card, { choice, text }) {
     pendingDrafts.delete(id);
     pendingSubmissions.delete(id);
     snapshot = await api("/state");
+    if (String(drawerCustomEntry?.standaloneCard?.id) === id) drawerCustomEntry = null;
     render();
     toast(result.changed === false ? "这张卡片已处理" : ask ? "已记录答复，事项将继续执行" : "已标记为处理完成");
   } catch (error) {
@@ -538,13 +577,14 @@ async function handleWorkflowAction(runId, action, observedRevision) {
     const { task, records } = await api(`/tasks/${runId}`);
     const saved = savedWorkflow(task, records);
     const w = workflowFor(task, saved);
+    const ownsDrawer = () => task.runs.some((run) => run.id === drawerRunId);
     // Inline one-click actions do not carry a snapshot revision; the task was just fetched, so its revision is current.
     if (observedRevision != null && observedRevision !== w.revision) {
       snapshot = await api("/state");
       historyRuns = [...new Map([...allTaskRuns(), ...task.runs].map((r) => [r.id, r])).values()];
       snapshot.state.runs = [...new Map([...snapshot.state.runs, ...task.runs].map((r) => [r.id, r])).values()];
       snapshot.taskWorkflows = records;
-      if (drawerRunId) {
+      if (ownsDrawer()) {
         drawerRunId = task.runs.at(-1).id;
         drawerObservedTask = computeDrawerTask(drawerRunId);
       }
@@ -556,8 +596,10 @@ async function handleWorkflowAction(runId, action, observedRevision) {
       await api(`/tasks/${runId}/actions`, "POST", { ...extra, action, revision: w.revision });
       snapshot = await api("/state");
       workflowModal = null;
-      drawerRunId = null;
-      drawerObservedTask = null;
+      if (ownsDrawer()) {
+        drawerRunId = null;
+        drawerObservedTask = null;
+      }
       toast(`已记录：${taskActions[action]}`);
       render();
     };
@@ -579,100 +621,6 @@ async function handleWorkflowAction(runId, action, observedRevision) {
   }
 }
 
-async function perform(action, id) {
-  if (action === "task-scope") {
-    taskScope = id;
-    taskFilter = "all";
-    taskSearch = "";
-    projectFilter = "all";
-    navigate({ view: "tasks", tasksTab: id === "todo" ? "inbox" : "list" });
-    return;
-  }
-  if (action === "gateway-settings") return navigate({ view: "settings", section: "gateway" });
-  if (action === "memory-settings") return navigate({ view: "settings", section: "memory" });
-  if (action === "chief-view") {
-    taskScope = "business";
-    return navigate({ view: "tasks", tasksTab: "list" });
-  }
-  if (action === "project-new") {
-    openNewProjectSignal += 1;
-    navigate({ view: "projects", projectId: null });
-    return;
-  }
-  if (action === "project") return navigate({ view: "projects", projectId: id || null });
-  if (action === "agent" || action === "agent-new" || action === "model-preset")
-    return navigate({ view: "settings", section: "agents" });
-  if (action === "rule" || action === "rule-new") return navigate({ view: "settings", section: "rules" });
-  if (action === "source" || action === "source-new" || action === "channel" || action === "channel-new")
-    return navigate({ view: "settings", section: "connections" });
-  if (action === "feishu-groups") return navigate({ view: "settings", section: "feishu" });
-  if (action === "run") return inspectRun(id);
-  if (action === "inbox") {
-    taskScope = "todo";
-    return navigate({ view: "tasks", tasksTab: "inbox" });
-  }
-  if (action === "project-task") return openNewTask(id);
-  if (action === "continue-topic") return openNewTask("", id);
-  if (action === "cancel") {
-    cancelRunId = Number(id);
-    render();
-  }
-}
-
-function syncWorkbench() {
-  if (!workbenchHost || !config || route.view !== "overview") {
-    workbench?.dispose();
-    workbench = null;
-    return;
-  }
-  if (!workbench) {
-    workbench = new Workbench(workbenchHost, {
-      api,
-      navigate: (view) => {
-        if (view === "tasks") taskScope = "business";
-        if (view === "inbox") taskScope = "todo";
-        navigate(view);
-      },
-      action: perform,
-      newTask: () => openNewTask(),
-      resolve: (request) => openNewTask("", "", request),
-      queue: () => {
-        taskScope = "business";
-        taskFilter = "queued";
-        projectFilter = "all";
-        navigate({ view: "tasks", tasksTab: "list" });
-      },
-      filter: (value) => {
-        if (value === "waiting") {
-          taskScope = "todo";
-          taskFilter = "all";
-          projectFilter = "all";
-          navigate({ view: "tasks", tasksTab: "inbox" });
-          return;
-        }
-        taskScope = "business";
-        taskFilter = { claimed: "running", done: "acceptance" }[value] || value;
-        projectFilter = "all";
-        navigate({ view: "tasks", tasksTab: "list" });
-      },
-      refresh: async () => {
-        snapshot = await api("/state");
-        render();
-      },
-      error: (message) => toast(message, true),
-    });
-  }
-  workbench.update(config, {
-    ...snapshot,
-    state: { ...state(), runs: allTaskRuns().sort((a, b) => b.id - a.id) },
-    taskRelations,
-    taskLinks,
-    historyLoading: tasksLoading || (historyHasMore ?? state().hasMore),
-    historyError: taskLoadError,
-  });
-  void loadTaskData();
-}
-
 function render() {
   if (!config) return;
   const openCardIds = new Set(state().cards.map((card) => String(card.id)));
@@ -681,24 +629,20 @@ function render() {
 
   document.body.classList.toggle("offline", !snapshot.connected);
 
-  const taskCount = state().runs.filter(
-    (r) =>
-      ["claimed", "queued"].includes(r.state) &&
-      taskKind(config, r, { topics: snapshot.topics, routes: snapshot.workbench?.routes }) === "business",
-  ).length;
-  const inboxCount = state().cards.length;
-  const messageBadge = countActionableConversations(currentConversations());
+  const conversations = currentConversations();
+  const { inbox, receipts } = currentInbox(conversations);
 
   shell?.render({
     route,
     config,
     profiles,
     snapshot,
-    state: state(),
+    state: { ...state(), tickets: currentTickets() },
     allRuns: allTaskRuns(),
     taskRelations,
     taskLinks,
     tasksLoading,
+    signoffsPending: canHaveOlderTickets() && Boolean((historyHasMore ?? state().hasMore) || unreadTickets().length),
     taskLoadError,
     onReloadTasks: () => void loadTaskData(true),
     taskScope,
@@ -746,7 +690,7 @@ function render() {
     onSubmitWorkflowModal: async (vals) => {
       if (workflowModal?.submit) await workflowModal.submit(vals);
     },
-    drawerTask: buildDrawerTask(),
+    drawerTask: buildDrawerTask(receipts),
     onInspectRun: inspectRun,
     onInspectEntry: inspectEntry,
     onCloseDrawer: () => {
@@ -772,10 +716,10 @@ function render() {
         /* The task was accepted; the live connection can refresh the page in place. */
       }
     },
-    onIntakeDismiss: async (intakeId) => {
+    onIntakeDismiss: async (intakeId, { silent = false } = {}) => {
       await api(`/gateway/${encodeURIComponent(intakeId)}/dismiss`, "POST", {});
       snapshot = await api("/state");
-      toast("已关闭：无需处理");
+      if (!silent) toast("已关闭：无需处理");
       render();
     },
     cancelRunId,
@@ -799,10 +743,10 @@ function render() {
         /* The stop was accepted; the live connection can refresh the page in place. */
       }
     },
-    taskCount,
-    inboxCount,
+    conversations,
     messages: messageRows,
-    messageBadge,
+    receipts,
+    inbox,
     onMessagesRefresh: async () => {
       await loadMessages(true);
       try {
@@ -820,9 +764,16 @@ function render() {
         if (taskScope === "todo") taskScope = "business";
         taskFilter = "all";
       }
+      if (next.view === "tasks" && next.statusFilter) {
+        taskScope = "business";
+        taskFilter = next.statusFilter;
+        projectFilter = "all";
+        taskSearch = "";
+      }
       navigate(next);
     },
     onSaveConfig: save,
+    onSavedConfig: applySavedConfiguration,
     onImportExecutor: importExecutor,
     onSaveProject: saveProjectValues,
     onAnalyzeProject: analyzeProject,
@@ -831,25 +782,26 @@ function render() {
       snapshot.restartRequired = true;
       render();
     },
-    onMountWorkbench: (el) => {
-      workbenchHost = el;
-      syncWorkbench();
-    },
     onEditingChange: (editing) => {
       reactEditing = editing;
     },
     hasUnsavedForm,
-    openNewProjectSignal,
   });
 
-  if (route.view === "overview") syncWorkbench();
   if (route.view === "tasks") void loadTaskData();
 }
 
 window.addEventListener("hashchange", () => {
   const previousView = route.view;
-  route = parseHashRoute(location.hash);
+  const next = parseHashRoute(location.hash);
+  if (routeToHash(next) !== routeToHash(route)) {
+    drawerRunId = null;
+    drawerObservedTask = null;
+    drawerCustomEntry = null;
+  }
+  route = next;
   if (route.view === "tasks" && route.tasksTab === "inbox") taskScope = "todo";
+  if (route.view === "tasks" && route.tasksTab === "list" && taskScope === "todo") taskScope = "business";
   render();
   if (route.view === "messages" && previousView !== "messages") void loadMessages(true);
 });
@@ -877,7 +829,10 @@ try {
   events.addEventListener("fact", (e) => {
     const fact = JSON.parse(e.data);
     snapshot.facts = [fact, ...snapshot.facts.filter((f) => f.seq !== fact.seq)].slice(0, 80);
-    for (const c of fact.changes || []) if (c.table === "runs" && c.row?.state) delete taskRelations[Number(c.key)];
+    for (const change of fact.changes || []) {
+      if (change.table === "runs" && change.state) delete taskRelations[Number(change.key)];
+      if (change.table === "tickets") historyTickets.delete(Number(change.key));
+    }
   });
   events.addEventListener("configuration", (e) => {
     const result = JSON.parse(e.data);
@@ -892,6 +847,7 @@ try {
     } else toast("配置已在其他窗口更新；保存时会检查冲突");
   });
   events.onerror = () => {
+    historyTickets.clear();
     snapshot.connected = false;
     snapshot.error = "客户端实时连接中断，正在重连";
     render();

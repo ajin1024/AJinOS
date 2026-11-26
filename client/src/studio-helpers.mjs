@@ -2,6 +2,8 @@ import { flowsFor } from "./gateway-config.mjs";
 import { isImportedExecutor } from "./executor-presets.mjs";
 
 export const SETTINGS_SECTIONS = [
+  "projects",
+  "memory",
   "gateway",
   "rules",
   "connections",
@@ -17,8 +19,10 @@ export function parseHashRoute(rawHash) {
   const clean = String(rawHash || "")
     .replace(/^#/, "")
     .trim();
-  if (!clean || clean === "overview") return { view: "overview", section: null, tasksTab: "list" };
   if (clean === "messages") return { view: "messages", section: null, tasksTab: "list", topic: null };
+  if (clean === "inbox") return { view: "messages", section: "inbox", tasksTab: "list", topic: null };
+  if (!clean || clean === "overview" || clean === "tasks/overview") return { view: "tasks", section: null, tasksTab: "overview" };
+  if (clean === "tasks/plans") return { view: "tasks", section: null, tasksTab: "plans" };
   if (clean.startsWith("messages/")) {
     const encoded = clean.slice("messages/".length);
     let topic = encoded;
@@ -30,11 +34,10 @@ export function parseHashRoute(rawHash) {
     return { view: "messages", section: null, tasksTab: "list", topic: topic || null };
   }
   if (clean === "tasks") return { view: "tasks", section: null, tasksTab: "list" };
-  if (clean === "inbox" || clean === "tasks?tab=todo") return { view: "tasks", section: null, tasksTab: "inbox" };
-  if (clean === "projects") return { view: "projects", section: null, tasksTab: "list" };
-  const projectRoute = /^projects\/([a-z][a-z0-9-]{0,39})$/.exec(clean);
-  if (projectRoute) return { view: "projects", section: null, tasksTab: "list", projectId: projectRoute[1] };
-  if (clean === "settings") return { view: "settings", section: "runtime", tasksTab: "list" };
+  if (clean === "tasks?tab=todo") return { view: "tasks", section: null, tasksTab: "inbox" };
+  const projectRoute = /^(?:settings\/)?projects(?:\/([a-z][a-z0-9-]{0,39}))?$/.exec(clean);
+  if (clean === "settings" || projectRoute)
+    return { view: "settings", section: "projects", tasksTab: "list", ...(projectRoute?.[1] && { projectId: projectRoute[1] }) };
   if (clean.startsWith("settings/")) {
     const part = clean.slice("settings/".length);
     return {
@@ -48,6 +51,8 @@ export function parseHashRoute(rawHash) {
     rules: "rules",
     connections: "connections",
     agents: "agents",
+    memory: "memory",
+    runtime: "runtime",
     "feishu-groups": "feishu",
     feishu: "feishu",
     logs: "logs",
@@ -56,15 +61,21 @@ export function parseHashRoute(rawHash) {
   if (Object.hasOwn(legacySettings, clean)) {
     return { view: "settings", section: legacySettings[clean], tasksTab: "list" };
   }
-  return { view: "overview", section: null, tasksTab: "list" };
+  return { view: "messages", section: null, tasksTab: "list", topic: null };
 }
 
 export function routeToHash(route) {
-  if (route.view === "settings") return `settings/${route.section || "runtime"}`;
-  if (route.view === "messages") return route.topic ? "messages/" + encodeURIComponent(route.topic) : "messages";
-  if (route.view === "projects" && route.projectId) return `projects/${route.projectId}`;
-  if (route.view === "tasks" && route.tasksTab === "inbox") return "inbox";
-  return route.view || "overview";
+  if (route.view === "settings") {
+    const section = route.section || "projects";
+    return `settings/${section}${section === "projects" && route.projectId ? "/" + route.projectId : ""}`;
+  }
+  if (route.view === "messages")
+    return route.section === "inbox" ? "inbox" : route.topic ? "messages/" + encodeURIComponent(route.topic) : "messages";
+  if (route.view === "projects") return route.projectId ? `projects/${route.projectId}` : "projects";
+  if (route.view === "tasks" && route.tasksTab === "inbox") return "tasks?tab=todo";
+  if (route.view === "tasks" && (!route.tasksTab || route.tasksTab === "overview")) return "overview";
+  if (route.view === "tasks" && route.tasksTab === "plans") return "tasks/plans";
+  return route.view || "messages";
 }
 
 export function generatedOwner(config, kind, id) {

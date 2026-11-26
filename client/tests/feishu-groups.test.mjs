@@ -1,13 +1,14 @@
-// Prevent old groups from broadening their scope and new settings from matching names instead of real @ identities.
+// Prevent first-use setup from enabling untested groups or submitting preview messages, and preserve existing mention scopes.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { groupsFor, matchesGroup, scanInterval, changeScanInterval } from "../feishu-groups.mjs";
 import { startStudio } from "../server.mjs";
+import { feishuGroupSettings } from "../feishu-group-settings.mjs";
 
 const owner = { id: "ou_owner", name: "本人", kind: "user" };
 const robot = { id: "ou_robot", appId: "cli_robot", name: "助手", kind: "bot" };
@@ -18,6 +19,144 @@ const message = (ids, sender = { id: "ou_other", sender_type: "user" }) => ({
   message_id: "om_message",
   sender,
   mentions: ids.map((id) => ({ id, name: "本人" })),
+});
+
+test("a saved group list without schedules stays inactive until explicitly restored", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "studio-feishu-restore-"));
+  try {
+    const folder = path.join(home, "plugins", "feishu-inbox");
+    const file = path.join(folder, "settings.json");
+    const since = "2026-01-01T00:00:00Z";
+    await mkdir(folder, { recursive: true });
+    await writeFile(file, JSON.stringify({
+      ...settings, includePrivate: false, enabledSince: since, lark: "lark-cli", excludeChats: ["oc_excluded"],
+    }));
+    let workspace = { rules: { sources: { local: {} }, agents: {}, rules: [] } };
+    let persisted;
+    const groupSettings = feishuGroupSettings({
+      home,
+      workspace: () => workspace,
+      digest: JSON.stringify,
+      saveConfig: async ({ value }, related) => { related(); workspace = value; },
+      atomic: (filename, value) => { assert.equal(filename, file); persisted = value; },
+      authStatus: async () => ({ userReady: true, openId: owner.id, larkPath: "lark-cli" }),
+      localWorker: () => "studio-local",
+    });
+    const pending = groupSettings.view();
+    assert.equal(pending.configured, false);
+    assert.deepEqual(pending.restore.groups.map((group) => group.name), [old.name]);
+    assert.equal(workspace.rules.rules.length, 0);
+    await assert.rejects(groupSettings.restore({ revision: "stale" }), { status: 409 });
+    await groupSettings.restore({ revision: pending.revision });
+    assert.equal(workspace.rules.rules.length, 3);
+    assert.equal(persisted.owner, owner.id);
+    assert.equal(persisted.groups[0].mode, undefined);
+    assert.deepEqual(persisted.excludeChats, ["oc_excluded"]);
+    assert.ok(Date.parse(persisted.groups[0].enabledSince) > Date.parse(since));
+  } finally {
+    await rm(home, { force: true, recursive: true });
+  }
+});
+
+test("a freshly authorized workspace can preview a verified group and explicitly enable scheduled collection", { timeout: 45000 }, async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "studio-feishu-onboarding-"));
+  const oldPath = process.env.PATH;
+  let studio;
+  try {
+    const win = process.platform === "win32";
+    const cli = path.join(home, win ? "lark-cli.cmd" : "lark-cli");
+    const fake = `#!/usr/bin/env node
+const [domain, action, ...args] = process.argv.slice(2);
+if (domain === "auth" && action === "status") {
+  console.log(JSON.stringify({ appId: "cli_test", identities: { bot: { available: true }, user: { available: true, openId: "ou_owner", userName: "Tester" } } }));
+  process.exit();
+}
+if (domain !== "im" || !args.includes("--as") || !args.includes("user")) process.exit(1);
+const data = action === "+chat-search"
+  ? args.includes("找不到")
+    ? { chats: null, has_more: false, page_token: "", total: 0 }
+    : { chats: [{ chat_id: "oc_new", name: "新增群", chat_status: "normal" }] }
+  : action === "+chat-messages-list" && args.includes("oc_new")
+    ? { messages: [
+        { message_id: "om_other", sender: {id:"ou_sender",sender_type:"user"}, content: "无提及" },
+        { message_id: "om_match", sender: {id:"ou_sender",sender_type:"user",name:"陈雨"}, mentions: [{id:"ou_owner"}],
+          content: "请看看需求文档", msg_type: "text", create_time: "2026-11-26T02:32:00Z" },
+      ] }
+    : null;
+if (!data) process.exit(2);
+console.log(JSON.stringify({ ok: true, identity: "user", data }));`;
+    if (win) {
+      await writeFile(cli, `@echo off\r\n"${process.execPath}" "%~dp0fake.cjs" %*\r\n`);
+      await writeFile(path.join(home, "fake.cjs"), fake);
+    } else {
+      await writeFile(cli, fake, { mode: 0o700 });
+    }
+    process.env.PATH = [home, oldPath].filter(Boolean).join(path.delimiter);
+    studio = await startStudio({ home, port: 0, autostart: true });
+    const landing = await fetch(studio.url);
+    await landing.text();
+    const cookie = landing.headers.get("set-cookie").split(";")[0];
+    const request = (route, method = "GET", body) =>
+      fetch(studio.url + "/api" + route, {
+        method,
+        headers: { cookie, "x-studio-action": "1", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const initial = await (await request("/feishu-groups")).json();
+    assert.equal(initial.configured, false);
+    const before = (await (await request("/config")).json()).value;
+    const auth = await (await request("/feishu/auth/status")).json();
+    assert.equal(auth.userReady, true, auth.detail);
+    const empty = await request("/feishu-groups/search", "POST", { query: "找不到" });
+    assert.equal(empty.status, 200, await empty.clone().text());
+    assert.deepEqual(await empty.json(), { groups: [], partial: false });
+    const group = { id: "oc_new", mode: "mentions", targetIds: [owner.id] };
+    const found = await request("/feishu-groups/search", "POST", { query: "新增" });
+    const result = await found.json();
+    assert.equal(found.status, 200, JSON.stringify(result));
+    assert.equal(auth.notification.configured, false);
+    assert.equal(result.groups[0].id, group.id);
+    assert.equal((await request("/feishu-groups/enable", "POST", { revision: initial.revision, group })).status, 409);
+    assert.equal((await request("/feishu-groups/test", "POST", { ...group, id: "oc_unknown" })).status, 400);
+    const preview = await request("/feishu-groups/test", "POST", group);
+    const checked = await preview.json();
+    assert.equal(preview.status, 200, JSON.stringify(checked));
+    assert.deepEqual(checked.sample, { sender: "陈雨", text: "请看看需求文档", time: "2026-11-26T02:32:00Z" });
+    assert.ok(checked.testId);
+    assert.deepEqual((await (await request("/config")).json()).value, before);
+    const filename = path.join(home, "plugins", "feishu-inbox", "settings.json");
+    await assert.rejects(access(filename), { code: "ENOENT" });
+    const changed = { ...group, mode: "all", targetIds: [] };
+    assert.equal((await request("/feishu-groups/enable", "POST", {
+      revision: initial.revision, group: changed, testId: checked.testId,
+    })).status, 409);
+    const response = await request("/feishu-groups/enable", "POST", { revision: initial.revision, group, testId: checked.testId });
+    const saved = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(saved));
+    assert.equal(saved.interval, 5);
+    assert.equal(saved.groups[0].name, "新增群");
+    assert.deepEqual(saved.groups[0].targets, [owner]);
+    assert.equal((await (await request("/feishu-groups")).json()).revision, saved.revision);
+    const disk = JSON.parse(await readFile(filename, "utf8"));
+    assert.equal(disk.includePrivate, false);
+    assert.ok(disk.groups[0].enabledSince);
+    const after = (await (await request("/config")).json()).value;
+    const agent = after.rules.agents["feishu-inbox-reader"];
+    assert.equal(agent.worker, "studio-local");
+    assert.equal(after.rules.rules.filter((rule) => rule.to === "feishu-inbox-reader").length, 3);
+    assert.deepEqual(after.rules.channels, before.rules.channels);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const [program, collector] = agent.command;
+    const run = await promisify(execFile)(program, [collector], {
+      env: { ...process.env, AGENT_AUTOLOOP_HOME: home }, windowsHide: true,
+    });
+    assert.match(run.stdout, /命中 1 条，新入队 1 条/);
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+    await studio?.close();
+    await rm(home, { force: true, recursive: true, maxRetries: 10, retryDelay: 200 });
+  }
 });
 
 test("old groups default to real mentions of the owner", () => {
@@ -67,6 +206,10 @@ test(
       const cli = path.join(plugin, process.platform === "win32" ? "lark.cmd" : "lark");
       const fake = `#!/usr/bin/env node
 const [domain, action, ...args] = process.argv.slice(2);
+if (domain === "auth" && action === "status") {
+  console.log(JSON.stringify({ appId: "cli_test", identities: { bot: { available: true }, user: { available: true, openId: "ou_owner" } } }));
+  process.exit();
+}
 if (domain !== "im" || !args.includes("--as") || !args.includes("user")) process.exit(1);
 const data = action === "+chat-search"
   ? { chats: [{ chat_id: "oc_new", name: "新增群", chat_status: "normal" }] }
@@ -79,7 +222,7 @@ const data = action === "+chat-search"
       bots: [{ member_id: "ou_robot", name: "助手", app_id: "cli_robot" }] };
 console.log(JSON.stringify({ ok: true, identity: "user", data }));`;
       if (process.platform === "win32") {
-        await writeFile(cli, '@echo off\r\n"%~dp0\\fake.cjs" %*\r\n');
+        await writeFile(cli, `@echo off\r\n"${process.execPath}" "%~dp0fake.cjs" %*\r\n`);
         await writeFile(path.join(plugin, "fake.cjs"), fake);
       } else {
         await writeFile(cli, fake, { mode: 0o700 });

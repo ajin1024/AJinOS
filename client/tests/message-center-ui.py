@@ -1,165 +1,164 @@
-# Keep the project prompt, floating composer, project tree and acceptance actions usable at both widths.
+# Prevent the private chat, Inbox, Thread continuation, attachments and plan actions from losing their real backend bindings.
 import base64
-import json
-import os
-from pathlib import Path
-from queue import Queue
-import subprocess
-import sys
-from studio_home import studio_home
-from threading import Thread
+import re
 
 from playwright.sync_api import expect, sync_playwright
+from studio_browser import running_studio, state, submit, wait_online
 
 
-root = Path(__file__).resolve().parents[2]
-script = """
-  import { startDemoStudio as startStudio } from './client/tests/studio-fixtures.mjs';
-  const studio = await startStudio({ home: process.argv[1], port: 0, autostart: true,
-    gatewayModel: async (kind) => kind === 'route'
-      ? {project:'orders', flow:'default', complexity:'simple', certain:true, reason:'任务与订单项目匹配'}
-      : {description:'测试截图'} });
-  console.log(JSON.stringify({ url: studio.url }));
-  process.stdin.once('data', async () => { await studio.close(); process.exit(0); });
-"""
-png = base64.b64decode(
+PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jB1sAAAAASUVORK5CYII="
 )
 
-with studio_home("studio-messages-ui-") as temp:
-    with (Path(temp) / "studio.log").open("w+", encoding="utf-8") as stderr:
-        process = subprocess.Popen(
-            ["node", "--input-type=module", "-e", script, temp], cwd=root,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, text=True, encoding="utf-8",
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-        )
-        ready = Queue()
-        Thread(target=lambda: ready.put(process.stdout.readline()), daemon=True).start()
-        try:
-            line = ready.get(timeout=45)
-            if not line:
-                stderr.seek(0)
-                raise RuntimeError(stderr.read())
-            url = json.loads(line)["url"]
-            with sync_playwright() as p:
-                browser = p.chromium.launch(channel="msedge", headless=True)
-                page = browser.new_page(viewport={"width": 1484, "height": 960})
-                errors = []
-                page.on("pageerror", lambda error: errors.append(str(error)))
-                page.goto(url + "/#messages")
-                page.wait_for_function("async () => (await (await fetch('/api/state')).json()).connected")
 
-                composer = page.locator(".mc-composer")
-                timeline = page.locator(".mc-timeline")
-                sidebar = page.get_by_role("complementary", name="会话列表")
-                draft = composer.locator("textarea")
-                heading = page.locator("h1.mc-start-title")
-                expect(heading).to_be_visible()
-                expect(page.get_by_role("button", name="对话列表")).to_be_hidden()
-                expect(page.get_by_role("button", name="返回对话")).to_be_hidden()
-                for viewport in ({"width": 1484, "height": 960}, {"width": 390, "height": 680}):
-                    page.set_viewport_size(viewport)
-                    expect(draft).to_be_in_viewport()
-                    expect(heading).to_be_in_viewport()
-                    heading_box = heading.bounding_box()
-                    composer_box = composer.bounding_box()
-                    assert heading_box["y"] + heading_box["height"] < composer_box["y"]
-                    assert composer_box["y"] + composer_box["height"] > viewport["height"] * 0.8
-                page.set_viewport_size({"width": 1484, "height": 960})
-                project = heading.get_by_role("combobox", name="选择发起项目")
-                expect(project).to_have_value("")
-                project.select_option("orders")
-                expect(composer).to_contain_text("订单服务")
-                draft.fill("订单项目的定向草稿")
-                page.get_by_role("button", name="新对话", exact=True).click()
-                expect(project).to_have_value("")
-                expect(draft).to_have_value("")
-                sidebar.get_by_role("button").filter(has_text="订单项目的定向草稿").click()
-                expect(draft).to_have_value("订单项目的定向草稿")
-                expect(composer.get_by_role("combobox", name="目标项目")).to_have_value("orders")
-                composer.get_by_role("button", name="高级选项").click()
-                composer.get_by_label("我确定目标，跳过需求确认").check()
-                composer.locator('input[type="file"]').set_input_files(
-                    {"name": "proof.png", "mimeType": "image/png", "buffer": png}
-                )
-                draft.evaluate("""(field, bytes) => {
-                    const clipboardData = new DataTransfer();
-                    clipboardData.items.add(new File([new Uint8Array(bytes)], "pasted.png", {type: "image/png"}));
-                    field.dispatchEvent(new ClipboardEvent("paste", {clipboardData, bubbles: true}));
-                }""", list(png))
-                expect(composer.locator(".mc-composer-thumb.done")).to_have_count(2)
-                draft.fill("核对批量发货并直接完成")
-                draft.press("Shift+Enter")
-                expect(draft).to_have_value("核对批量发货并直接完成\n")
-                expect(composer.get_by_role("button", name="发送")).to_be_enabled()
-                draft.press("Enter")
-                expect(timeline.get_by_text("核对批量发货并直接完成", exact=True)).to_be_visible(timeout=20000)
-                expect(timeline.get_by_role("button", name="pasted.png")).to_be_visible()
-                timeline.get_by_role("button", name="proof.png").click()
-                lightbox = page.locator(".mc-lightbox-image")
-                expect(lightbox).to_be_visible()
-                expect(lightbox).to_have_js_property("naturalWidth", 1)
-                page.keyboard.press("Escape")
+with running_studio("studio-messages-ui-") as url, sync_playwright() as playwright:
+    browser = playwright.chromium.launch(channel="msedge", headless=True)
+    page = browser.new_page(base_url=url, viewport={"width": 1440, "height": 900})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(url)
+    wait_online(page)
+    expect(page.get_by_role("heading", name="任务流转")).to_be_visible()
+    page.get_by_role("navigation", name="主导航").get_by_role("button", name="对话").click()
+    expect(page.get_by_role("heading", name="AJinOS 总管", exact=True)).to_be_visible()
+    sidebar = page.get_by_role("complementary", name="对话列表")
+    composer = page.locator(".composer")
+    field = composer.get_by_role("textbox", name="任务说明")
+    send = composer.get_by_role("button", name="发送", exact=True)
+    expect(composer.get_by_label("执行器 / 模型")).to_have_count(0)
 
-                execution = page.locator("details.mc-execution")
-                execution.locator("summary").click()
-                expect(execution).to_contain_text("分析执行器", timeout=25000)
-                expect(timeline.get_by_role("button", name="通过验收")).to_be_visible(timeout=30000)
-                expect(timeline.get_by_role("button", name="打回修改")).to_be_visible()
-                acceptance = timeline.locator(".mc-acceptance").filter(has=page.get_by_role("button", name="通过验收"))
-                expect(acceptance).to_have_css("background-color", "rgb(253, 243, 227)")
-                expect(timeline.get_by_role("button", name="关闭任务")).to_be_visible()
-                sidebar.get_by_role("button", name="筛选会话").click()
-                sidebar.get_by_role("button", name="待验收", exact=True).click()
-                expect(sidebar.locator(".mc-conversation")).to_have_count(1)
-                sidebar.get_by_role("button", name="搜索对话").click()
-                search = sidebar.get_by_role("searchbox", name="搜索对话")
-                search.fill("无匹配的关键词")
-                expect(sidebar.locator(".mc-conversation")).to_have_count(0)
-                search.fill("")
-                expect(sidebar.locator(".mc-conversation")).to_have_count(1)
-                sidebar.get_by_role("button", name="置顶 核对批量发货并直接完成").click()
-                expect(sidebar.get_by_role("heading", name="置顶", exact=True)).to_be_visible()
+    before = state(page)["state"].get("tickets", [])
+    field.fill("今日简报")
+    field.press("Enter")
+    expect(page.get_by_text("只读简报 · 未开单", exact=True)).to_be_visible()
+    assert before == state(page)["state"].get("tickets", [])
+    page.reload()
+    expect(page.get_by_text("只读简报 · 未开单", exact=True)).to_be_visible()
 
-                execution.get_by_role("button", name="查看执行详情").click()
-                expect(page.locator("#drawer")).to_be_visible()
-                page.keyboard.press("Escape")
-                expect(page.locator("#drawer")).not_to_be_visible()
-                if len(sys.argv) > 1:
-                    page.locator(".mc-head-title h1").click()
-                    page.screenshot(path=sys.argv[1])
+    composer.get_by_role("button", name="高级覆盖").click()
+    composer.get_by_label("项目", exact=True).select_option("orders")
+    composer.locator('input[type="file"]').set_input_files({"name": "proof.png", "mimeType": "image/png", "buffer": PNG})
+    field.evaluate("""(input, bytes) => {
+      const clipboardData = new DataTransfer();
+      clipboardData.items.add(new File([new Uint8Array(bytes)], "pasted.png", {type:"image/png"}));
+      input.dispatchEvent(new ClipboardEvent("paste", {clipboardData, bubbles:true, cancelable:true}));
+    }""", list(PNG))
+    expect(composer.locator(".attachments img")).to_have_count(2)
+    title = "核对订单并直接完成"
+    field.fill(title)
+    field.press("Shift+Enter")
+    expect(field).to_have_value(title + "\n")
 
-                page.set_viewport_size({"width": 740, "height": 900})
-                expect(execution.get_by_role("button", name="查看执行详情")).to_be_visible()
-                timeline.get_by_role("button", name="通过验收").click()
-                expect(page.get_by_role("heading", name="核对批量发货并直接完成")).to_be_visible()
-                expect(page.locator(".mc-conversation-head")).to_contain_text("已结束")
-                expect(timeline.get_by_role("button", name="通过验收")).to_have_count(0)
-                page.get_by_role("button", name="对话列表").click()
-                sidebar.get_by_role("button", name="已结束").click()
-                expect(sidebar.locator(".mc-conversation")).to_have_count(1)
-                page.locator("#status-capsule").click()
-                page.locator('[data-theme-choice="dark"]').click()
-                expect(page.locator("html")).to_have_attribute("data-theme", "dark")
-                expect(page.locator(".mc-main")).to_have_css("background-color", "rgb(27, 31, 44)")
-                page.set_viewport_size({"width": 1484, "height": 960})
-                page.get_by_role("button", name="新对话", exact=True).click()
-                expect(project).to_have_value("")
-                composer.get_by_role("button", name="高级选项").click()
-                composer.get_by_label("我确定目标，跳过需求确认").check()
-                draft.fill("核对订单并直接完成")
-                with page.expect_response(lambda response: response.url.endswith("/api/messages") and
-                                          response.request.method == "POST") as submitted:
-                    draft.press("Enter")
-                assert not submitted.value.request.post_data_json.get("project")
-                assert submitted.value.json().get("project") == "orders", submitted.value.text()
-                expect(timeline.get_by_text("核对订单并直接完成", exact=True)).to_be_visible()
-                assert not errors, errors
-                browser.close()
-        finally:
-            if process.poll() is None:
-                try:
-                    process.communicate("shutdown\n", timeout=30)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.communicate(timeout=10)
+    pending = []
+
+    def hold(route):
+        pending.append(route)
+
+    page.route("**/api/router/message", hold)
+    send.click()
+    expect(field).not_to_be_editable()
+    expect(send).to_be_disabled()
+    field.press("Enter")
+    assert len(pending) == 1
+    failed = pending.pop()
+    failed_id = failed.request.post_data_json["id"]
+    failed.fulfill(status=503, json={"error": "测试连接暂时中断"})
+    expect(composer.get_by_role("alert")).to_contain_text("测试连接暂时中断")
+    expect(field).to_have_value(title + "\n")
+    expect(composer.locator(".attachments img")).to_have_count(2)
+    page.unroute("**/api/router/message", hold)
+
+    with page.expect_response(lambda response: response.url.endswith("/api/router/message") and response.request.method == "POST") as sent:
+        send.click()
+    assert failed_id == sent.value.request.post_data_json["id"]
+    receipt = sent.value.json()
+    assert receipt["kind"] == "task" and receipt["project"] == "orders", receipt
+    expect(page).to_have_url(url + "/#messages")
+    topic = receipt["topic"]
+    card = page.locator(".receipt").filter(has_text=title)
+    expect(card.get_by_role("button", name="通过验收")).to_be_visible(timeout=30000)
+    expect(card.locator("code")).to_have_text(re.compile(r"T-\d{6}"))
+    card.get_by_role("button", name="展开详情").click()
+    drawer = page.get_by_role("complementary", name="工单详情")
+    expect(drawer.get_by_text("本地确定性演示执行器已运行到对应分支", exact=True)).to_be_visible()
+    expect(drawer.locator(".log").first).to_be_visible()
+    drawer.get_by_role("button", name="开始校验").click()
+    expect(drawer.get_by_text("fixture verification", exact=False)).to_be_visible()
+    drawer.get_by_role("button", name="关闭详情").click()
+
+    sidebar.get_by_role("button", name="搜索事项").click()
+    sidebar.get_by_role("searchbox").fill(title)
+    sidebar.get_by_role("button", name=re.compile(title)).click()
+    expect(page).to_have_url(url + "/#messages/" + topic)
+    expect(page.get_by_text("Thread 直通 · 跳过路由")).to_be_visible()
+    page.get_by_role("button", name="proof.png", exact=True).click()
+    expect(page.locator(".mc-lightbox-image")).to_have_js_property("naturalWidth", 1)
+    page.keyboard.press("Escape")
+    field.fill("继续在原事项核对并直接完成")
+    with page.expect_response(lambda response: response.url.endswith("/api/router/message") and response.request.method == "POST") as continued:
+        field.press("Enter")
+    assert continued.value.json()["topic"] == topic
+    assert continued.value.request.post_data_json["conversation"] == topic
+    expect(page.get_by_text("继续在原事项核对并直接完成", exact=True)).to_be_visible(timeout=12000)
+
+    field.fill("保存在原事项的草稿")
+    sidebar.get_by_role("button", name=re.compile("AJinOS 总管")).click()
+    expect(sidebar.get_by_role("button", name=re.compile(title)).get_by_text("草稿")).to_be_visible()
+    sidebar.get_by_role("button", name=re.compile(title)).click()
+    expect(field).to_have_value("保存在原事项的草稿")
+    field.fill("")
+
+    approval = submit(page, "需要本人决定是否继续", project="content")
+    intake = submit(page, "无法唯一判断归属的请求")
+    assert intake["kind"] == "intake", intake
+    page.goto(url + "/#inbox")
+    expect(page.get_by_role("heading", name="待我处理", exact=True)).to_be_visible()
+    expect(page.get_by_role("region", name="待澄清与失败请求").get_by_text("无法唯一判断归属的请求")).to_be_visible()
+    approval_card = page.locator(".queue-card").filter(has_text="继续执行演示验证吗？")
+    expect(approval_card.get_by_text("来自 主私聊")).to_be_visible(timeout=30000)
+    approval_card.get_by_text("结束演示", exact=True).click()
+    approval_card.get_by_role("button", name="提交答复").click()
+    expect(approval_card).to_have_count(0)
+    assert approval["topic"] != topic
+    review = page.get_by_role("region", name="待验收").locator(".receipt").filter(has_text=title)
+    expect(review.get_by_role("button", name="通过验收")).to_be_enabled(timeout=30000)
+    review.get_by_role("button", name="通过验收").click()
+    expect(review).to_have_count(0)
+    unresolved = page.get_by_role("region", name="待澄清与失败请求")
+    unresolved.get_by_role("button", name="订单服务 · 演示").click()
+    unresolved.get_by_role("button", name="用这个项目重新提交").click()
+    expect(page.get_by_text("Thread 直通 · 跳过路由")).to_be_visible()
+
+    sidebar.get_by_role("button", name=re.compile("AJinOS 总管")).click()
+    field.fill("/plan 跨项目先核对订单，然后整理内容")
+    send.click()
+    plan = page.locator(".plan").filter(has_text="跨项目交接").last
+    expect(plan.get_by_text("依赖步骤 1", exact=False)).to_be_visible(timeout=20000)
+    plan.get_by_role("button", name="取消草案").click()
+    expect(plan.get_by_text("已取消", exact=True)).to_be_visible()
+    field.fill("/plan 第二份跨项目交接")
+    send.click()
+    start = page.get_by_role("button", name="确认启动计划")
+    expect(start).to_be_enabled(timeout=20000)
+    start.click()
+    expect(page.locator(".plan").filter(has_text="进行中").get_by_text("进行中", exact=True)).to_be_visible()
+
+    page.set_viewport_size({"width": 390, "height": 680})
+    expect(field).to_be_in_viewport()
+    page.get_by_role("button", name="打开对话列表").click()
+    expect(sidebar).to_be_visible()
+    sidebar.get_by_role("button", name=re.compile("待我处理")).click()
+    expect(page.get_by_role("heading", name="待我处理", exact=True)).to_be_visible()
+    assert page.evaluate("""async () => {
+      const deadline = Date.now() + 45000;
+      while (Date.now() < deadline) {
+        const {plans} = await (await fetch('/api/chief/plans')).json();
+        if (plans.some(plan => plan.status === 'completed' && plan.steps.every(step => step.status === 'done'))) return true;
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+      return false;
+    }""")
+    assert not errors, errors
+    browser.close()
+
+print("Edge: private chat, Thread, Inbox, attachments, acceptance and DAG actions passed")

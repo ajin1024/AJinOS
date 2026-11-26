@@ -89,9 +89,8 @@ with tempfile.TemporaryDirectory(prefix="studio-settings-ui-") as home:
             expect(page.locator("#engine-log")).to_have_class("sc-logs-surface engine-log-view is-nowrap")
             page.get_by_role("checkbox", name="自动换行").check()
             for theme in ("light", "dark"):
-                page.locator("#status-capsule").click()
+                page.locator("#rail-theme").click()
                 page.locator(f'[data-theme-choice="{theme}"]').click()
-                page.locator("#status-capsule").click()
                 page.get_by_role("button", name="最新记录", exact=True).click()
                 assert page.locator("#engine-log").evaluate("e => e.scrollHeight - e.scrollTop - e.clientHeight < 3")
                 for section, heading in (("runtime", "运行环境与引擎"), ("gateway", "项目识别网关"), ("advanced", "高级 JSON 与版本")):

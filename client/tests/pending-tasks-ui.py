@@ -58,12 +58,12 @@ with temporary_studio_home() as home:
                     errors = []
                     page.on("pageerror", lambda error: errors.append(str(error)))
                     page.goto(url)
-                    page.wait_for_selector(".fc-canvas")
+                    page.wait_for_selector(".super-agent-flow .canvas")
                     expect(page).to_have_title("AJinOS")
-                    expect(page.get_by_role("link", name="AJinOS")).to_be_visible()
+                    expect(page.get_by_role("link", name="AJinOS 主页")).to_be_visible()
                     expect(page.locator("header #nav")).to_be_visible()
                     expect(page.locator(".sidebar")).to_have_count(0)
-                    page.locator('#nav [data-view="tasks"]').click()
+                    page.get_by_role("button", name="工单看板", exact=True).click()
                     expect(page.get_by_role("tab", name="演示记录", exact=True)).to_have_count(0)
                     board = page.get_by_role("region", name="任务看板")
                     expect(board.get_by_text("暂无任务", exact=True)).to_be_visible()
@@ -78,15 +78,10 @@ with temporary_studio_home() as home:
                                   "project": "content", "text": f"待办演示任务 {index}"},
                         )
                         assert response.ok, response.text()
-                    page.wait_for_function("""async () => {
-                      const snapshot = await (await fetch('/api/state')).json();
-                      return snapshot.state.cards.filter(card => card.kind === 'ask').length === 2;
-                    }""", timeout=30000)
-
-                    # Verify cards land in the "待审核" column and "[ 开始处理 › ]" opens the detail drawer
+                    # Verify both sequential rounds surface their questions in the board and open the detail drawer.
                     review_col = page.locator('[data-board-col="review"]')
-                    expect(review_col.locator(".kb-card")).to_have_count(2, timeout=10000)
-                    expect(board.locator("[data-board-col]")).to_have_count(7)
+                    expect(review_col.locator(".kb-card")).to_have_count(2, timeout=30000)
+                    expect(board.locator("[data-board-col]")).to_have_count(4)
                     last_column = board.locator("[data-board-col]").last
                     last_column.scroll_into_view_if_needed()
                     expect(last_column).to_be_in_viewport()
@@ -98,7 +93,7 @@ with temporary_studio_home() as home:
                     board.get_by_role("button", name="清除筛选").click()
                     expect(page.locator("#task-search")).to_have_value("")
                     page.set_viewport_size({"width": 390, "height": 800})
-                    assert board.evaluate("el => el.scrollWidth > el.clientWidth")
+                    assert board.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
                     assert page.locator("#main").evaluate("el => el.scrollWidth <= el.clientWidth + 1")
                     page.set_viewport_size({"width": 1440, "height": 920})
                     review_col.get_by_role("button", name="开始处理 ›").click()

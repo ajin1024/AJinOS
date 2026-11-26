@@ -1,5 +1,6 @@
 import { businessProjects, projectDisplayRules } from "../gateway-config.mjs";
 import { intakeWorkflow, savedWorkflow, workflowFor } from "../task-workflow.mjs";
+import { groupTasks } from "../task-list.mjs";
 
 /** User-facing labels for the states a message-center conversation can be in. */
 export const CONVERSATION_STATUS_LABELS = {
@@ -421,11 +422,13 @@ export function buildConversations({
 }
 
 /** Apply the message-center filter chips and keyword search without reordering the conversation list. */
-export function filterConversations(list, { filter = "all", search = "" } = {}) {
+export function filterConversations(list, { filter = "all", search = "", project = "" } = {}) {
   const needle = String(search || "")
     .trim()
     .toLocaleLowerCase();
   return (list || []).filter((conversation) => {
+    if (project && conversation.project !== project) return false;
+    if (filter === "open" && conversation.status === "done") return false;
     if (filter === "actionable" && !conversation.actionable) return false;
     if (filter === "needs_acceptance" && conversation.status !== "needs_acceptance") return false;
     if (filter === "running" && conversation.status !== "running") return false;
@@ -433,6 +436,33 @@ export function filterConversations(list, { filter = "all", search = "" } = {}) 
     if (!needle) return true;
     return conversationSearchText(conversation).toLocaleLowerCase().includes(needle);
   });
+}
+
+export function buildMessageReceipts({ taskWorkflows = [], ...input }) {
+  return groupTasks(input).map((task) => ({ ...task, workflow: workflowFor(task, savedWorkflow(task, taskWorkflows)) }));
+}
+
+export function buildMessageInbox({ cards = [], intakes = [], conversations = [], receipts = [] } = {}) {
+  const byCard = new Map();
+  for (const conversation of conversations) {
+    if (conversation.topic)
+      for (const card of conversation.openCards) byCard.set(String(card.id), conversation);
+  }
+  const unique = (items, key) => [...new Map(items.map((item) => [key(item), item])).values()];
+  const approvals = unique(cards.filter(isAskCard), (card) => String(card.id)).map((card) => ({
+    card,
+    conversation: byCard.get(String(card.id)),
+    receipt: receipts.find((task) => task.openCards?.some((entry) => entry.id === card.id)),
+  }));
+  const reviews = unique(
+    receipts.filter((task) => statusOfWorkflow(task.workflow) === "needs_acceptance"),
+    (task) => task.ticket?.id ?? task.key ?? task.runs.at(-1)?.id,
+  );
+  const unresolved = unique(
+    intakes.filter((item) => item && ["needsConfirmation", "needsProject", "failed", "interrupted"].includes(item.state)),
+    (item) => item.id,
+  );
+  return { approvals, reviews, intakes: unresolved, total: approvals.length + reviews.length + unresolved.length };
 }
 
 /** Count conversations that still need the user, for the main-navigation badge. */

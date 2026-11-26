@@ -40,6 +40,14 @@ export function boardColumnFor(entry) {
   return "unplanned";
 }
 
+export function missionColumnFor(entry) {
+  const column = boardColumnFor(entry);
+  if (column === "unplanned") return "review";
+  if (column === "todo") return "in_progress";
+  if (column === "cancelled") return "done";
+  return column;
+}
+
 export function formatWaitAge(isoTime, nowMs = Date.now()) {
   if (!isoTime) return "";
   const ms = Math.max(0, nowMs - Date.parse(isoTime));

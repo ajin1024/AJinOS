@@ -155,102 +155,6 @@ body[theme-mode="dark"] .semi-switch-checked {
   display: none;
 }
 
-.studio-status-capsule {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--ui-line);
-  background: var(--ui-panel);
-  color: var(--ui-text);
-  font-size: 13px;
-  font-weight: 550;
-  white-space: nowrap;
-  position: relative;
-}
-.studio-status-capsule:hover {
-  border-color: var(--ui-accent-line);
-  background: var(--ui-surface);
-}
-.studio-capsule-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ui-accent-line);
-  flex-shrink: 0;
-}
-.studio-capsule-dot.offline {
-  background: var(--ui-danger);
-}
-.studio-capsule-dot.stopped {
-  background: var(--ui-muted);
-}
-.studio-update-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ui-warn);
-  flex-shrink: 0;
-}
-
-.studio-capsule-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.studio-capsule-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 400;
-  border-radius: 12px;
-  border: 1px solid var(--ui-line);
-  background: var(--ui-panel);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--ui-shadow) 16%, transparent);
-}
-.studio-status-popover {
-  width: 296px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.studio-popover-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.studio-popover-section + .studio-popover-section {
-  padding-top: 12px;
-  border-top: 1px solid var(--ui-line);
-}
-.studio-popover-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ui-muted);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.studio-popover-engine {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.studio-popover-engine strong {
-  font-size: 14px;
-  color: var(--ui-text);
-}
-.studio-popover-engine small {
-  font-size: 12px;
-  color: var(--ui-muted);
-}
-.studio-popover-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 .studio-theme-pills {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -271,31 +175,6 @@ body[theme-mode="dark"] .semi-switch-checked {
   color: var(--ui-accent-ink);
   font-weight: 650;
 }
-.studio-popover-links {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.studio-popover-link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ui-text);
-  font-size: 13px;
-  text-align: left;
-}
-.studio-popover-link:hover {
-  background: var(--ui-surface);
-}
-.studio-popover-link small {
-  color: var(--ui-muted);
-  font-size: 12px;
-}
-
 /* First-level Project Space page */
 .ps-page-host {
   flex: 1;

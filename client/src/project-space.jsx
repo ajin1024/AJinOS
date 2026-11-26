@@ -620,7 +620,6 @@ export function ProjectSpace({
   config,
   profiles,
   runs,
-  connected,
   onSaveProject,
   onSaveConfig,
   onAnalyzeProject,
@@ -815,9 +814,6 @@ export function ProjectSpace({
                 ]}
               />
             </div>
-            {!connected && (
-              <Banner type="warning" description="中台暂未连接，当前显示最近一次同步的项目。" closeIcon={null} />
-            )}
             <section ref={cardsRef} className="ps-workspace" aria-label="项目卡片">
               {visibleProjects.length ? (
                 <div className="ps-card-grid">

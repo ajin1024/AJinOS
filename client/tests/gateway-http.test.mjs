@@ -20,6 +20,7 @@ test(
       home,
       port: 0,
       autostart: true,
+      dispatchOnly: true,
       gatewayModel: async (kind) => {
         assert.equal(kind, "confirm");
         if (offline) throw Error("fake subprocess diagnostic");
@@ -47,7 +48,9 @@ test(
     offline = false;
     const recovered = await submit();
     assert.equal(recovered.status, 200);
-    assert.equal((await recovered.json()).project, "orders");
+    const receipt = await recovered.json();
+    assert.equal(receipt.project, "orders");
+    assert.ok(receipt.event);
   },
 );
 
@@ -74,6 +77,17 @@ test("HTTP gateway profiles, routes once, persists bindings and continues by tas
     });
     return { status: res.status, data: await res.json() };
   };
+  async function completedRound(topic, after = 0) {
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      const { state } = (await request("/state", null, "GET")).data;
+      const run = state?.runs.find((r) =>
+        r.id > after && r.events.some((e) => e.subject === `orders:${topic}`));
+      if (run?.state === "done") return run;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    assert.fail(`No completed demo round for ${topic} after #${after}`);
+  }
   try {
     await connect();
     const profile = await request("/projects/orders/analyze", {});
@@ -99,19 +113,12 @@ test("HTTP gateway profiles, routes once, persists bindings and continues by tas
       409,
     );
     assert.equal((await request("/messages", { id: "missing", conversation: "unknown", text: "订单" })).status, 409);
-    let run;
-    const deadline = Date.now() + 30000;
-    while (Date.now() < deadline) {
-      const state = (await request("/state", null, "GET")).data.state;
-      run = state?.runs.find((r) => r.events.some((e) => e.subject === `orders:${first.data.topic}`));
-      if (run?.state === "done") break;
-      await new Promise((r) => setTimeout(r, 250));
-    }
-    assert.equal(run?.state, "done");
+    const run = await completedRound(first.data.topic);
     const resumed = await request("/messages", { id: "by-task", task: run.id, text: "继续，直接完成" });
     assert.equal(resumed.status, 200);
     assert.equal(resumed.data.topic, first.data.topic);
     assert.equal(classifications, 1);
+    const nextRun = await completedRound(first.data.topic, run.id);
     await studio.close();
     studio = await startStudio({ home, port: 0, autostart: true, gatewayModel: model });
     await connect();
@@ -130,6 +137,7 @@ test("HTTP gateway profiles, routes once, persists bindings and continues by tas
     });
     assert.equal(again.data.project, "orders");
     assert.equal(classifications, 1);
+    await completedRound(first.data.topic, nextRun.id);
     assert.equal((await request("/projects/orders/profile", null, "GET")).data.summary, "售后结算");
     const configuration = (await request("/config", null, "GET")).data;
     configuration.value.rules.rules[0].to = "codex";

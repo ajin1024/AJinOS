@@ -3,7 +3,7 @@ import { createDefaults } from "../config.mjs";
 import { startStudio } from "../server.mjs";
 import { assignIslandStyles } from "../src/island-presets.mjs";
 
-export function createDemoWorkspace(home, { includeAutoloop = false, businessTasks = false } = {}) {
+export function createDemoWorkspace(home, { includeAutoloop = false, businessTasks = false, dispatchOnly = false } = {}) {
   const config = createDefaults(home, { includeAutoloop });
   const projects = [
     {
@@ -27,7 +27,8 @@ export function createDemoWorkspace(home, { includeAutoloop = false, businessTas
   ];
   const executor = (name) => ({
     name,
-    worker: "studio-local",
+    // HTTP-only cases leave work unclaimed so Windows can remove the temporary workspace on shutdown.
+    worker: dispatchOnly ? "studio-dispatch-only" : "studio-local",
     use: "command",
     access: "read",
     command: [
@@ -57,9 +58,9 @@ export function createDemoWorkspace(home, { includeAutoloop = false, businessTas
   return config;
 }
 
-export function startDemoStudio({ businessTasks, ...options }) {
+export function startDemoStudio({ businessTasks, dispatchOnly, ...options }) {
   return startStudio({
     ...options,
-    initializeWorkspace: (home) => createDemoWorkspace(home, { includeAutoloop: true, businessTasks }),
+    initializeWorkspace: (home) => createDemoWorkspace(home, { includeAutoloop: true, businessTasks, dispatchOnly }),
   });
 }

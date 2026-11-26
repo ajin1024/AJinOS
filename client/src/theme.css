@@ -223,11 +223,6 @@ body.station-view .fc-token text {
   border-radius: 8px;
   font-size: 12px;
 }
-#refresh-app {
-  padding: 7px 11px;
-  gap: 6px;
-  font-size: 12px;
-}
 .version-entry {
   margin-top: auto;
   display: grid;
@@ -746,9 +741,6 @@ body.station-view #toast.error {
   }
   .top-actions {
     gap: 5px;
-  }
-  #refresh-app > span:last-child {
-    display: none;
   }
   .breadcrumb > span,
   .world-brand b {

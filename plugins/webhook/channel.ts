@@ -54,17 +54,16 @@ export default async function webhook({ hub, options, log, signal }: ChannelCont
       continue;
     }
     try {
+      const platform = String(options.platform ?? "");
+      const text = words(card, platform);
+      const content = platform === "dingtalk" && options.keyword ? `${options.keyword}\n${text}` : text;
       const response = await fetch(options.url as string, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          options.platform
-            ? payload(String(options.platform), words(card, String(options.platform)))
-            : fill(options.body ?? { text: "{text}" }, words(card)),
-        ),
+        body: JSON.stringify(platform ? payload(platform, content) : fill(options.body ?? { text: "{text}" }, text)),
         signal: AbortSignal.timeout(30_000),
       });
-      await accepted(String(options.platform ?? ""), response);
+      await accepted(platform, response);
       await hub.delivered(card.id, card.version, `sent-${card.id}`);
     } catch (error) {
       log(`card ${card.id} not sent: ${error}`);

@@ -1,15 +1,15 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Button, ConfigProvider, Modal, SideSheet, Tag } from "@douyinfe/semi-ui";
+import { ConfigProvider, Modal } from "@douyinfe/semi-ui";
 import {
-  IconApps,
-  IconChevronDown,
   IconComment,
-  IconFolder,
+  IconContrast,
+  IconInfoCircle,
   IconLayers,
-  IconPause,
+  IconLoading,
   IconPlay,
   IconPlus,
+  IconPulse,
   IconRefresh,
   IconSetting,
 } from "@douyinfe/semi-icons";
@@ -18,15 +18,20 @@ import semiThemeCss from "./semi-theme.css";
 import studioLayoutCss from "./studio-layout.css";
 import motionCss from "./studio-motion.css";
 import projectCss from "./project-space.css";
+import flowCss from "./workbench/super-agent-flow.css";
+import floatingChatCss from "./messages/floating-chat.css";
 import { ProjectSpace } from "./project-space.jsx";
 import { SettingsCenter } from "./settings/settings-center.jsx";
 import { TaskCenter } from "./tasks/task-center.jsx";
-import { hasComposerDraft, MessageCenter } from "./messages/message-center.jsx";
+import { MessageCenter } from "./messages/message-center.jsx";
+import { hasComposerDraft } from "./messages/composer.jsx";
+import { PlanView, useChiefActivity } from "./messages/use-chief-activity.jsx";
+import { SuperAgentFlow } from "./workbench/super-agent-flow.jsx";
+import { FloatingChat } from "./messages/floating-chat.jsx";
 import { TaskDetailPanel } from "./tasks/task-detail-panel.jsx";
 import { NewTaskModal } from "./tasks/new-task-modal.jsx";
 import { WorkflowActionModal } from "./tasks/workflow-action-modal.jsx";
 import { VersionsPanel } from "./versions-panel.jsx";
-import { formatTime } from "./studio-helpers.mjs";
 
 let semiStylesInstalled = false;
 function installSemiStyles() {
@@ -34,7 +39,7 @@ function installSemiStyles() {
   semiStylesInstalled = true;
   const style = document.createElement("style");
   style.id = "studio-semi-styles";
-  style.textContent = semiCss + "\n" + semiThemeCss + "\n" + projectCss + "\n" + motionCss + "\n" + studioLayoutCss;
+  style.textContent = semiCss + "\n" + semiThemeCss + "\n" + projectCss + "\n" + motionCss + "\n" + studioLayoutCss + "\n" + flowCss + "\n" + floatingChatCss;
   document.head.append(style);
 }
 
@@ -62,6 +67,7 @@ function StudioShell({
   taskRelations,
   taskLinks,
   tasksLoading,
+  signoffsPending,
   taskLoadError,
   onReloadTasks,
   taskScope,
@@ -96,36 +102,38 @@ function StudioShell({
   onRequestCancelRun,
   onCloseCancelRun,
   onConfirmCancelRun,
-  taskCount,
-  inboxCount,
+  conversations,
   messages,
-  messageBadge,
+  receipts,
+  inbox,
   onMessagesRefresh,
   composerFocusSignal,
   api,
   toast,
   onNavigate,
   onSaveConfig,
+  onSavedConfig,
   onImportExecutor,
   onSaveProject,
   onAnalyzeProject,
   onEngineControl,
   onRestartRequired,
-  onMountWorkbench,
   onEditingChange,
   hasUnsavedForm,
-  openNewProjectSignal,
 }) {
-  const [taskToolbarHost, setTaskToolbarHost] = useState(null);
+  const [tracked, setTracked] = useState(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const chief = useChiefActivity(api, toast);
   const [themeMode, setThemeMode] = useState(() =>
     applyThemeMode(document.documentElement.dataset.themeMode || "system"),
   );
-  const [capsuleOpen, setCapsuleOpen] = useState(false);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [windowsUpdate, setWindowsUpdate] = useState(null);
   const [versionProgress, setVersionProgress] = useState("");
-  const [engineConfirm, setEngineConfirm] = useState(null);
-  const [engineBusy, setEngineBusy] = useState(false);
+  const [engineConfirm, setEngineConfirm] = useState({ operation: "stop", visible: false });
+  const [engineOperation, setEngineOperation] = useState(null);
+  const engineBusy = Boolean(engineOperation);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [composerDrafts, setComposerDrafts] = useState(() => new Map());
   const changeComposerDraft = useCallback((key, update) => {
@@ -138,29 +146,67 @@ function StudioShell({
     });
   }, []);
 
-  const workbenchRef = useRef(null);
-  const capsuleRef = useRef(null);
+  const themePickerRef = useRef(null);
+  const messageView = route.view === "messages";
+  const flowView = route.view === "tasks" && route.tasksTab === "overview";
+  const boardView = route.view === "tasks" && ["list", "inbox"].includes(route.tasksTab);
   const appliedComposerFocus = useRef(0);
-  const visibleDrawer = useRef(null);
-  if (drawerTask) visibleDrawer.current = drawerTask;
+  const externalDrawer = !messageView && Boolean(drawerTask);
+  const drawerRef = useRef(null);
+  const drawerOrigin = useRef(null);
+  const openChat = useCallback(() => setChatOpen(true), []);
+  const closeChat = useCallback(() => setChatOpen(false), []);
+  const closeDrawer = () => {
+    setTracked(null);
+    onCloseDrawer();
+    requestAnimationFrame(() => {
+      if (drawerOrigin.current?.isConnected) drawerOrigin.current.focus({ preventScroll: true });
+      else document.querySelector(".track-control")?.focus({ preventScroll: true });
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!externalDrawer) return;
+    drawerOrigin.current = document.activeElement;
+    drawerRef.current?.querySelector('button[aria-label="关闭详情"]')?.focus({ preventScroll: true });
+  }, [externalDrawer]);
+  useEffect(() => {
+    if (!drawerTask) setTracked(null);
+  }, [drawerTask]);
+  useEffect(() => {
+    if (messageView) closeChat();
+  }, [messageView, closeChat]);
+  useEffect(() => {
+    if (messageView) return;
+    if (composerFocusSignal > appliedComposerFocus.current) {
+      appliedComposerFocus.current = composerFocusSignal;
+      openChat();
+    }
+    const openFromKey = (event) => {
+      if (event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyA") {
+        event.preventDefault();
+        openChat();
+      }
+    };
+    window.addEventListener("keydown", openFromKey);
+    return () => window.removeEventListener("keydown", openFromKey);
+  }, [messageView, composerFocusSignal, openChat]);
   const applyingRef = useRef(false);
   const windowsUpdateRef = useRef(null);
   windowsUpdateRef.current = windowsUpdate;
   const hasUnsavedRef = useRef(hasUnsavedForm);
-  hasUnsavedRef.current = () =>
-    hasUnsavedForm() || [...composerDrafts.values()].some(hasComposerDraft);
+  hasUnsavedRef.current = () => hasUnsavedForm() || [...composerDrafts.values()].some(hasComposerDraft);
 
-  // Close status capsule on outside pointerdown or Escape.
   useEffect(() => {
-    if (!capsuleOpen) return;
+    if (!themePickerOpen) return;
     const onPointerDown = (event) => {
-      if (capsuleRef.current && !capsuleRef.current.contains(event.target)) setCapsuleOpen(false);
+      if (!themePickerRef.current?.contains(event.target)) setThemePickerOpen(false);
     };
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return;
-      setCapsuleOpen(false);
-      if (capsuleRef.current?.contains(document.activeElement)) {
-        capsuleRef.current.querySelector("#status-capsule")?.focus();
+      setThemePickerOpen(false);
+      if (themePickerRef.current?.contains(document.activeElement)) {
+        themePickerRef.current.querySelector("#rail-theme")?.focus();
       }
     };
     document.addEventListener("pointerdown", onPointerDown);
@@ -169,7 +215,7 @@ function StudioShell({
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [capsuleOpen]);
+  }, [themePickerOpen]);
 
   // Sync system theme and cross-tab theme storage changes.
   useEffect(() => {
@@ -215,18 +261,6 @@ function StudioShell({
     };
   }, []);
 
-  // Mount/unmount the homepage pure SVG workbench canvas cleanly.
-  useEffect(() => {
-    if (route.view === "overview" && workbenchRef.current) {
-      onMountWorkbench(workbenchRef.current);
-    } else {
-      onMountWorkbench(null);
-    }
-    return () => {
-      if (route.view === "overview") onMountWorkbench(null);
-    };
-  }, [route.view]);
-
   const selectTheme = useCallback(
     (mode) => {
       const next = applyThemeMode(mode);
@@ -241,7 +275,6 @@ function StudioShell({
   );
 
   const handleRefresh = useCallback(async () => {
-    setCapsuleOpen(false);
     if (hasUnsavedRef.current()) {
       toast("请先处理未发送的草稿或未保存的更改，再刷新页面。");
       return;
@@ -252,171 +285,124 @@ function StudioShell({
 
   const runEngine = useCallback(
     async (operation) => {
-      setEngineBusy(true);
+      setEngineOperation(operation);
       try {
         await onEngineControl(operation);
-        setEngineConfirm(null);
-        setCapsuleOpen(false);
+        setEngineConfirm((current) => ({ ...current, visible: false }));
       } catch (error) {
         toast(error.message || "引擎操作失败，请重试。", true);
       } finally {
-        setEngineBusy(false);
+        setEngineOperation(null);
       }
     },
     [onEngineControl, toast],
   );
 
-  const engineControlled = snapshot.managed && (!snapshot.connected || snapshot.enginePid);
-  const showColdStartButton = Boolean(snapshot.managed && !snapshot.connected && !snapshot.enginePid);
+  const canControlEngine = Boolean(snapshot.managed && (!snapshot.connected || snapshot.enginePid));
+  const engineStarted = Boolean(snapshot.connected || snapshot.enginePid);
+  const engineState = snapshot.connected ? "online" : engineStarted || !canControlEngine ? "offline" : "stopped";
+  const engineMessages = { start: "正在启动中", stop: "正在停止引擎", restart: "正在重启引擎" };
+  const engineStatus = engineOperation
+    ? engineMessages[engineOperation]
+    : {
+        online: "引擎在线",
+        offline: canControlEngine ? "引擎连接中断" : "外部引擎未连接",
+        stopped: "启动引擎",
+      }[engineState];
+  const engineLabel = canControlEngine && engineStarted && !engineBusy
+    ? engineState === "online" ? "引擎正在运行，点击停止" : "引擎连接中断，点击停止"
+    : engineStatus;
+  const confirmingEngineStop = engineConfirm.operation === "stop";
+  const engineConfirmLabel = confirmingEngineStop ? "停止引擎" : "重启引擎";
   const hasUpdate = Boolean(windowsUpdate?.tag && windowsUpdate.state !== "error");
-  const capsuleDotClass = snapshot.connected ? "" : snapshot.engineStopped ? "stopped" : "offline";
-  const capsuleLabel = snapshot.connected
-    ? "引擎在线"
-    : snapshot.engineStopped
-      ? "引擎已停"
-      : snapshot.managed
-        ? "未启动"
-        : "已断开";
-
-  const combinedTaskBadge = taskCount + inboxCount;
 
   const navItems = [
-    { id: "overview", label: "工作台", icon: <IconApps size="small" aria-hidden="true" /> },
-    {
-      id: "messages",
-      label: "消息中心",
-      icon: <IconComment size="small" aria-hidden="true" />,
-      badge: messageBadge,
-    },
-    { id: "tasks", label: "任务中心", icon: <IconLayers size="small" aria-hidden="true" />, badge: combinedTaskBadge },
-    { id: "projects", label: "项目空间", icon: <IconFolder size="small" aria-hidden="true" /> },
-    { id: "settings", label: "系统配置", icon: <IconSetting size="small" aria-hidden="true" /> },
+    { id: "tasks", label: "工作台", icon: <IconLayers aria-hidden="true" /> },
+    { id: "messages", label: "对话", icon: <IconComment aria-hidden="true" />, badge: inbox.total },
+    { id: "settings", label: "能力与沙箱", icon: <IconSetting aria-hidden="true" /> },
   ];
 
-  const popoverContent = (
-    <div className="studio-status-popover" role="region" aria-label="系统状态与外观">
-      <div className="studio-popover-section">
-        <div className="studio-popover-label">
-          <span>{engineControlled ? "Studio 自管引擎" : "引擎状态"}</span>
-          <Tag
-            size="small"
-            color={snapshot.connected ? "green" : snapshot.engineStopped ? "grey" : "red"}
-            shape="circle"
-          >
-            {capsuleLabel}
-          </Tag>
-        </div>
-        <div className="studio-popover-engine">
-          <small>
-            {snapshot.connected
-              ? `已同步 · ${formatTime(state.now)} · 序号 ${state.seq ?? 0}`
-              : snapshot.managed && !snapshot.enginePid
-                ? "尚未启动，点击启动后开始接收任务"
-                : "连接中断，当前显示离线快照"}
-          </small>
-        </div>
-        {engineControlled && (
-          <div className="studio-popover-actions">
-            {snapshot.enginePid ? (
-              <>
-                <Button
-                  size="small"
-                  icon={<IconRefresh aria-hidden="true" />}
-                  disabled={engineBusy}
-                  onClick={() => setEngineConfirm("restart")}
-                >
-                  重启引擎
-                </Button>
-                <Button
-                  size="small"
-                  icon={<IconPause aria-hidden="true" />}
-                  disabled={engineBusy}
-                  onClick={() => setEngineConfirm("stop")}
-                >
-                  停止引擎
-                </Button>
-              </>
-            ) : (
-              <Button
-                size="small"
-                theme="solid"
-                icon={<IconPlay aria-hidden="true" />}
-                loading={engineBusy}
-                onClick={() => runEngine("start")}
-              >
-                {engineBusy ? "正在启动…" : "启动引擎"}
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="studio-popover-section">
-        <div className="studio-popover-label">
-          <span>外观模式</span>
-        </div>
-        <div className="studio-theme-pills" role="radiogroup" aria-label="外观模式">
-          {[
-            ["light", "☀ 白天"],
-            ["dark", "☾ 夜间"],
-            ["system", "◐ 系统"],
-          ].map(([mode, label]) => (
-            <button
-              key={mode}
-              type="button"
-              role="radio"
-              aria-checked={themeMode === mode}
-              data-theme-choice={mode}
-              className={`studio-theme-pill ${themeMode === mode ? "active" : ""}`}
-              onClick={() => selectTheme(mode)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="studio-popover-section">
-        <div className="studio-popover-links">
-          {route.view !== "tasks" && <button type="button" className="studio-popover-link" aria-label="新建任务" onClick={() => { setCapsuleOpen(false); onOpenNewTask(); }}>
-            <span>新建任务</span><IconPlus size="small" aria-hidden="true" />
-          </button>}
-          <button type="button" id="refresh-app" className="studio-popover-link" onClick={handleRefresh}>
-            <span>刷新界面</span>
-            <small>不重启任务</small>
-          </button>
-          <button
-            type="button"
-            id="open-versions"
-            className="studio-popover-link"
-            onClick={() => {
-              setCapsuleOpen(false);
-              setVersionsOpen(true);
-            }}
-          >
-            <span>{hasUpdate ? "发现新版本" : "版本与更新"}</span>
-            <small>{hasUpdate ? windowsUpdate.tag : "查看"}</small>
-          </button>
-        </div>
-      </div>
-    </div>
+  const pressEngine = () => engineStarted ? setEngineConfirm({ operation: "stop", visible: true }) : runEngine("start");
+  const openThread = (topic) => onNavigate({ view: "messages", topic });
+  const details = (task, compact = false, flowDetails = false) => (
+    <TaskDetailPanel
+      task={task}
+      config={config}
+      snapshot={snapshot}
+      api={api}
+      toast={toast}
+      drafts={drafts}
+      submittingCards={submittingCards}
+      onDraftChange={onDraftChange}
+      onCardSubmit={onCardSubmit}
+      onWorkflowAction={onWorkflowAction}
+      onContinueTopic={(topic) => {
+        onCloseDrawer();
+        onOpenNewTask("", topic);
+      }}
+      onHandoffTask={(entry) => {
+        onCloseDrawer();
+        onHandoffTask(entry);
+      }}
+      onIntakeResolve={(intake) => {
+        onCloseDrawer();
+        onOpenNewTask(intake.input?.project || "", intake.input?.topic || "", intake);
+      }}
+      onIntakeDismiss={onIntakeDismiss}
+      onCancelRun={onRequestCancelRun}
+      onCloseDrawer={closeDrawer}
+      onOpenThread={flowDetails ? openThread : undefined}
+      approvalId={flowDetails && tracked?.startsWith("ask:") ? tracked.slice(4) : undefined}
+      inDrawer
+      compact={compact}
+    />
+  );
+  const projectSpace = route.section === "projects" && (
+    <ProjectSpace
+      config={config}
+      profiles={profiles}
+      runs={state.runs || []}
+      onSaveProject={onSaveProject}
+      onSaveConfig={onSaveConfig}
+      onAnalyzeProject={onAnalyzeProject}
+      onNewTask={(projectId) => onOpenNewTask(projectId)}
+      onEditingChange={onEditingChange}
+      taskDialogOpen={Boolean(newTaskRequest)}
+      detailId={route.projectId}
+      onSelectProject={(projectId) => onNavigate({ view: "settings", section: "projects", projectId })}
+      onOpenExecutors={() => onNavigate({ view: "settings", section: "agents" })}
+      api={api}
+    />
   );
 
   return (
     <ConfigProvider>
-      <div className="shell" data-studio-view={route.view}>
+      <div className="shell" data-studio-view={route.view} data-tasks-tab={route.tasksTab}>
         <header className="studio-header">
           <a
             className="studio-brand"
             href="#overview"
-            onClick={(e) => {
-              e.preventDefault();
-              onNavigate({ view: "overview" });
+            aria-label="AJinOS 主页"
+            onClick={(event) => {
+              event.preventDefault();
+              onNavigate({ view: "tasks", tasksTab: "overview" });
             }}
           >
-            <span aria-hidden="true">∞</span> {route.view === "tasks" ? "任务中心" : route.view === "overview" ? "AJinOS Studio" : "AJinOS"}
+            <span aria-hidden="true">∞</span>
           </a>
-
+          {!messageView && <h1 className="studio-view-title">{route.view === "tasks" ? "工作台" : "能力与沙箱"}</h1>}
+          {route.view === "tasks" && (
+            <nav className="studio-operation-tabs" aria-label="工作台视图">
+              {[
+                ["overview", "流转概览"],
+                ["list", "工单看板"],
+                ["plans", "DAG 协作计划"],
+              ].map(([tab, label]) => (
+                <button type="button" key={tab} aria-pressed={(boardView ? "list" : route.tasksTab) === tab}
+                  onClick={() => onNavigate({ view: "tasks", tasksTab: tab })}>{label}</button>
+              ))}
+            </nav>
+          )}
           <nav id="nav" aria-label="主导航">
             {navItems.map((item) => {
               const active = route.view === item.id;
@@ -429,7 +415,7 @@ function StudioShell({
                   aria-current={active ? "page" : undefined}
                   aria-label={item.label}
                   title={item.label}
-                  onClick={() => onNavigate({ view: item.id, projectId: null })}
+                  onClick={() => onNavigate({ view: item.id })}
                 >
                   {item.icon}
                   <span>{item.label}</span>
@@ -437,74 +423,154 @@ function StudioShell({
                 </button>
               );
             })}
-            <button type="button" className="rail-theme" aria-label="切换外观主题" title="切换外观主题"
-              onClick={() => selectTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark")}>
-              <span className="rail-light">☾</span><span className="rail-dark">☀</span>
-            </button>
-          </nav>
-
-          {route.view === "tasks" && <div className="task-header-slot" ref={setTaskToolbarHost} />}
-          <div className="top-actions">
-            {showColdStartButton && (
+            {route.view !== "tasks" && (
               <button
                 type="button"
-                className="button primary"
-                id="engine-power"
-                disabled={engineBusy}
-                onClick={() => runEngine("start")}
+                id="rail-new-task"
+                className="rail-control"
+                aria-label="新建任务"
+                title="新建任务"
+                onClick={() => onOpenNewTask()}
               >
-                {engineBusy ? "正在启动…" : "启动引擎"}
+                <IconPlus aria-hidden="true" />
               </button>
             )}
 
-            <div className="studio-capsule-wrap" ref={capsuleRef}>
+            <div className="rail-controls" role="group" aria-label="应用控制">
               <button
                 type="button"
-                id="status-capsule"
-                className="studio-status-capsule"
-                aria-label="系统状态与外观"
-                aria-expanded={capsuleOpen}
-                aria-controls="studio-status-menu"
-                onClick={() => setCapsuleOpen((open) => !open)}
+                id="engine-power"
+                className="rail-control"
+                aria-label={engineLabel}
+                aria-haspopup={canControlEngine && engineStarted ? "dialog" : undefined}
+                title={engineStatus}
+                data-engine-state={engineState}
+                disabled={engineBusy || !canControlEngine}
+                onClick={pressEngine}
               >
-                <span className={`studio-capsule-dot ${capsuleDotClass}`} />
-                <span>{capsuleLabel}</span>
-                {hasUpdate && <span className="studio-update-dot" title="发现新版本" />}
-                <IconChevronDown size="small" aria-hidden="true" />
+                {engineBusy ? <IconLoading spin aria-hidden="true" /> : engineState === "stopped" ? (
+                  <IconPlay aria-hidden="true" />
+                ) : (
+                  <IconPulse aria-hidden="true" />
+                )}
               </button>
-              <div
-                id="studio-status-menu"
-                className="studio-capsule-dropdown"
-                data-open={capsuleOpen}
-                inert={capsuleOpen ? undefined : ""}
-              >
-                {popoverContent}
+              <div className="rail-theme-wrap" ref={themePickerRef}>
+                <button
+                  type="button"
+                  id="rail-theme"
+                  className="rail-control"
+                  aria-label="切换外观主题"
+                  title="切换外观主题"
+                  aria-expanded={themePickerOpen}
+                  aria-controls="rail-theme-picker"
+                  onClick={() => setThemePickerOpen((open) => !open)}
+                >
+                  <IconContrast aria-hidden="true" />
+                </button>
+                {themePickerOpen && (
+                  <div id="rail-theme-picker" className="studio-theme-pills" role="radiogroup" aria-label="外观模式">
+                    {[
+                      ["light", "白天"],
+                      ["dark", "夜间"],
+                      ["system", "跟随系统"],
+                    ].map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={themeMode === mode}
+                        data-theme-choice={mode}
+                        className={`studio-theme-pill ${themeMode === mode ? "active" : ""}`}
+                        onClick={() => {
+                          selectTheme(mode);
+                          setThemePickerOpen(false);
+                          themePickerRef.current.querySelector("#rail-theme")?.focus();
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+              <button
+                type="button"
+                id="refresh-app"
+                className="rail-control"
+                aria-label="刷新界面"
+                title="刷新界面"
+                onClick={handleRefresh}
+              >
+                <IconRefresh aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                id="open-versions"
+                className="rail-control"
+                aria-label={hasUpdate ? "版本与更新，有新版本" : "版本与更新"}
+                title={hasUpdate ? `发现新版本 ${windowsUpdate.tag}` : "版本与更新"}
+                onClick={() => setVersionsOpen(true)}
+              >
+                <IconInfoCircle aria-hidden="true" />
+                {hasUpdate && <span className="studio-update-dot" aria-hidden="true" />}
+              </button>
             </div>
+          </nav>
 
-            <button
-              type="button"
-              className="button primary"
-              id="new-task"
-              aria-label="新建任务"
-              onClick={() => onOpenNewTask()}
-            >
-              <IconPlus size="small" aria-hidden="true" />
-              <span>新建任务</span>
+          {!messageView && <div className="studio-header-actions">
+            {boardView && <button type="button" className="button primary" id="new-task" aria-label="新建任务"
+              onClick={() => onOpenNewTask()}><IconPlus size="small" aria-hidden="true" /><span>新建任务</span></button>}
+            <button type="button" className="studio-pending-capsule"
+              onClick={() => onNavigate({ view: "messages", section: "inbox" })}>待我处理 {inbox.total}</button>
+            <button type="button" id="status-capsule" className="studio-engine-capsule" aria-label={engineLabel}
+              data-engine-state={engineState} disabled={engineBusy || !canControlEngine} onClick={pressEngine}>
+              {engineBusy ? <IconLoading spin aria-hidden="true" /> : <span className="engine-dot" aria-hidden="true" />}
+              {engineStatus}
             </button>
-          </div>
+          </div>}
         </header>
 
-        <main id="main">
-          {route.view === "overview" && <div ref={workbenchRef} className="studio-workbench-host" />}
+        <main id="main" className={route.view === "tasks" ? "studio-operations" : undefined}>
+          {flowView && <div className={`studio-flow-stage${externalDrawer ? " has-drawer" : ""}`}>
+            <SuperAgentFlow config={config} state={state} snapshot={snapshot} allRuns={allRuns} receipts={receipts}
+              messages={messages} chief={chief} tracked={tracked} loading={tasksLoading} error={taskLoadError}
+              signoffsPending={signoffsPending}
+              onReload={onReloadTasks} onClear={closeDrawer} onChat={openChat} onNavigate={onNavigate}
+              onTrack={(item) => {
+                setTracked(item.key);
+                if (item.task) onInspectEntry(item.task);
+                else onInspectEntry({ key: item.key, title: item.title, standaloneCard: item.card, runs: [] });
+              }} />
+            {externalDrawer && <aside ref={drawerRef} id="drawer" className="thread-drawer studio-flow-drawer tc-drawer-surface"
+              aria-label="工单详情" onKeyDown={(event) => { if (event.key === "Escape") closeDrawer(); }}>
+              {details(drawerTask, true, true)}
+            </aside>}
+          </div>}
+          {route.tasksTab === "plans" && (
+            <PlanView
+              chief={chief}
+              connected={snapshot.connected}
+              onThread={(topic) => onNavigate({ view: "messages", topic })}
+            />
+          )}
 
           {route.view === "messages" && config && (
             <MessageCenter
+              chief={chief}
               config={config}
               snapshot={snapshot}
               state={state}
-              allRuns={allRuns}
-              messages={messages}
+              conversations={conversations}
+              receipts={receipts}
+              inbox={inbox}
+              drawer={
+                drawerTask && (
+                  <aside className="thread-drawer" aria-label="工单详情">
+                    {details(drawerTask, true)}
+                  </aside>
+                )
+              }
+              onCloseDrawer={onCloseDrawer}
               composerDrafts={composerDrafts}
               changeComposerDraft={changeComposerDraft}
               route={route}
@@ -524,9 +590,9 @@ function StudioShell({
             />
           )}
 
-          {route.view === "tasks" && config && (
+          {boardView && config && (
             <TaskCenter
-              toolbarHost={taskToolbarHost}
+              plans={chief.plans}
               config={config}
               snapshot={snapshot}
               state={state}
@@ -553,33 +619,16 @@ function StudioShell({
               onWorkflowAction={onWorkflowAction}
               onContinueTopic={(topicId) => onOpenNewTask("", topicId)}
               onHandoffTask={onHandoffTask}
-              onIntakeResolve={(intake) => onOpenNewTask(intake.input?.project || "", intake.input?.topic || "", intake)}
+              onIntakeResolve={(intake) =>
+                onOpenNewTask(intake.input?.project || "", intake.input?.topic || "", intake)
+              }
               onIntakeDismiss={onIntakeDismiss}
               onCancelRun={onRequestCancelRun}
               onInspectRun={onInspectRun}
               onInspectEntry={onInspectEntry}
+              onOpenPlans={() => onNavigate({ view: "tasks", tasksTab: "plans" })}
               api={api}
               toast={toast}
-            />
-          )}
-
-          {route.view === "projects" && config && (
-            <ProjectSpace
-              config={config}
-              profiles={profiles}
-              runs={state.runs || []}
-              connected={snapshot.connected}
-              onSaveProject={onSaveProject}
-              onSaveConfig={onSaveConfig}
-              onAnalyzeProject={onAnalyzeProject}
-              onNewTask={(projectId) => onOpenNewTask(projectId)}
-              onEditingChange={onEditingChange}
-              openNewSignal={openNewProjectSignal}
-              taskDialogOpen={Boolean(newTaskRequest)}
-              detailId={route.projectId}
-              onSelectProject={(projectId) => onNavigate({ view: "projects", projectId })}
-              onOpenExecutors={() => onNavigate({ view: "settings", section: "agents" })}
-              api={api}
             />
           )}
 
@@ -588,6 +637,7 @@ function StudioShell({
               themeMode={themeMode}
               selectTheme={selectTheme}
               section={route.section}
+              projectSpace={projectSpace}
               onSelectSection={(section) => onNavigate({ view: "settings", section })}
               config={config}
               snapshot={snapshot}
@@ -596,8 +646,10 @@ function StudioShell({
               toast={toast}
               onSaveConfig={onSaveConfig}
               onImportExecutor={onImportExecutor}
+              onSavedConfig={onSavedConfig}
               onSaveProject={onSaveProject}
               onEngineControl={onEngineControl}
+              onRequestEngineRestart={() => setEngineConfirm({ operation: "restart", visible: true })}
               onRestartRequired={onRestartRequired}
               windowsUpdate={windowsUpdate}
               versionProgress={versionProgress}
@@ -605,68 +657,18 @@ function StudioShell({
             />
           )}
         </main>
-
-        <footer>
-          <span>
-            <span className={`dot ${snapshot.connected ? "engine-online" : "offline"}`} id="engine-dot" />
-            <span id="footer-state">
-              {snapshot.connected
-                ? `已同步 · ${formatTime(state.now)} · 序号 ${state.seq ?? 0}`
-                : snapshot.managed && !snapshot.enginePid
-                  ? "引擎未启动 · 点右上角「启动引擎」"
-                  : "连接中断 · 状态可能已过期"}
-            </span>
-          </span>
-          <span>
-            AJinOS <span className="muted">/</span> 原生协议 · 本机执行
-          </span>
-        </footer>
       </div>
 
-      {/* Unified Task Detail Drawer (from Workbench canvas or round drilldown) */}
-      <SideSheet
-        visible={Boolean(drawerTask)}
-        onCancel={onCloseDrawer}
-        width={380}
-        style={{ maxWidth: "100vw" }}
-        headerStyle={{ display: "none" }}
-        className="studio-task-sidesheet"
-        closeOnEsc
-        maskClosable
-      >
-        {visibleDrawer.current && (
-          <div id="drawer" className="tc-drawer-surface" role="dialog" aria-label="执行详情">
-            <TaskDetailPanel
-              task={visibleDrawer.current}
-              config={config}
-              snapshot={snapshot}
-              api={api}
-              toast={toast}
-              drafts={drafts}
-              submittingCards={submittingCards}
-              onDraftChange={onDraftChange}
-              onCardSubmit={onCardSubmit}
-              onWorkflowAction={onWorkflowAction}
-              onContinueTopic={(topicId) => {
-                onCloseDrawer();
-                onOpenNewTask("", topicId);
-              }}
-              onHandoffTask={(task) => {
-                onCloseDrawer();
-                onHandoffTask(task);
-              }}
-              onIntakeResolve={(intake) => {
-                onCloseDrawer();
-                onOpenNewTask(intake.input?.project || "", intake.input?.topic || "", intake);
-              }}
-              onIntakeDismiss={onIntakeDismiss}
-              onCancelRun={onRequestCancelRun}
-              onCloseDrawer={onCloseDrawer}
-              inDrawer
-            />
-          </div>
-        )}
-      </SideSheet>
+      {externalDrawer && !flowView && (
+        <aside ref={drawerRef} id="drawer" className="studio-other-drawer tc-drawer-surface" aria-label="执行详情" role="dialog"
+          onKeyDown={(event) => { if (event.key === "Escape") closeDrawer(); }}>
+          {details(drawerTask)}
+        </aside>
+      )}
+      {!messageView && <FloatingChat open={chatOpen} onOpen={openChat} onClose={closeChat} drawerOpen={externalDrawer}
+        chief={chief} config={config} api={api} toast={toast} snapshot={snapshot} receipts={receipts}
+        conversations={conversations} pendingCount={inbox.total} draft={composerDrafts.get(null)} onDraft={changeComposerDraft}
+        onRefresh={onMessagesRefresh} onNavigate={onNavigate} onInspect={onInspectRun} onAction={onWorkflowAction} />}
 
       <NewTaskModal
         request={newTaskRequest}
@@ -678,11 +680,7 @@ function StudioShell({
         onSubmitted={onNewTaskSubmitted}
       />
 
-      <WorkflowActionModal
-        modalState={workflowModal}
-        onClose={onCloseWorkflowModal}
-        onSubmit={onSubmitWorkflowModal}
-      />
+      <WorkflowActionModal modalState={workflowModal} onClose={onCloseWorkflowModal} onSubmit={onSubmitWorkflowModal} />
 
       <Modal
         title="停止这一轮"
@@ -720,17 +718,19 @@ function StudioShell({
       </Modal>
 
       <Modal
-        title={engineConfirm === "stop" ? "停止引擎" : "重启引擎"}
-        visible={Boolean(engineConfirm)}
-        onOk={() => runEngine(engineConfirm)}
-        onCancel={() => !engineBusy && setEngineConfirm(null)}
-        okText={engineConfirm === "stop" ? "停止引擎" : "重启引擎"}
+        title={engineConfirmLabel}
+        visible={engineConfirm.visible}
+        onOk={() => runEngine(engineConfirm.operation)}
+        onCancel={() => !engineBusy && setEngineConfirm((current) => ({ ...current, visible: false }))}
+        okText={engineConfirmLabel}
+        okButtonProps={{ "aria-label": engineConfirmLabel }}
         cancelText="取消"
-        okType={engineConfirm === "stop" ? "danger" : "primary"}
+        cancelButtonProps={{ "aria-label": "取消" }}
+        okType={confirmingEngineStop ? "danger" : "primary"}
         confirmLoading={engineBusy}
       >
         <p className="sc-muted">
-          {engineConfirm === "stop"
+          {confirmingEngineStop
             ? "停止期间暂停接收、派发任务。已在运行的 Agent 会继续执行，重新启动引擎后接回结果。"
             : "引擎会短暂断开。已在运行的 Agent 会继续执行，重启后接回结果。"}
         </p>

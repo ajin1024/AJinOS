@@ -41,8 +41,8 @@ def run_test(url):
         page.goto(url)
         original = page.request.get(url.rstrip("/") + "/api/config").json()["value"]
         first_project = original["projects"][0]
-        page.get_by_role("button", name="项目空间", exact=True).click()
-        expect(page).to_have_url(re.compile(r"#projects$"))
+        page.get_by_role("button", name="能力与沙箱", exact=True).click()
+        expect(page).to_have_url(re.compile(r"#settings/projects$"))
         cards = page.get_by_role("region", name="项目卡片").get_by_role("button")
         expect(cards).to_have_count(len(original["projects"]))
         detail = page.get_by_role("region", name=first_project["name"], exact=True)
@@ -55,7 +55,7 @@ def run_test(url):
         card.focus()
         card.press("Enter")
         expect(detail).to_be_visible()
-        expect(page).to_have_url(re.compile(rf"#projects/{first_project['id']}$"))
+        expect(page).to_have_url(re.compile(rf"#settings/projects/{first_project['id']}$"))
         page.keyboard.press("Escape")
         expect(detail).not_to_be_visible()
         expect(card).to_be_focused()
@@ -72,7 +72,6 @@ def run_test(url):
         page.get_by_role("button", name="取消修改", exact=True).click()
         expect(page.locator('input[name="name"]')).to_have_value(first_project["name"])
         page.locator('input[name="name"]').fill("Semi 界面测试")
-        page.locator("#status-capsule").click()
         page.locator("#refresh-app").click()
         page.wait_for_timeout(500)
         expect(page.locator('input[name="name"]')).to_have_value("Semi 界面测试")
@@ -124,9 +123,8 @@ def run_test(url):
         expect(page.locator(".ps-editor")).not_to_be_visible()
 
         for theme in ("dark", "light"):
-            page.locator("#status-capsule").click()
+            page.locator("#rail-theme").click()
             page.locator(f'[data-theme-choice="{theme}"]').click()
-            page.locator("#status-capsule").click()
             expect(page.locator("html")).to_have_attribute("data-theme", theme)
         for width in (1280, 640, 390):
             page.set_viewport_size({"width": width, "height": 850})

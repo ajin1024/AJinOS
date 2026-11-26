@@ -27,6 +27,13 @@ export function executionEvidence(run, job, agent = {}) {
     current: agent.model || "CLI 默认",
   };
 }
+export function elapsedOf(run) {
+  const ms = (run.finishedAt ? Date.parse(run.finishedAt) : Date.now()) - Date.parse(run.claimedAt || run.createdAt);
+  if (!Number.isFinite(ms)) return "—";
+  return ms < 60000
+    ? Math.max(0, Math.floor(ms / 1000)) + " 秒"
+    : Math.floor(ms / 60000) + " 分 " + Math.floor((ms % 60000) / 1000) + " 秒";
+}
 function prose(text) {
   return String(text || "")
     .split(/\n\s*\n/)

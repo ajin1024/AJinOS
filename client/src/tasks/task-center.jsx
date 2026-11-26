@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
-import { IconFolder, IconKanban, IconLayers, IconList, IconSearch } from "@douyinfe/semi-icons";
+import { IconFolder, IconKanban, IconList, IconSearch } from "@douyinfe/semi-icons";
 import { Banner, Button, Tag } from "@douyinfe/semi-ui";
 import { businessProjects } from "../gateway-config.mjs";
 import { groupTasks } from "../task-list.mjs";
@@ -14,8 +13,8 @@ import {
 } from "../task-workflow.mjs";
 import { isHumanActionable, matchesTaskFilter, orphanCardsOf } from "./task-center-model.mjs";
 import { TaskBoard } from "./task-board.jsx";
+import { ActivePlans } from "../messages/use-chief-activity.jsx";
 import { TaskDetailPanel } from "./task-detail-panel.jsx";
-import { ChiefPanel } from "./chief-panel.jsx";
 import { formatDate } from "../studio-helpers.mjs";
 
 const CARD_STATE_NAMES = {
@@ -44,7 +43,7 @@ function statusTag(workflow) {
 }
 
 export function TaskCenter({
-  toolbarHost,
+  plans,
   config,
   snapshot,
   state,
@@ -76,16 +75,10 @@ export function TaskCenter({
   onCancelRun,
   onInspectRun,
   onInspectEntry,
+  onOpenPlans,
   api,
   toast,
 }) {
-  const [wide, setWide] = useState(() => window.matchMedia("(min-width: 1380px)").matches);
-  useEffect(() => {
-    const media = window.matchMedia("(min-width: 1380px)");
-    const resize = () => setWide(media.matches);
-    media.addEventListener("change", resize);
-    return () => media.removeEventListener("change", resize);
-  }, []);
   const [todoMode, setTodoMode] = useState("pending");
   const [viewMode, setViewMode] = useState("board");
 
@@ -229,7 +222,6 @@ export function TaskCenter({
         : "待我处理列表"
       : "任务列表";
 
-  const showChief = viewMode === "chief";
   const showBoard = viewMode === "board" && !(scope === "todo" && todoMode === "history");
   const hasFilters = Boolean(needle || projectFilter !== "all" || (scope !== "todo" && statusFilter !== "all"));
 
@@ -261,11 +253,8 @@ export function TaskCenter({
                 id={`task-scope-${id}`}
                 data-action="task-scope"
                 data-id={id}
-                aria-selected={!showChief && scope === id}
-                onClick={() => {
-                  if (showChief) setViewMode("board");
-                  onScopeChange(id);
-                }}
+                aria-selected={scope === id}
+                onClick={() => onScopeChange(id)}
               >
                 <span>{label}</span>
                 {count ? <span className="tc-scope-count">{count}</span> : null}
@@ -289,32 +278,22 @@ export function TaskCenter({
               <button
                 type="button"
                 id="task-view-list"
-                aria-pressed={!showChief && !showBoard}
+                aria-pressed={!showBoard}
                 onClick={() => setViewMode("list")}
               >
                 <IconList size="small" aria-hidden="true" /> 列表
               </button>
             </div>
-            <button
-              type="button"
-              id="task-view-chief"
-              className="tc-chief-button"
-              aria-pressed={showChief}
-              onClick={() => setViewMode("chief")}
-            >
-              <IconLayers size="small" aria-hidden="true" /> 总管统筹
-            </button>
           </div>
         </div>
 
-        {!showChief && (
           <div className="tc-filters">
             <div className="tc-search">
               <IconSearch size="small" aria-hidden="true" />
               <input
                 id="task-search"
                 type="search"
-                placeholder="搜索任务、项目或轮次编号"
+                placeholder="搜索任务、项目或轮次"
                 aria-label="搜索任务"
                 value={searchQuery}
                 onChange={(e) => onSearchQueryChange(e.target.value)}
@@ -394,12 +373,11 @@ export function TaskCenter({
               <span className="tc-task-count">共 {entries.length} 项任务</span>
             )}
           </div>
-        )}
     </div>
   );
   return (
     <div className="pending-page task-list-page tc-page">
-      {wide && toolbarHost ? createPortal(tools, toolbarHost) : tools}
+      {tools}
       <div className="tc-banners">
         {!snapshot.connected && (
           <Banner
@@ -422,10 +400,8 @@ export function TaskCenter({
         )}
       </div>
 
-      {showChief ? (
-        <ChiefPanel api={api} toast={toast} connected={snapshot.connected} />
-      ) : showBoard ? (
-        <TaskBoard
+      {showBoard ? (
+        <div className="studio-board-stack"><TaskBoard
           entries={entries}
           selectedKey={selected?.key}
           loading={tasksLoading}
@@ -434,6 +410,7 @@ export function TaskCenter({
           onSelectCard={openBoardEntry}
           onStartReview={openBoardEntry}
         />
+        <ActivePlans plans={plans} onOpen={onOpenPlans} /></div>
       ) : (
         <div className="pending-split">
           <section className="pending-queue" aria-label={queueLabel}>

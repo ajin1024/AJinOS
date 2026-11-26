@@ -14,11 +14,13 @@ import { Gateway, flowsFor, projectIdentity } from "./gateway.mjs";
 import { workspaceSize } from "./project-storage.mjs";
 import { MemoryStore, attachMemoryToText } from "./memory.mjs";
 import { ChiefOfStaff, buildGlobalBrief } from "./chief.mjs";
+import { MessageRouter } from "./router.mjs";
 import { GatewayActivity, readWorkbenchData } from "./workbench-data.mjs";
 import { versionOf } from "./versions.mjs";
 import { TaskWorkflow } from "./task-workflow.mjs";
 import { completeFeishuQrLogin, getFeishuAuthStatus, startFeishuQrLogin } from "./feishu-auth.mjs";
 import { feishuGroupSettings } from "./feishu-group-settings.mjs";
+import { channelAddress, dingTalkKeyword, notificationPlatforms } from "./src/channel-platforms.mjs";
 import { readOutput } from "./output.mjs";
 import { AttachmentStore } from "./attachments.mjs";
 import { ExecutorHealth } from "./role-routing.mjs";
@@ -267,6 +269,15 @@ export async function startStudio({
   const topics = () => db.prepare("SELECT * FROM topics ORDER BY at DESC").all();
   const memories = new MemoryStore(db, { model: gateway.model });
   const chief = new ChiefOfStaff(db, { model: gateway.model, submit: submitMessage });
+  const globalBrief = () => buildGlobalBrief({ state: latest || {}, memories: memories.list(), plans: chief.listPlans() });
+  const planContext = (cfg) => ({
+    memories: memories.list({ status: "active" }),
+    profiles: Object.fromEntries(cfg.projects.map((p) => [p.id, gateway.profile(p)]).filter(([, profile]) => profile)),
+  });
+  const router = new MessageRouter({
+    db, chief, config: workspace, brief: globalBrief, planContext,
+    submit: (body, routing) => submitMessage(body, false, { ...routing, viaRouter: true }),
+  });
   const verifier = new TaskVerifier(db, {
     model: gateway.model,
     lastRunMeta: () => gateway.runner.lastRun,
@@ -468,7 +479,7 @@ export async function startStudio({
               at: fact.at,
               type: fact.type,
               changes: fact.changes
-                .filter((c) => ["runs", "cards", "events", "timers"].includes(c.table))
+                .filter((c) => ["runs", "cards", "events", "timers", "tickets"].includes(c.table))
                 .map((c) => ({
                   table: c.table,
                   key: c.key,
@@ -650,59 +661,127 @@ export async function startStudio({
     }
   }
   function saveConfig(body, saveRelated, checkDraft) {
+    return enqueueConfigWrite(() => writeConfig(body, saveRelated, checkDraft));
+  }
+
+  async function writeConfig(body, saveRelated, checkDraft) {
+    checkDraft?.();
+    const before = workspace();
+    if (body.revision !== digest(before)) throw statusError(409, "配置已被其他窗口修改，请重新载入后再保存");
+    const next = checkedWorkspace(body.value);
+    for (const p of next.projects) {
+      const previous = before.projects.find((old) => old.id === p.id);
+      if (previous && previous.cwd !== p.cwd && previous.rule === p.rule)
+        throw statusError(409, "切换项目目录时请使用新的规则名称，以免继承旧目录的会话");
+    }
+    const runtime = hubConfig();
+    if (next.runtime.capacity !== before.runtime.capacity && !managed)
+      throw statusError(409, "外部引擎的容量请在其运行环境中修改");
+    const removedChannels = Object.keys(before.rules.channels || {}).filter((id) => !next.rules.channels?.[id]);
+    const removedSources = Object.keys(before.rules.sources).filter((id) => !next.rules.sources[id]);
+    // Revoke before removing policy: an old process must never outlive its answerer restrictions.
+    for (const id of removedChannels) {
+      await call("DELETE", `/v1/keys/channel/${encodeURIComponent(id)}`);
+      if (runtime.channels) delete runtime.channels[id];
+    }
+    for (const id of removedSources) {
+      await call("DELETE", `/v1/keys/source/${encodeURIComponent(id)}`);
+      if (runtime.source?.name === id) delete runtime.source;
+    }
+    atomic(path.join(home, "studio.previous.json"), before);
+    try {
+      atomic(workspacePath, next);
+      atomic(rulesPath, next.rules);
+      saveRelated?.();
+    } catch (error) {
+      atomic(workspacePath, before);
+      atomic(rulesPath, before.rules);
+      throw error;
+    }
+    if (next.runtime.capacity !== before.runtime.capacity && runtime.worker) {
+      runtime.worker.capacity = next.runtime.capacity;
+      atomic(configPath, runtime);
+      restartRequired = true;
+    }
+    if (removedChannels.length || removedSources.length) {
+      atomic(configPath, runtime);
+      restartRequired = true;
+    }
+    broadcast("configuration", configuration());
+    scheduleRefresh();
+    const project = next.projects.find((item) => item.id === body.profileProject && item.role !== "integration");
+    if (project) {
+      const previous = before.projects.find((item) => item.id === project.id);
+      if (!previous || projectIdentity(previous) !== projectIdentity(project)) {
+        void analyzeProject(next, project).catch((error) => remember(`项目 ${project.id} 画像：${error.message}`));
+      }
+    }
+    return { ...configuration(), restartRequired };
+  }
+
+  function newChannelKey(id) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [path.join(root, "bin/agent-autoloop.ts"), "key", "new", "channel", id], {
+        env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+      });
+      let result = "";
+      child.stdout.on("data", (chunk) => (result += chunk));
+      child.stderr.resume();
+      child.on("error", reject);
+      child.on("close", (code) => {
+        const key = result.trim();
+        if (code === 0 && /^[A-Za-z0-9_-]{43}$/.test(key)) resolve(key);
+        else reject(statusError(502, "无法登记通知通道密钥，请重试"));
+      });
+    });
+  }
+
+  function notificationChannels(runtime = hubConfig(), config = workspace()) {
+    return Object.entries(config.rules.channels ?? {}).flatMap(([id, channel]) => {
+      const connection = runtime.channels?.[id];
+      return connection?.use === "webhook" && connection.key && Object.hasOwn(notificationPlatforms, connection.platform)
+        ? [{ id, name: channel.name, platform: connection.platform }]
+        : [];
+    });
+  }
+
+  function addNotificationChannel(body) {
+    if (!managed) throw statusError(409, "请在外部引擎所在的 AJinOS 中添加通知渠道");
+    const platform = body?.platform;
+    const url = channelAddress(platform, body?.url);
+    const name = typeof body?.name === "string" ? body.name.trim() : "";
+    if (!url) throw statusError(400, "地址与所选平台不匹配，请复制平台提供的完整 Webhook 地址");
+    if (!name || [...name].length > 60) throw statusError(400, "请输入 1–60 个字的连接名称");
     return enqueueConfigWrite(async () => {
-      checkDraft?.();
       const before = workspace();
-      if (body.revision !== digest(before)) throw statusError(409, "配置已被其他窗口修改，请重新载入后再保存");
-      const next = checkedWorkspace(body.value);
-      for (const p of next.projects) {
-        const previous = before.projects.find((old) => old.id === p.id);
-        if (previous && previous.cwd !== p.cwd && previous.rule === p.rule)
-          throw statusError(409, "切换项目目录时请使用新的规则名称，以免继承旧目录的会话");
-      }
       const runtime = hubConfig();
-      if (next.runtime.capacity !== before.runtime.capacity && !managed)
-        throw statusError(409, "外部引擎的容量请在其运行环境中修改");
-      const removedChannels = Object.keys(before.rules.channels || {}).filter((id) => !next.rules.channels?.[id]);
-      const removedSources = Object.keys(before.rules.sources).filter((id) => !next.rules.sources[id]);
-      // Revoke before removing policy: an old process must never outlive its answerer restrictions.
-      for (const id of removedChannels) {
-        await call("DELETE", `/v1/keys/channel/${encodeURIComponent(id)}`);
-        if (runtime.channels) delete runtime.channels[id];
-      }
-      for (const id of removedSources) {
-        await call("DELETE", `/v1/keys/source/${encodeURIComponent(id)}`);
-        if (runtime.source?.name === id) delete runtime.source;
-      }
-      atomic(path.join(home, "studio.previous.json"), before);
+      const known = notificationChannels(runtime, before).find(
+        (channel) => channel.platform === platform && runtime.channels[channel.id].url === url,
+      );
+      if (known) return { channel: known, configuration: configuration(), restartRequired };
+      const id = `${platform}-${randomUUID().slice(0, 12)}`;
+      const key = await newChannelKey(id);
+      const next = structuredClone(before);
+      next.rules.channels ??= {};
+      next.rules.channels[id] = { name };
+      let saved = false;
+      let result;
       try {
-        atomic(workspacePath, next);
-        atomic(rulesPath, next.rules);
-        saveRelated?.();
+        result = await writeConfig({ value: next, revision: digest(before) }, () => {
+          const runtime = hubConfig();
+          runtime.channels ??= {};
+          runtime.channels[id] = {
+            use: "webhook", platform, url, key, ...(platform === "dingtalk" && { keyword: dingTalkKeyword }),
+          };
+          atomic(configPath, runtime);
+          saved = true;
+          restartRequired = true;
+        });
       } catch (error) {
-        atomic(workspacePath, before);
-        atomic(rulesPath, before.rules);
+        if (!saved && online) await call("DELETE", `/v1/keys/channel/${encodeURIComponent(id)}`).catch(() => {});
         throw error;
       }
-      if (next.runtime.capacity !== before.runtime.capacity && runtime.worker) {
-        runtime.worker.capacity = next.runtime.capacity;
-        atomic(configPath, runtime);
-        restartRequired = true;
-      }
-      if (removedChannels.length || removedSources.length) {
-        atomic(configPath, runtime);
-        restartRequired = true;
-      }
-      broadcast("configuration", configuration());
-      scheduleRefresh();
-      const project = next.projects.find((item) => item.id === body.profileProject && item.role !== "integration");
-      if (project) {
-        const previous = before.projects.find((item) => item.id === project.id);
-        if (!previous || projectIdentity(previous) !== projectIdentity(project)) {
-          void analyzeProject(next, project).catch((error) => remember(`项目 ${project.id} 画像：${error.message}`));
-        }
-      }
-      return { ...configuration(), restartRequired };
+      return { channel: { id, name, platform }, configuration: result, restartRequired };
     });
   }
   const configurationDraft = () => (existsSync(draftPath) ? jsonFile(draftPath) : null);
@@ -729,11 +808,23 @@ export async function startStudio({
     return draft;
   }
   const discardDraft = () => rmSync(draftPath, { force: true });
-  const feishuGroups = feishuGroupSettings({ home, workspace, digest, saveConfig, atomic });
+  const feishuLark = () => hubConfig().channels?.feishu?.lark || hubConfig().channels?.feishu?.chat?.lark;
+  const feishuGroups = feishuGroupSettings({
+    home,
+    workspace,
+    digest,
+    saveConfig,
+    atomic,
+    authStatus: (lark) => getFeishuAuthStatus({ lark: lark || feishuLark() }),
+    localWorker: () => {
+      const { source, worker } = hubConfig();
+      return managed && source?.name === "local" && source.key ? worker?.name : null;
+    },
+  });
   function outputs(id) {
     return readOutput(home, id);
   }
-  function submitMessage(body, workflowAction = false) {
+  function submitMessage(body, workflowAction = false, routing = {}) {
     if (!body || typeof body !== "object" || Array.isArray(body)) throw statusError(400, "消息格式不正确");
     if (typeof body.text !== "string" || !body.text.trim() || [...body.text].length > 4000)
       throw statusError(400, "任务说明需要 1 到 4000 字");
@@ -785,6 +876,7 @@ export async function startStudio({
           .map((key) => [key, body[key]]),
       ),
       ...(attachmentMetadata.length > 0 && { attachments: attachmentMetadata }),
+      ...(routing.viaRouter && { viaRouter: true }),
     };
     const promise = (async () => {
       const cfg = workspace();
@@ -795,7 +887,9 @@ export async function startStudio({
       activity.record(body.id, { state: "confirming", stage: "confirmation", input: requestInput, text: body.text });
       scheduleRefresh();
       if (!prior && !body.conversation && !body.task && !body.session && !(body.topic && gateway.binding(body.topic))) {
-        const confirmation = await gateway.confirmRequirements(cfg, body);
+        const confirmation = routing.confirm && !body.requirementsConfirmed
+          ? { confirmed: false, reason: "你选择了先确认需求。请核对目标和预期结果，再派发。" }
+          : await gateway.confirmRequirements(cfg, body);
         if (!confirmation.confirmed) {
           activity.record(body.id, {
             state: "needsConfirmation",
@@ -823,7 +917,7 @@ export async function startStudio({
         });
         scheduleRefresh();
       }
-      const chosen = await gateway.choose(cfg, prior ? { ...body, topic: prior.topic, project: prior.project } : body);
+      const chosen = await gateway.choose(cfg, prior ? { ...body, topic: prior.topic, project: prior.project } : body, routing);
       if (!chosen.project) {
         activity.record(body.id, {
           state: chosen.needsConfirmation ? "needsConfirmation" : "needsProject",
@@ -1162,8 +1256,18 @@ export async function startStudio({
         return reply(await saveConfig({ revision: digest(current), value: next }));
       }
       if (req.method === "GET" && route === "/api/feishu/auth/status") {
-        const lark = hubConfig().channels?.feishu?.lark || hubConfig().channels?.feishu?.chat?.lark;
-        return reply(await getFeishuAuthStatus({ lark }));
+        const status = await getFeishuAuthStatus({ lark: feishuLark() });
+        const connection = hubConfig().channels?.feishu;
+        const channel = workspace().rules.channels?.feishu;
+        return reply({
+          ...status,
+          notification: {
+            configured: Boolean(connection?.key && connection.user && channel),
+            accountMatches: Boolean(status.openId && status.openId === connection?.user),
+            canConfigure: managed && online,
+          },
+          restartRequired,
+        });
       }
       if (req.method === "POST" && route === "/api/feishu/auth/qr") {
         const body = await readBody(req);
@@ -1176,30 +1280,43 @@ export async function startStudio({
         return reply(await completeFeishuQrLogin({ lark, deviceCode: body?.deviceCode }));
       }
       if (req.method === "POST" && route === "/api/feishu/auth/apply") {
+        if (!managed || !online) throw statusError(409, "请先启动本机引擎，再配置飞书私聊通知");
         const body = await readBody(req);
-        const lark = body?.lark || hubConfig().channels?.feishu?.lark || hubConfig().channels?.feishu?.chat?.lark;
+        const lark = body?.lark || feishuLark();
         const status = await getFeishuAuthStatus({ lark });
         if (!status.ready || !status.openId) throw statusError(409, "飞书尚未完成扫码登录，请先扫码授权后再应用配置");
-        const current = workspace();
-        const next = structuredClone(current);
-        next.rules.channels = next.rules.channels || {};
-        const existingChannel = next.rules.channels.feishu || {};
-        next.rules.channels.feishu = {
-          ...existingChannel,
-          name: existingChannel.name || "飞书本人私聊",
-          answerers: [status.openId],
-        };
-        const saved = await saveConfig({ revision: digest(current), value: next });
-        if (managed && online) {
+        return reply(await enqueueConfigWrite(async () => {
+          const current = workspace();
           const runtime = hubConfig();
-          runtime.channels = runtime.channels || {};
-          const existingConn = runtime.channels.feishu || {};
-          const key = existingConn.key || (await call("POST", "/v1/keys", { role: "channel", name: "feishu" })).key;
-          runtime.channels.feishu = { ...existingConn, use: "feishu", key, user: status.openId, lark: status.larkPath };
-          atomic(configPath, runtime);
-          restartRequired = true;
-        }
-        return reply({ ok: true, status, config: saved, restartRequired });
+          const connection = runtime.channels?.feishu ?? {};
+          const next = structuredClone(current);
+          next.rules.channels ??= {};
+          const registered = next.rules.channels.feishu ?? {};
+          next.rules.channels.feishu = { ...registered, name: registered.name || "飞书本人私聊", answerers: [status.openId] };
+          checkedWorkspace(next);
+          const key = connection.key || await newChannelKey("feishu");
+          let connectionSaved = false;
+          try {
+            const saved = await writeConfig({ revision: digest(current), value: next }, () => {
+              const config = hubConfig();
+              config.channels ??= {};
+              config.channels.feishu = {
+                ...connection,
+                use: connection.use === "feishu-studio" ? connection.use : "feishu",
+                key,
+                user: status.openId,
+                lark: status.larkPath,
+              };
+              atomic(configPath, config);
+              connectionSaved = true;
+              restartRequired = true;
+            });
+            return { ok: true, status, config: saved, restartRequired };
+          } catch (error) {
+            if (!connection.key && !connectionSaved) await call("DELETE", "/v1/keys/channel/feishu").catch(() => {});
+            throw error;
+          }
+        }));
       }
       if (req.method === "POST" && route === "/api/reset") {
         const body = await readBody(req);
@@ -1274,8 +1391,18 @@ export async function startStudio({
         if (req.method === "GET") return reply(feishuGroups.view());
         if (req.method === "PUT") return reply(await feishuGroups.save(await readBody(req)));
       }
+      if (route === "/api/notification-channels") {
+        if (req.method === "GET") return reply({ channels: notificationChannels() });
+        if (req.method === "POST") return reply(await addNotificationChannel(await readBody(req)));
+      }
       if (req.method === "POST" && route === "/api/feishu-groups/search")
         return reply(await feishuGroups.search(await readBody(req)));
+      if (req.method === "POST" && route === "/api/feishu-groups/test")
+        return reply(await feishuGroups.test(await readBody(req)));
+      if (req.method === "POST" && route === "/api/feishu-groups/enable")
+        return reply(await feishuGroups.enable(await readBody(req)));
+      if (req.method === "POST" && route === "/api/feishu-groups/restore")
+        return reply(await feishuGroups.restore(await readBody(req)));
       const groupMembers = /^\/api\/feishu-groups\/(oc_[\w-]+)\/members$/.exec(route);
       if (req.method === "GET" && groupMembers) return reply(await feishuGroups.members(groupMembers[1]));
       const workflowMatch = /^\/api\/tasks\/(\d+)\/actions$/.exec(route);
@@ -1312,7 +1439,6 @@ export async function startStudio({
         if (!managed) throw statusError(409, "外部引擎的通道连接请在其运行环境中设置");
         const id = channelConnection[1],
           body = await readBody(req);
-        if (!workspace().rules.channels?.[id]) throw statusError(400, "请先登记这个通道");
         if (
           !/^[a-z][a-z0-9-]*$/.test(body.use) ||
           !body.options ||
@@ -1322,29 +1448,16 @@ export async function startStudio({
           throw statusError(400, "插件名称或连接参数格式错误");
         if ("key" in body.options || "use" in body.options)
           throw statusError(400, "options 不包含 key 或 use，Hub 密钥由客户端管理");
-        const config = hubConfig();
-        let key = config.channels?.[id]?.key;
-        if (!key)
-          key = await new Promise((resolve, reject) => {
-            const child = spawn(
-              process.execPath,
-              [path.join(root, "bin/agent-autoloop.ts"), "key", "new", "channel", id],
-              { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
-            );
-            let result = "",
-              error = "";
-            child.stdout.on("data", (c) => (result += c));
-            child.stderr.on("data", (c) => (error += c));
-            child.on("error", reject);
-            child.on("exit", (code) =>
-              code === 0 ? resolve(result.trim()) : reject(new Error("无法登记通道密钥：" + error)),
-            );
-          });
-        config.channels ??= {};
-        config.channels[id] = { use: body.use, key, ...body.options };
-        atomic(configPath, config);
-        restartRequired = true;
-        return reply({ ok: true, restartRequired: true });
+        return reply(await enqueueConfigWrite(async () => {
+          if (!workspace().rules.channels?.[id]) throw statusError(400, "请先登记这个通道");
+          const config = hubConfig();
+          const key = config.channels?.[id]?.key || await newChannelKey(id);
+          config.channels ??= {};
+          config.channels[id] = { use: body.use, key, ...body.options };
+          atomic(configPath, config);
+          restartRequired = true;
+          return { ok: true, restartRequired: true };
+        }));
       }
       if (req.method === "PUT" && route === "/api/config") return reply(await saveConfig(await readBody(req)));
       if (req.method === "POST" && route === "/api/config/validate") {
@@ -1354,6 +1467,12 @@ export async function startStudio({
       }
       if (req.method === "GET" && route === "/api/history")
         return reply(await call("GET", `/v1/state?before=${Number(url.searchParams.get("before")) || 0}`));
+      const ticketMatch = /^\/api\/tickets\/([1-9]\d*)$/.exec(route);
+      if (req.method === "GET" && ticketMatch) {
+        const { id, number, state, status, outcome, closedAt, closedBy, closedNote } =
+          await call("GET", `/v1/tickets/${ticketMatch[1]}`);
+        return reply({ id, number, state, status, outcome, closedAt, closedBy, closedNote });
+      }
       const runMatch = /^\/api\/runs\/(\d+)\/(why|output|cancel)$/.exec(route);
       if (runMatch) {
         const [, id, action] = runMatch;
@@ -1434,6 +1553,9 @@ export async function startStudio({
         return;
       }
       if (req.method === "POST" && route === "/api/messages") return reply(await submitMessage(await readBody(req)));
+      if (req.method === "POST" && route === "/api/router/message") return reply(await router.message(await readBody(req)));
+      if (req.method === "GET" && route === "/api/router/history")
+        return reply({ history: router.history(), usage: router.todayUsage(workspace().rules.timezone) });
       if (req.method === "GET" && route === "/api/messages")
         return reply(
           db
@@ -1485,12 +1607,11 @@ export async function startStudio({
         return reply({ drafts });
       }
       if (req.method === "GET" && route === "/api/chief/brief") {
-        return reply(buildGlobalBrief({ state: latest || {}, memories: memories.list(), plans: chief.listPlans() }));
+        return reply(globalBrief());
       }
       if (req.method === "POST" && route === "/api/chief/ask") {
         const body = await readBody(req);
-        const brief = buildGlobalBrief({ state: latest || {}, memories: memories.list(), plans: chief.listPlans() });
-        return reply(await chief.ask(workspace(), { question: body.question, brief }));
+        return reply(await chief.ask(workspace(), { question: body.question, brief: globalBrief() }));
       }
       if (req.method === "GET" && route === "/api/chief/plans") {
         if (online && latest) await chief.advancePlans(latest);
@@ -1499,13 +1620,9 @@ export async function startStudio({
       if (req.method === "POST" && route === "/api/chief/plans") {
         const body = await readBody(req);
         const cfg = workspace();
-        const profiles = Object.fromEntries(
-          cfg.projects.map((p) => [p.id, gateway.profile(p)]).filter(([, v]) => Boolean(v)),
-        );
         const plan = await chief.createPlan(cfg, {
           goal: body.goal,
-          memories: memories.list({ status: "active" }),
-          profiles,
+          ...planContext(cfg),
         });
         return reply({ plan });
       }

@@ -46,8 +46,8 @@ with tempfile.TemporaryDirectory(prefix="studio-project-editor-") as home:
             page = browser.new_page(viewport={"width": 1100, "height": 800}, timezone_id="Asia/Shanghai")
             page.set_default_timeout(10_000)
             page.goto(url)
-            expect(page.locator('#nav [data-view="messages"]')).to_have_text("消息中心", timeout=5000)
-            page.get_by_role("button", name="项目空间", exact=True).click()
+            expect(page.locator('#nav [data-view="messages"]')).to_have_text("对话", timeout=5000)
+            page.get_by_role("button", name="能力与沙箱", exact=True).click()
 
             current = page.request.get(url + "/api/config").json()
             current["value"]["roleRouting"] = {"roles": {"plan": {"primary": "codex"}, "execute": {"primary": "codex"}}}

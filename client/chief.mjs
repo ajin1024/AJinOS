@@ -137,9 +137,21 @@ export class ChiefOfStaff {
     return row ? { ...JSON.parse(row.data), seq: row.seq } : null;
   }
 
-  async ask(config, { question, brief }) {
+  async ask(config, { question, brief, readOnly = false }) {
     if (typeof question !== "string" || !question.trim() || question.length > 2000)
       throw bad("请输入 1 到 2000 字的问题");
+    if (readOnly) {
+      const counts = brief.counts;
+      const highlights = [
+        ...(brief.blocked || []).map((run) => [run.rule, run.reason].filter(Boolean).join(" · ")),
+        ...(brief.openQuestions || []).map((card) => card.title),
+      ].filter(Boolean).slice(0, 5);
+      return {
+        answer: `当前待拍板 ${counts.openQuestions} 项、待验收 ${counts.awaitingAcceptance} 项、运行中 ${counts.running} 项、排队 ${counts.queued ?? 0} 项、受阻 ${counts.blocked ?? 0} 项。`,
+        highlights,
+        at: brief.at || new Date().toISOString(),
+      };
+    }
     if (!this.model) throw bad("总管模型未配置", 503);
     let output;
     try {

@@ -99,7 +99,7 @@ with tempfile.TemporaryDirectory(prefix="studio-installed-e2e-") as directory:
                     page = context.pages[0] if context.pages else context.wait_for_event("page", timeout=30000)
                     origin = f"http://127.0.0.1:{port}"
                     page.wait_for_url(origin + "/", timeout=30000)
-                    expect(page.locator(".fc-canvas")).to_be_attached()
+                    expect(page.locator(".mc-stage")).to_be_attached()
                     expect(page.locator("html")).to_be_visible()
                     expect(page).to_have_title("AJinOS")
 
@@ -122,22 +122,23 @@ with tempfile.TemporaryDirectory(prefix="studio-installed-e2e-") as directory:
                     )
                     overview = json.loads(json.loads(mcp.stdout)["result"]["content"][0]["text"])
                     assert overview["defaultProject"] == "autoloop"
-                    page.locator("#engine-power").click()
+                    power = page.locator("#engine-power")
+                    power.click()
                     initial = wait_for(lambda: (snapshot := state())["connected"] and snapshot)
                     engine = page.request.get(origin + "/api/engine").json()
                     assert initial["enginePid"] == engine["pid"]
                     page.locator("#open-versions").click()
                     expect(page.locator("#versions-body")).to_contain_text("Windows 安装版")
-                    page.locator("#versions-close").click()
+                    page.keyboard.press("Escape")
 
-                    page.locator('[data-view="settings"]').click()
-                    page.locator('[data-action="engine-stop"]').click()
-                    page.get_by_role("dialog").get_by_role("button", name="停止引擎", exact=True).click()
-                    expect(page.locator('[data-action="engine-start"]')).to_be_visible()
+                    power.click()
+                    stop = page.get_by_role("dialog", name="停止引擎")
+                    stop.get_by_role("button", name="停止引擎", exact=True).click()
+                    expect(power).to_have_accessible_name("启动引擎")
                     stopped = state()
                     assert stopped["engineStopped"] and not stopped["connected"] and stopped["enginePid"] is None
-                    page.locator('[data-action="engine-start"]').click()
-                    expect(page.locator('[data-action="engine-stop"]')).to_be_visible(timeout=20000)
+                    power.click()
+                    expect(power).to_have_attribute("data-engine-state", "online", timeout=20000)
                     resumed = wait_for(lambda: (snapshot := state())["connected"] and snapshot)
                     assert resumed["enginePid"] != initial["enginePid"]
 

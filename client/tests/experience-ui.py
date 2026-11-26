@@ -30,6 +30,8 @@ process.stdin.once('data', async () => { await server.close(); process.exit(0); 
 
 
 def navigate(page, view):
+    if view == "projects":
+        view = "settings"
     page.locator(f'#nav [data-view="{view}"]').click()
     expect(page.locator('#nav [aria-current="page"]')).to_have_attribute("data-view", view)
 
@@ -55,35 +57,35 @@ with studio_home('studio-experience-') as home:
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 page.goto(url)
                 expect(page.locator("#nav").get_by_role("button", name="工作台", exact=True)).to_be_visible(timeout=3000)
-                expect(page.get_by_role("region", name="工作台", exact=True)).to_be_visible()
-                expect(page.locator(".fc-canvas")).to_be_visible()
-                gateway = page.locator('[data-node="gateway"]')
+                navigate(page, "tasks")
+                page.get_by_role("button", name="流转概览").click()
+                expect(page.get_by_role("region", name="流转概览", exact=True)).to_be_visible()
+                expect(page.locator(".super-agent-flow .canvas")).to_be_visible()
+                gateway = page.locator('[data-node="hub"]')
                 gateway.focus()
                 page.emulate_media(reduced_motion="reduce")
                 expect(gateway).to_be_focused()
                 navigate(page, "messages")
-                composer = page.locator(".mc-textarea")
+                composer = page.locator(".composer textarea")
                 composer.fill("还没发出的任务说明")
                 png = b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==")
-                page.locator('.mc-composer input[type="file"]').set_input_files(
+                page.locator('.composer input[type="file"]').set_input_files(
                     {"name": "验收图片.png", "mimeType": "image/png", "buffer": png}
                 )
-                expect(page.locator(".mc-composer-thumb.done")).to_be_visible()
+                expect(page.locator(".composer .attachments img")).to_be_visible()
                 navigate(page, "tasks")
                 navigate(page, "projects")
                 navigate(page, "settings")
                 navigate(page, "messages")
                 expect(composer).to_have_value("还没发出的任务说明")
-                expect(page.locator(".mc-composer-thumb.done")).to_be_visible()
-                page.locator("#status-capsule").click()
+                expect(page.locator(".composer .attachments img")).to_be_visible()
                 page.locator("#refresh-app").click()
                 expect(page.locator("#toast")).to_contain_text("未发送的草稿")
                 page.emulate_media(reduced_motion="reduce")
-                assert page.locator("#new-task").evaluate(
+                assert page.locator("#refresh-app").evaluate(
                     "(button) => getComputedStyle(button).transitionDuration.split(',').every(t => parseFloat(t) === 0)"
                 )
-                page.locator("#status-capsule").click()
-                page.locator("#studio-status-menu").get_by_role("button", name="新建任务", exact=True).click()
+                page.locator("#rail-new-task").click()
                 expect(page.get_by_role("dialog", name="发起新任务")).to_be_visible()
                 page.keyboard.press("Escape")
                 expect(page.get_by_role("dialog", name="发起新任务")).to_be_hidden()
@@ -91,18 +93,18 @@ with studio_home('studio-experience-') as home:
                 page.set_viewport_size({"width": 390, "height": 680})
                 page.emulate_media(reduced_motion="no-preference", color_scheme="dark")
                 expect(page.get_by_role("button", name="对话列表")).to_be_visible()
-                expect(page.get_by_role("complementary", name="会话列表")).to_be_hidden()
+                expect(page.get_by_role("complementary", name="对话列表")).to_be_hidden()
                 expect(composer).to_be_in_viewport()
-                page.get_by_role("button", name="对话列表").press("Enter")
-                expect(page.get_by_role("complementary", name="会话列表")).to_be_visible()
-                sidebar = page.get_by_role("complementary", name="会话列表")
+                page.get_by_role("button", name="打开对话列表").press("Enter")
+                expect(page.get_by_role("complementary", name="对话列表")).to_be_visible()
+                sidebar = page.get_by_role("complementary", name="对话列表")
                 assert sidebar.evaluate("el => getComputedStyle(el).animationName") != "none"
                 page.emulate_media(reduced_motion="reduce")
                 expect(sidebar).to_have_css("animation-name", "none")
                 expect(page.get_by_role("button", name="返回对话")).to_be_focused()
                 page.evaluate("window.testFocusComposer()")
                 expect(composer).to_be_focused()
-                page.get_by_role("button", name="对话列表").click()
+                page.get_by_role("button", name="打开对话列表").click()
                 page.get_by_role("button", name="返回对话").click()
                 expect(page.get_by_role("button", name="对话列表")).to_be_focused()
                 expect(composer).to_have_value("还没发出的任务说明")
@@ -110,8 +112,7 @@ with studio_home('studio-experience-') as home:
 
                 page.set_viewport_size({"width": 1280, "height": 840})
                 navigate(page, "projects")
-                page.locator("#status-capsule").click()
-                page.locator("#studio-status-menu").get_by_role("button", name="新建任务", exact=True).click()
+                page.locator("#rail-new-task").click()
                 modal = page.get_by_role("dialog", name="发起新任务")
                 modal.get_by_role("textbox").fill("检查演示订单并反馈结果")
                 modal.locator('select[name="project"]').select_option("orders")
@@ -119,23 +120,23 @@ with studio_home('studio-experience-') as home:
                 modal.get_by_role("checkbox").check()
                 modal.get_by_role("button", name="提交任务").click()
                 expect(modal).to_be_hidden()
-                expect(page.locator('#nav [aria-current="page"]')).to_have_attribute("data-view", "projects")
+                expect(page.locator('#nav [aria-current="page"]')).to_have_attribute("data-view", "settings")
                 expect(page.locator("#toast")).to_contain_text("已交给")
                 navigate(page, "messages")
-                page.locator(".mc-conversation").filter(has_text="检查演示订单并反馈结果").click()
+                page.locator(".thread-item").filter(has_text="检查演示订单并反馈结果").click()
                 expect(composer).to_have_value("")
                 expect(composer).not_to_be_focused()
                 composer.fill("已有对话的草稿")
-                page.get_by_role("button", name="新对话", exact=True).click()
+                page.get_by_role("complementary", name="对话列表").get_by_role("button", name="AJinOS 总管", exact=False).click()
                 expect(composer).to_have_value("还没发出的任务说明")
-                page.locator(".mc-conversation").filter(has_text="检查演示订单并反馈结果").click()
+                page.locator(".thread-item").filter(has_text="检查演示订单并反馈结果").click()
                 expect(composer).to_have_value("已有对话的草稿")
 
                 intake = page.request.post(url + "/api/messages", headers={"x-studio-action": "1"}, data={
                     "id": "experience-intake", "project": "orders", "text": "需要补充验收要求的任务",
                 })
                 assert intake.ok and intake.json()["needsConfirmation"], intake.text()
-                page.locator(".mc-conversation").filter(has_text="需要补充验收要求的任务").click()
+                page.goto(url + "/#messages/intake%3Aexperience-intake")
                 composer.fill("我还没发出的补充说明")
                 navigate(page, "tasks")
                 dismissed = page.request.post(
@@ -143,8 +144,8 @@ with studio_home('studio-experience-') as home:
                 )
                 assert dismissed.ok, dismissed.text()
                 navigate(page, "messages")
-                page.locator(".mc-conversation").filter(has_text="我还没发出的补充说明").click()
-                expect(page.locator(".mc-timeline")).to_contain_text("原对话已结束")
+                page.locator(".thread-item").filter(has_text="我还没发出的补充说明").click()
+                expect(page.locator(".conversation-scroll")).to_contain_text("这段话题暂时没有记录")
                 expect(composer).to_have_value("我还没发出的补充说明")
 
                 rows = []
@@ -170,12 +171,12 @@ with studio_home('studio-experience-') as home:
 
                 page.route("**/api/messages", serve_timeline)
                 page.goto(url + "#messages/long")
-                timeline = page.locator(".mc-timeline")
+                timeline = page.locator(".conversation-scroll")
                 expect(timeline.get_by_text("第 120 条历史消息", exact=False)).to_be_in_viewport()
                 timeline.hover()
                 page.mouse.wheel(0, -1400)
                 page.wait_for_function(
-                    """() => { const el = document.querySelector('.mc-timeline');
+                    """() => { const el = document.querySelector('.conversation-scroll');
                     return el.scrollHeight - el.clientHeight - el.scrollTop > 100; }"""
                 )
                 reading_position = timeline.evaluate("(el) => el.scrollTop")
@@ -187,7 +188,7 @@ with studio_home('studio-experience-') as home:
                     "text": "核对演示结果", "requirementsConfirmed": True,
                 })
                 assert submit.ok, submit.text()
-                jump = page.get_by_role("button", name="查看新消息")
+                jump = page.get_by_role("button", name="查看新消息", exact=False)
                 expect(jump).to_be_visible(timeout=12000)
                 assert abs(timeline.evaluate("(el) => el.scrollTop") - reading_position) < 30
                 jump.click()

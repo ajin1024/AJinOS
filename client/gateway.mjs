@@ -217,7 +217,7 @@ export class Gateway {
       ...extra,
     };
   }
-  async choose(config, body) {
+  async choose(config, body, { directProject = false } = {}) {
     const blocked = blockedTerm(config, body.text);
     if (blocked)
       throw Object.assign(new Error(`已拦截：消息包含「${blocked}」。请修改消息，或在网关中调整拦截词后重试。`), {
@@ -269,6 +269,10 @@ export class Gateway {
     if (body.project) {
       if (body.executor) return this.resolve(config, body.project, body.flow, { topic, executor: body.executor });
       explicit = this.resolve(config, body.project, body.flow, { topic });
+      if (directProject)
+        return body.complexity && newTaskTiers(config, explicit.project, explicit.flow.id)
+          ? this.resolve(config, body.project, body.flow, { topic, complexity: body.complexity })
+          : explicit;
       fixedFlow = body.flow || body.complexity || flowsFor(explicit.project).length === 1 ? explicit.flow.id : null;
       const tiers = newTaskTiers(config, explicit.project, explicit.flow.id);
       if (fixedFlow && (!tiers || body.complexity))

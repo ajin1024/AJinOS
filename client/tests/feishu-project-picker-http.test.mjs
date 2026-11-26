@@ -19,6 +19,7 @@ test(
         home,
         port: 0,
         autostart: true,
+        dispatchOnly: true,
         gatewayModel: async (kind) => {
           if (kind === "confirm") return { confirmed: true, reason: "截图的问题明确，尚需确定归属" };
           classifications++;

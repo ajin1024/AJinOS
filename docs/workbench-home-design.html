@@ -1,0 +1,1407 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-variant="composer">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AJinOS · 工作台</title>
+<style>
+/* Theme tokens from client/src/theme.css and shell styles from the Super Agent design. */
+:root {
+  --ui-rail: #eef0f6;
+  --ui-surface: #f4f6fa;
+  --ui-bg: #f9fafc;
+  --ui-panel: #ffffff;
+  --ui-raised: #ffffff;
+  --ui-line: #e2e6f0;
+  --ui-wire: #bfc7da;
+  --ui-text: #171c28;
+  --ui-secondary: var(--ui-text-secondary);
+  --ui-text-secondary: #475166;
+  --ui-muted: #747f96;
+  --ui-accent: #4f6ae8;
+  --ui-accent-on: #ffffff;
+  --ui-accent-ink: #3b53cc;
+  --ui-soft: #e9eefd;
+  --ui-success: #168a5b;
+  --ui-success-soft: #e7f7ef;
+  --ui-warn: #b4690e;
+  --ui-warn-soft: #fdf3e3;
+  --ui-danger: #c93b44;
+  --ui-danger-soft: #fdecef;
+  --ui-neutral-badge: #646e82;
+  --ui-neutral-badge-soft: #eceff5;
+  --ui-accent-hover: #3f58d6;
+  --ui-accent-active: #3349bd;
+  --ui-accent-line: #7a91f2;
+  --ui-overlay: #161924;
+  --ui-shadow: #171c28;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --ui-rail: #11131c;
+  --ui-surface: #161924;
+  --ui-bg: #1b1f2c;
+  --ui-panel: #212636;
+  --ui-raised: #272d40;
+  --ui-line: #2e354a;
+  --ui-wire: #444e6b;
+  --ui-text: #e8ecf7;
+  --ui-secondary: var(--ui-text-secondary);
+  --ui-text-secondary: #b4bed6;
+  --ui-muted: #7d88a3;
+  --ui-accent: #7aa2f7;
+  --ui-accent-on: #101524;
+  --ui-accent-ink: #8db1fa;
+  --ui-soft: #252e47;
+  --ui-success: #34d399;
+  --ui-success-soft: #18352c;
+  --ui-warn: #f2b84b;
+  --ui-warn-soft: #3a2e1b;
+  --ui-danger: #f87171;
+  --ui-danger-soft: #3b2026;
+  --ui-neutral-badge: #8b95b0;
+  --ui-neutral-badge-soft: #252a3a;
+  --ui-accent-hover: #8db1fa;
+  --ui-accent-active: #658ee8;
+  --ui-accent-line: #5d82d6;
+  --ui-overlay: #10131c;
+  --ui-shadow: #10131c;
+  color-scheme: dark;
+}
+:root {
+  --rail-width: 52px;
+  --drawer-width: 368px;
+  --warm-line: color-mix(in srgb, var(--ui-warn) 20%, var(--ui-line));
+  --cool-line: color-mix(in srgb, var(--ui-accent) 24%, var(--ui-line));
+  --mono: "Cascadia Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; color: var(--ui-text); background: var(--ui-panel);
+  font: 14px/1.55 "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .58; }
+:where(button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--ui-accent-line); outline-offset: 2px; }
+:where(h1, h2, h3, p, dl, dd, pre, fieldset) { margin: 0; }
+:where(h1, h2, h3) { line-height: 1.35; }
+small { font-size: 12px; }
+svg.icon { width: 18px; height: 18px; flex: none; }
+svg.symbols { position: absolute; width: 0; height: 0; pointer-events: none; }
+.muted { color: var(--ui-muted); }
+.secondary { color: var(--ui-text-secondary); }
+.mono { font-family: var(--mono); }
+.row, .wrap { display: flex; align-items: center; gap: 8px; }
+.wrap { flex-wrap: wrap; }
+.between { justify-content: space-between; }
+.grow { flex: 1; min-width: 0; }
+.dot { display: inline-block; width: 7px; height: 7px; flex: none; border-radius: 50%; background: currentColor; }
+.dot.live { color: var(--ui-success); }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; width: max-content; max-width: 100%;
+  padding: 2px 7px; border-radius: 5px; background: var(--ui-surface);
+  color: var(--ui-text-secondary); font-size: 11px; line-height: 1.5;
+}
+.chip svg { width: 13px; height: 13px; }
+.chip.amber { color: var(--ui-warn); background: var(--ui-warn-soft); }
+.chip.green { color: var(--ui-success); background: var(--ui-success-soft); }
+.chip.blue { color: var(--ui-accent-ink); background: var(--ui-soft); }
+.chip.neutral { color: var(--ui-text-secondary); background: var(--ui-neutral-badge-soft); }
+.btn, .icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--ui-line); border-radius: 7px; background: var(--ui-panel);
+  padding: 5px 11px; min-height: 31px; font-size: 12px; font-weight: 600;
+}
+.btn:hover:not(:disabled), .icon-btn:hover:not(:disabled) { background: var(--ui-surface); }
+.btn.primary { color: var(--ui-accent-on); background: var(--ui-accent); border-color: var(--ui-accent); }
+.btn.primary:hover:not(:disabled) { background: var(--ui-accent-hover); border-color: var(--ui-accent-hover); }
+.btn.ghost, .icon-btn { border-color: transparent; background: transparent; }
+.btn.ghost { color: var(--ui-text-secondary); }
+.btn.danger { color: var(--ui-danger); }
+.btn svg { width: 15px; height: 15px; }
+.icon-btn { width: 32px; height: 32px; padding: 0; color: var(--ui-text-secondary); }
+.link {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none;
+  color: var(--ui-accent-ink); font-size: inherit; text-align: left;
+}
+.link svg { width: 13px; height: 13px; }
+.link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.app { display: grid; grid-template-columns: var(--rail-width) minmax(0, 1fr); height: 100dvh; }
+.rail { z-index: 6; background: var(--ui-rail); border-right: 1px solid var(--ui-line); }
+.rail, .rail nav, .rail-foot { display: flex; flex-direction: column; align-items: center; }
+.rail nav { gap: 9px; }
+.rail-foot { gap: 14px; margin: auto 0 18px; }
+.brand { margin: 15px 0 19px; width: 34px; height: 34px; color: var(--ui-accent-ink); }
+.brand svg { width: 25px; height: 25px; }
+.rail-button { position: relative; width: 36px; height: 36px; border-radius: 9px; }
+.rail-button svg { width: 20px; height: 20px; }
+.rail-button[aria-current] { color: var(--ui-accent-ink); background: var(--ui-soft); }
+.rail-button[aria-current]::before {
+  content: ""; position: absolute; left: -8px; top: 8px; bottom: 8px; width: 2px;
+  background: var(--ui-accent); border-radius: 0 2px 2px 0;
+}
+.rail-count {
+  position: absolute; top: -5px; right: -4px; min-width: 17px; height: 17px; padding: 0 3px;
+  border: 1px solid var(--ui-rail); border-radius: 9px; background: var(--ui-warn-soft); color: var(--ui-warn);
+  font-size: 10px; line-height: 15px; text-align: center; font-weight: 750;
+}
+[data-tooltip] { position: relative; }
+[data-tooltip]::after {
+  content: attr(data-tooltip); position: absolute; z-index: 1; left: calc(100% + 9px); top: 50%;
+  transform: translateY(-50%); opacity: 0; visibility: hidden; pointer-events: none;
+  padding: 4px 8px; border-radius: 5px; background: var(--ui-raised); border: 1px solid var(--ui-line);
+  color: var(--ui-text); font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+[data-tooltip]:is(:hover, :focus-visible)::after { visibility: visible; opacity: 1; }
+.rail-engine { display: grid; place-items: center; width: 24px; height: 15px; }
+.engine {
+  display: inline-flex; align-items: center; flex: none; gap: 6px; border: 1px solid var(--ui-line);
+  padding: 4px 9px; border-radius: 50px; color: var(--ui-text-secondary); font-size: 11px; white-space: nowrap;
+}
+.engine .dot { width: 6px; height: 6px; }
+.drawer-head { padding: 14px 15px; border-bottom: 1px solid var(--ui-line); }
+.drawer-head h2 { font-size: 16px; margin: 5px 0; }
+.drawer-body { padding: 0 15px; }
+.drawer-section { padding: 13px 0; }
+.drawer-section + .drawer-section { border-top: 1px solid var(--ui-line); }
+.drawer-section h3 { font-size: 13px; }
+.drawer-section > p { margin-top: 5px; font-size: 12px; color: var(--ui-text-secondary); }
+.evidence { padding: 7px 0 0; }
+.evidence-row { padding: 6px 0; }
+.evidence-row + .evidence-row { border-top: 1px solid var(--ui-line); }
+.evidence-row strong { font-size: 12px; }
+.evidence-row p { margin-top: 3px; font-size: 11px; color: var(--ui-text-secondary); }
+.meter-summary { margin: 6px 0; font-size: 11px; }
+.run-row { display: flex; justify-content: space-between; gap: 6px; padding: 4px 0; font-size: 11px; color: var(--ui-text-secondary); }
+.log { margin-top: 8px; padding: 7px; border: 1px solid var(--ui-line); border-radius: 7px; background: var(--ui-surface); white-space: pre-wrap; overflow-wrap: anywhere; font: 10.5px/1.6 var(--mono); }
+.drawer-footer { padding: 11px 13px; border-top: 1px solid var(--ui-line); }
+.drawer-footer .btn { flex: 1 0 auto; }
+
+body { background: var(--ui-bg); }
+.avatar {
+  display: grid; place-items: center; flex: none; width: 30px; height: 30px;
+  border-radius: 8px; background: var(--ui-soft); color: var(--ui-accent-ink);
+}
+.avatar.plain { background: var(--ui-surface); color: var(--ui-text-secondary); }
+.avatar.checked { background: var(--ui-success-soft); color: var(--ui-success); }
+.avatar.amber { background: var(--ui-warn-soft); color: var(--ui-warn); }
+.shell { display: grid; grid-template-rows: 52px minmax(0, 1fr); min-width: 0; min-height: 0; }
+.topbar {
+  z-index: 5; display: flex; align-items: center; gap: 14px; min-width: 0;
+  padding: 0 clamp(14px, 2vw, 28px); background: var(--ui-panel); border-bottom: 1px solid var(--ui-line);
+}
+.topbar h1 { font-size: 18px; font-weight: 700; letter-spacing: -.25px; white-space: nowrap; }
+.top-controls { display: flex; align-items: center; gap: 9px; min-width: 0; margin-left: auto; }
+.segmented {
+  display: inline-flex; flex: none; align-items: center; gap: 2px; padding: 2px;
+  border: 1px solid var(--ui-line); border-radius: 8px; background: var(--ui-surface);
+}
+.segmented button {
+  min-height: 24px; padding: 2px 9px; border: 1px solid transparent; border-radius: 5px;
+  background: transparent; color: var(--ui-text-secondary); font-size: 11px; white-space: nowrap;
+}
+.segmented button:hover { color: var(--ui-accent-ink); }
+.segmented button[aria-pressed="true"] {
+  color: var(--ui-accent-ink); background: var(--ui-panel); border-color: var(--ui-line); font-weight: 650;
+}
+.variants, .variants button { border-radius: 50px; }
+.pending {
+  display: inline-flex; align-items: center; flex: none; gap: 6px; padding: 4px 9px; border-radius: 50px;
+  background: var(--ui-warn-soft); color: var(--ui-warn); border: 1px solid var(--warm-line);
+  font-size: 11px; white-space: nowrap;
+}
+.pending:hover { border-color: var(--ui-warn); }
+.pending .icon { width: 13px; height: 13px; }
+kbd { font: 10.5px/1.3 var(--mono); }
+.top-send { white-space: nowrap; }
+.top-send kbd { margin-left: 3px; opacity: .86; }
+.stage { display: grid; position: relative; min-height: 0; min-width: 0; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns 220ms ease; }
+.stage.has-drawer { grid-template-columns: minmax(0, 1fr) var(--drawer-width); }
+.workspace { min-width: 0; min-height: 0; overflow: auto; container-type: inline-size; }
+.home { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; min-height: 608px; padding: 0 clamp(16px, 2.3cqw, 34px); }
+.overview-heading {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: clamp(13px, 2.4vh, 24px) 1px clamp(12px, 2vh, 20px);
+}
+.overview-heading h2 { font-size: 23px; font-weight: 700; letter-spacing: -.55px; }
+.overview-heading p { margin-top: 3px; font-size: 12px; color: var(--ui-text-secondary); }
+.overview-stats { gap: 0; }
+.overview-stat {
+  display: flex; align-items: center; gap: 7px; padding: 3px 12px; border: 0; background: transparent;
+  color: var(--ui-text-secondary); font-size: 11px; white-space: nowrap;
+}
+.overview-stat:last-child { padding-right: 0; }
+.overview-stat + .overview-stat { border-left: 1px solid var(--ui-line); }
+.overview-stat .icon { width: 14px; height: 14px; color: var(--ui-accent-ink); }
+.overview-stat strong { color: var(--ui-text); font-size: 13px; }
+.overview-stat:hover { color: var(--ui-accent-ink); }
+.canvas {
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0;
+  border: 1px solid var(--ui-line); border-radius: 12px; background: var(--ui-panel);
+}
+.flow-columns {
+  display: grid; grid-template-columns: minmax(0,.83fr) minmax(0,1.13fr) minmax(0,1.21fr) minmax(0,1.1fr);
+  column-gap: clamp(28px,4.3cqw,61px); padding-inline: clamp(18px, 2.15cqw, 32px);
+}
+.lane-head { padding-block: 14px 12px; border-radius: 12px 12px 0 0; }
+.lane-title { display: flex; align-items: center; gap: 8px; min-width: 0; border-bottom: 1px solid var(--ui-line); padding-bottom: 10px; }
+.lane-title .icon { width: 16px; height: 16px; color: var(--ui-accent-ink); }
+.lane-title:last-child .icon { color: var(--ui-warn); }
+.lane-title h3 { font-size: 13px; font-weight: 650; }
+.lane-title p { font-size: 10.5px; line-height: 1.35; color: var(--ui-text-secondary); }
+.flow-body {
+  position: relative; align-items: center; min-width: 0;
+  background-color: color-mix(in srgb, var(--ui-bg) 68%, var(--ui-panel));
+  background-image: radial-gradient(var(--ui-line) .68px, transparent .68px);
+  background-size: 18px 18px; background-position: center;
+}
+.lane { display: flex; flex-direction: column; gap: 10px; min-width: 0; z-index: 1; }
+.source-lane { transform: translateY(-43px); }
+.result-lane { transform: translateY(-12px); }
+.card {
+  min-width: 0; width: 100%; text-align: left; border: 1px solid var(--ui-line); border-radius: 9px;
+  background: var(--ui-panel); color: var(--ui-text);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ui-shadow) 3%, transparent);
+  transition: border-color 150ms, background-color 150ms, box-shadow 150ms;
+}
+button.card:hover, .node-action:hover { border-color: var(--ui-accent-line); }
+.node-action { transition: background-color 150ms, border-color 150ms; }
+.node-action:hover { background: var(--ui-surface); }
+.card.on-path, .node-action.on-path { border-color: var(--ui-accent-line); background: color-mix(in srgb, var(--ui-panel) 86%, var(--ui-soft)); }
+.card.on-path { box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-accent) 9%, transparent); }
+.node-row { display: flex; align-items: center; gap: 8px; padding: 8px 9px; min-height: 47px; }
+.node-copy { display: grid; gap: 2px; min-width: 0; }
+.node-copy strong { font-size: 12px; font-weight: 650; line-height: 1.35; }
+.node-copy small { font-size: 10.5px; color: var(--ui-text-secondary); line-height: 1.35; }
+.source-card { min-height: 54px; }
+.source-card .avatar svg, .project-card .avatar svg { width: 16px; height: 16px; }
+.source-card .node-meta { display: flex; align-items: center; gap: 5px; }
+.source-card .dot { width: 5px; height: 5px; }
+.source-card .count { color: var(--ui-accent-ink); font: 12px var(--mono); }
+.source-card .count.idle { color: var(--ui-muted); }
+.router-lane { gap: 19px; }
+.router-card { border-color: var(--cool-line); box-shadow: 0 4px 13px color-mix(in srgb, var(--ui-shadow) 5%, transparent); }
+.router-head, .result-head { display: flex; align-items: center; gap: 8px; text-align: left; width: 100%; min-width: 0; padding: 8px 10px; background: transparent; border: 1px solid transparent; }
+.router-head { border-radius: 8px 8px 0 0; background: color-mix(in srgb, var(--ui-soft) 39%, var(--ui-panel)); border-bottom-color: var(--cool-line); }
+.router-head .avatar { width: 33px; height: 33px; }
+.router-head .avatar svg { width: 21px; height: 21px; }
+.router-head strong { font-size: 14px; }
+.router-head > .dot { width: 6px; height: 6px; margin-left: auto; }
+.router-inner { display: grid; gap: 6px; padding: 7px; }
+.route {
+  display: grid; width: 100%; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 4px;
+  text-align: left; min-width: 0; min-height: 44px; padding: 5px 7px;
+  background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 7px;
+}
+.route strong { font-size: 11.5px; font-weight: 650; }
+.route .path-icon { width: 13px; height: 13px; color: var(--ui-accent-ink); }
+.route.fast .path-icon { color: var(--ui-success); }
+.route .chip { font-size: 10px; padding-inline: 5px; }
+.route > small { grid-column: 1 / -1; color: var(--ui-text-secondary); font-size: 10.5px; line-height: 1.25; }
+.router-plan { min-height: 72px; padding: 7px 8px; background: var(--ui-panel); }
+.router-plan .row { gap: 5px; }
+.router-plan .plan-name { min-width: 0; font-size: 11px; font-weight: 600; color: var(--ui-text-secondary); }
+.router-plan .progress-label { font: 11px var(--mono); color: var(--ui-accent-ink); white-space: nowrap; }
+.bar, .plan-meter { display: flex; gap: 3px; }
+.bar i, .plan-meter i { height: 4px; flex: 1; border-radius: 3px; background: var(--ui-line); }
+.bar i.filled, .plan-meter i.filled { background: var(--ui-accent-line); }
+.plan-meter { gap: 4px; margin-top: 7px; }
+.plan-meter i.active { background: color-mix(in srgb, var(--ui-accent-line) 37%, var(--ui-line)); }
+.hub { background: color-mix(in srgb, var(--ui-surface) 45%, var(--ui-panel)); }
+.hub .avatar { width: 26px; height: 26px; }
+.hub .avatar .icon { width: 16px; height: 16px; }
+.hub .mono { font-size: 10px; color: var(--ui-text-secondary); }
+.project-card { min-height: 49px; }
+.project-card .node-copy small { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px 5px; }
+.project-card .node-copy .mono { color: var(--ui-accent-ink); }
+.node-chevron { width: 13px !important; height: 13px !important; color: var(--ui-muted); margin-left: auto; transform: rotate(-90deg); }
+.workers { margin-top: 7px; }
+.workers-head {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 9px;
+  background: transparent; border: 1px solid transparent; border-radius: 8px 8px 0 0; text-align: left;
+  font-size: 11.5px; font-weight: 650;
+}
+.workers-head .icon { width: 15px; height: 15px; color: var(--ui-accent-ink); }
+.worker-list { padding: 0 6px 5px; }
+.worker {
+  width: 100%; display: grid; grid-template-columns: minmax(0,.92fr) minmax(25px,1fr) auto;
+  align-items: center; gap: 6px; min-height: 28px; padding: 3px 4px; border: 1px solid transparent;
+  border-radius: 5px; background: transparent; text-align: left; font-size: 11px;
+}
+.worker + .worker { border-top-color: var(--ui-line); }
+.worker .meter-label { font: 11px var(--mono); color: var(--ui-text-secondary); }
+.worker .ready { color: var(--ui-success); font-size: 10.5px; white-space: nowrap; }
+.worker.verify { grid-template-columns: minmax(0,1fr) auto; }
+.worker.claude .bar i.filled { background: var(--ui-success); }
+.result-head { min-height: 36px; padding: 5px 8px; border-radius: 8px 8px 0 0; }
+.result-head .icon { width: 14px; height: 14px; }
+.result-head strong { font-size: 12px; font-weight: 650; }
+.result-head .chip { margin-left: auto; font: 11px var(--mono); }
+.result-head.amber { color: var(--ui-warn); background: color-mix(in srgb, var(--ui-warn-soft) 38%, var(--ui-panel)); }
+.result-head.blue { color: var(--ui-accent-ink); background: color-mix(in srgb, var(--ui-soft) 35%, var(--ui-panel)); }
+.result-list { display: grid; gap: 2px; padding: 3px 5px 5px; }
+.ticket-row {
+  display: grid; width: 100%; min-width: 0; grid-template-columns: minmax(0,1fr) auto; align-items: center;
+  gap: 5px; min-height: 47px; padding: 4px 5px; border: 1px solid transparent;
+  border-radius: 6px; background: transparent; text-align: left;
+}
+.ticket-row .mono { font-size: 10px; color: var(--ui-text-secondary); }
+.ticket-row strong { font-size: 12px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+.ticket-row .icon { color: var(--ui-muted); width: 13px; height: 13px; }
+.signed { min-height: 51px; }
+.signed .count { color: var(--ui-success); margin-left: auto; font: 15px var(--mono); }
+.empty-row { color: var(--ui-text-secondary); font-size: 11px; padding: 9px 5px; }
+
+.wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; z-index: 0; }
+.wire { fill: none; stroke: var(--ui-wire); stroke-width: 1.15; opacity: .85; }
+.wire.router, .wire.fast { stroke: var(--ui-accent-line); opacity: .57; }
+.wire.direct, .wire.receipt { stroke-dasharray: 3 3; }
+.wire.receipt { stroke: var(--ui-success); opacity: .46; }
+.wire.approval { stroke: var(--ui-warn); opacity: .50; }
+.wires.tracking .wire:not(.hot), .wires.tracking .port:not(.hot) { opacity: .16; }
+.wire.hot { stroke: var(--ui-accent-line); stroke-width: 1.7; opacity: 1; }
+.wire.hot:is(.direct, .receipt, .fast, .worker-link) { stroke: var(--ui-success); }
+.port { fill: var(--ui-panel); stroke: var(--ui-wire); stroke-width: 1.1; }
+.port.hot { stroke: var(--ui-accent-line); }
+.port.hot:is(.direct, .receipt, .fast, .worker-link) { stroke: var(--ui-success); }
+.packet { fill: var(--ui-accent); stroke: var(--ui-panel); stroke-width: 1; }
+.packet:is(.direct, .receipt, .fast, .worker-link) { fill: var(--ui-success); }
+
+.map-footer { min-height: 36px; padding: 4px clamp(13px, 2cqw, 30px); border-top: 1px solid var(--ui-line); border-radius: 0 0 12px 12px; font-size: 10.5px; color: var(--ui-text-secondary); }
+.legend { flex-wrap: wrap; gap: 7px 16px; }
+.legend > span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.legend-line { width: 15px; height: 0; border-top: 1px solid var(--ui-accent-line); }
+.legend-line.direct { border-top: 1px dashed var(--ui-wire); }
+.legend-line.receipt { border-top: 1px dashed var(--ui-success); }
+.snapshot { color: var(--ui-text-secondary); white-space: nowrap; gap: 6px; }
+.snapshot .dot { width: 5px; height: 5px; }
+.track-caption { gap: 5px; min-width: 0; flex-wrap: wrap; color: var(--ui-accent-ink); }
+.track-caption .icon { width: 13px; height: 13px; }
+.track-caption .clear { width: 23px; height: 23px; min-height: 23px; }
+.dock {
+  position: relative; min-height: clamp(64px, 10vh, 92px); display: grid;
+  grid-template-columns: minmax(100px,1fr) minmax(0,720px) minmax(100px,1fr); align-items: center; gap: 9px;
+}
+.composer {
+  grid-column: 2; display: flex; align-items: center; align-self: center; gap: 5px; width: 100%; min-width: 0;
+  padding: 6px 8px; min-height: 49px; border: 1px solid var(--ui-line); border-radius: 12px; background: var(--ui-raised);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--ui-shadow) 7%, transparent);
+}
+.composer:focus-within { border-color: var(--ui-accent-line); }
+.composer .icon-btn { flex: none; width: 28px; height: 32px; }
+.composer .icon-btn svg { width: 17px; height: 17px; }
+.composer input[type="text"] {
+  flex: 1; min-width: 0; min-height: 29px; padding: 0 4px; border: 0; outline: none;
+  background: transparent; font-size: 12px;
+}
+.composer input::placeholder { color: var(--ui-muted); opacity: 1; }
+.composer .send { width: 32px; height: 32px; flex: none; border-radius: 50%; padding: 0; }
+.composer .send svg { width: 17px; height: 17px; }
+.composer .attachment { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.dock .track-control { grid-column: 3; justify-self: end; }
+.track-control {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; white-space: nowrap;
+  border: 1px solid var(--ui-line); border-radius: 50px; color: var(--ui-text-secondary);
+  background: var(--ui-panel); font-size: 11px; min-height: 28px;
+}
+.track-control:hover, .track-control[aria-expanded="true"] { color: var(--ui-accent-ink); border-color: var(--ui-accent-line); }
+.track-control .icon { width: 13px; height: 13px; }
+.popover {
+  position: absolute; z-index: 3; min-width: 210px; padding: 7px; border: 1px solid var(--ui-line);
+  border-radius: 9px; background: var(--ui-raised); box-shadow: 0 7px 22px color-mix(in srgb, var(--ui-shadow) 14%, transparent);
+}
+.track-menu { bottom: calc(50% + 21px); right: 0; }
+.track-menu .ticket-row { min-height: 34px; }
+.option-wrap { position: relative; flex: none; }
+.override-menu { bottom: calc(100% + 12px); left: 0; }
+dialog .override-menu { bottom: auto; top: calc(100% + 12px); }
+.override-menu label { display: grid; gap: 6px; padding: 3px; font-size: 12px; }
+.override-menu select, .approval-options select { padding: 5px; border: 1px solid var(--ui-line); border-radius: 7px; background: var(--ui-panel); }
+.activity {
+  display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); gap: 6px;
+  align-items: center; min-height: clamp(50px, 7.7vh, 70px);
+}
+.activity-title { padding-right: 7px; font-size: 11px; color: var(--ui-text-secondary); white-space: nowrap; }
+.activity-title .icon { width: 15px; height: 15px; color: var(--ui-accent-ink); }
+.activity-chip {
+  min-width: 0; display: flex; align-items: center; justify-content: flex-start; gap: 6px; text-align: left;
+  padding: 5px 8px; border: 1px solid var(--ui-line); border-radius: 7px; background: var(--ui-panel); font-size: 11px;
+}
+.activity-chip:hover, .activity-chip[aria-pressed="true"] { border-color: var(--ui-accent-line); background: var(--ui-soft); }
+.activity-chip .mono { flex: none; font-size: 10px; color: var(--ui-text-secondary); }
+.activity-chip strong { font-size: 11px; font-weight: 600; overflow-wrap: anywhere; line-height: 1.3; }
+.activity-chip .dot { width: 5px; height: 5px; color: var(--ui-accent-ink); }
+.activity-chip .dot.amber { color: var(--ui-warn); }
+.activity-chip .dot.green { color: var(--ui-success); }
+.drawer-slot { min-width: 0; overflow: hidden; visibility: hidden; }
+.stage.has-drawer .drawer-slot { visibility: visible; }
+.drawer {
+  width: var(--drawer-width); height: 100%; display: flex; flex-direction: column; min-height: 0;
+  border-left: 1px solid var(--ui-line); background: var(--ui-panel); transform: translateX(22px); transition: transform 220ms ease;
+}
+.stage.has-drawer .drawer { transform: translateX(0); }
+.drawer-head h2, .drawer-section > p { overflow-wrap: anywhere; }
+.drawer-head .key { color: var(--ui-text-secondary); font-size: 12px; }
+.drawer-body { flex: 1; overflow: auto; min-height: 0; }
+.drawer-section > p { white-space: pre-wrap; }
+.approval-options { display: grid; gap: 5px; font-size: 12px; margin-top: 8px; }
+.details-table { margin-top: 6px; }
+.details-table code { overflow-wrap: anywhere; }
+.subview { width: min(100%, 1000px); padding: 23px clamp(16px, 2.8cqw, 34px); margin: 0 auto; }
+.subview h2 { font-size: 21px; margin-bottom: 12px; }
+.subview h3 { font-size: 14px; }
+.subview .content-card { padding: 13px; }
+.subview .content-card + .content-card { margin-top: 9px; }
+.subview .content-card p { margin: 5px 0 8px; font-size: 12px; color: var(--ui-text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
+.subview .list-group { margin-top: 17px; }
+.subview .list-group h3 { margin-bottom: 6px; color: var(--ui-text-secondary); font-size: 12px; }
+.subview .ticket-row { padding-inline: 9px; }
+.subview .thread-switch { margin-bottom: 12px; }
+.subview .plan-graph { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr); margin-top: 12px; align-items: center; gap: 9px; }
+.subview .plan-graph > .icon { color: var(--ui-accent-line); width: 15px; }
+.subview .plan-graph .content-card { margin: 0; min-height: 99px; }
+.subview .plan-graph strong { display: block; margin-bottom: 5px; font-size: 12px; }
+.subview .list-group .ticket-row + .ticket-row { margin-top: 4px; }
+.board-columns { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; }
+.board-column { min-width: 0; padding: 8px; border: 1px solid var(--ui-line); border-radius: 9px; background: var(--ui-surface); }
+.board-column h3 { font-size: 12px; padding: 3px 1px 8px; }
+.board-column .card + .card { margin-top: 5px; }
+dialog {
+  width: min(610px, calc(100vw - 26px)); max-height: calc(100dvh - 24px); min-width: 0; overflow: visible;
+  padding: 14px; border: 1px solid var(--ui-line); border-radius: 12px; background: var(--ui-panel);
+  color: var(--ui-text); box-shadow: 0 16px 50px color-mix(in srgb, var(--ui-shadow) 21%, transparent);
+}
+dialog::backdrop { background: color-mix(in srgb, var(--ui-overlay) 26%, transparent); }
+dialog header { margin-bottom: 8px; }
+dialog h2 { font-size: 16px; }
+dialog .composer { box-shadow: none; }
+.notice {
+  position: fixed; z-index: 7; top: 62px; left: 50%; transform: translateX(-50%);
+  max-width: calc(100% - 80px); padding: 7px 13px; border: 1px solid var(--cool-line); border-radius: 8px;
+  background: var(--ui-raised); color: var(--ui-accent-ink);
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--ui-shadow) 10%, transparent); font-size: 12px;
+}
+@container (max-width: 960px) {
+  .flow-columns { column-gap: 29px; padding-inline: 14px; }
+  .lane-title { gap: 5px; }
+  .lane-title p { font-size: 10px; }
+  .node-row { padding-inline: 6px; gap: 6px; }
+  .node-row .avatar { width: 24px; height: 24px; border-radius: 6px; }
+  .source-card { gap: 5px; }
+  .source-card .node-copy strong { font-size: 11.5px; }
+  .router-head { padding-inline: 7px; gap: 6px; }
+  .router-head strong { font-size: 12px; }
+  .route { padding-inline: 5px; }
+  .route strong { font-size: 11px; }
+  .route .row { gap: 4px; }
+  .hub .mono, .project-card > .node-chevron { display: none; }
+  .activity-chip { flex-wrap: wrap; gap: 0 5px; padding-block: 4px; }
+  .activity-chip strong { flex-basis: 100%; }
+}
+@media (max-height: 780px) {
+  .lane-head { padding-block: 9px 7px; }
+  .lane-title { padding-bottom: 6px; }
+  .overview-heading h2 { font-size: 21px; }
+  .lane { gap: 8px; }
+  .router-lane { gap: 17px; }
+  .map-footer { min-height: 32px; }
+  .drawer-head { padding-block: 9px; }
+  .drawer-section { padding-block: 9px; }
+  .evidence-row { padding-block: 4px; }
+}
+@media (max-width: 1120px) {
+  .topbar { gap: 8px; }
+  .top-controls { gap: 5px; }
+  .top-send kbd { display: none; }
+  .stage.has-drawer { grid-template-columns: minmax(0,1fr) 0px; }
+  .drawer-slot { position: absolute; right: 0; bottom: 0; top: 0; z-index: 4; max-width: 100%; }
+  .drawer { width: min(var(--drawer-width), calc(100vw - var(--rail-width))); }
+}
+@media (max-width: 830px) {
+  .topbar { flex-wrap: wrap; justify-content: space-between; padding-block: 5px; gap: 2px; }
+  .shell { grid-template-rows: 82px minmax(0,1fr); }
+  .top-controls { margin-left: 0; flex-wrap: wrap; }
+  .topbar .engine { display: none; }
+  .home { height: auto; min-height: 100%; }
+  .canvas { grid-template-rows: auto auto auto; }
+  .flow-columns { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+  .flow-body { align-items: start; padding-block: 8px; }
+  .source-lane, .result-lane { transform: none; }
+  .wires { display: none; }
+  .dock { grid-template-columns: minmax(0,1fr) auto; }
+  .dock .composer { grid-column: 1; }
+  .dock .track-control { grid-column: 2; }
+  .activity { grid-template-columns: repeat(3,minmax(0,1fr)); padding-block: 8px; }
+  .activity-title { grid-column: 1 / -1; }
+  .board-columns { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 520px) {
+  .topbar h1 { font-size: 15px; }
+  .topbar .segmented button { padding-inline: 4px; }
+  .overview-heading, .map-footer { flex-wrap: wrap; }
+  .overview-stat { padding-inline: 5px; }
+  .home { padding-inline: 8px; }
+  .flow-columns { padding-inline: 7px; }
+  .activity { grid-template-columns: minmax(0,1fr); }
+  .subview .plan-graph { grid-template-columns: minmax(0,1fr); }
+  .subview .plan-graph > .icon { transform: rotate(90deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+  .packet { display: none; }
+}
+</style>
+</head>
+<body>
+<svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="i-brand" viewBox="0 0 24 24"><path d="M12 12c-2.1-2.8-3.6-4.4-5.8-4.4a4.4 4.4 0 0 0 0 8.8c2.2 0 3.7-1.6 5.8-4.4s3.6-4.4 5.8-4.4a4.4 4.4 0 0 1 0 8.8c-2.2 0-3.7-1.6-5.8-4.4Z"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 3v-3.3A2 2 0 0 1 3 16V7a2 2 0 0 1 2-2Z"/><path d="M7 10h10m-10 4h6"/></symbol>
+  <symbol id="i-ops" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 14h2l2-5 3 7 2-4h1.5"/></symbol>
+  <symbol id="i-cap" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.6c0 4.2 2.6 7.4 7.5 9.4 4.9-2 7.5-5.2 7.5-9.4V6L12 3Z"/><path d="M9 12h6m-3-3v6"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.4 15a8.6 8.6 0 0 1-11.5-11.5A8.8 8.8 0 1 0 20.4 15Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2m0 15v2m9.5-9.5h-2m-15 0h-2m16.2-6.7-1.4 1.4M6.7 17.3l-1.4 1.4m13.4 0-1.4-1.4M6.7 6.7 5.3 5.3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.8"/><path d="m15 15 4.3 4.3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 13 7 5h10l3 8v5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18Zm0 .5h5l1.5 2.5h3l1.5-2.5h5"/></symbol>
+  <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M4 6h16v4a2 2 0 1 0 0 4v4H4v-4a2 2 0 1 0 0-4V6Zm10 2v1m0 2.5v1m0 2.5v1"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-dag" viewBox="0 0 24 24"><rect x="4" y="4" width="5" height="5" rx="1"/><rect x="15" y="15" width="5" height="5" rx="1"/><path d="M6.5 9v5.5a3 3 0 0 0 3 3H15m0-11h5m-2.5-2.5v5"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><circle cx="9" cy="9" r="1.4"/><path d="m4 17 4.5-4 3 2.5L15 12l5 4.4"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M15 5v14m3-9h.01m0 4h.01"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20H6Zm7.5 0V8H18m-9 4h6m-6 4h5"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 2.3 5.7M4 7v5h5m3-5v5l3 2"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M8 4v5m8-5v5M6 9h12v2a6 6 0 0 1-6 6v4m-6-10a6 6 0 0 0 6 6"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><path d="M4 12h6m0 0c4 0 4-6 8-6h2m-10 6c4 0 4 6 8 6h2m-3-15 3 3-3 3m0 6 3 3-3 3"/></symbol>
+  <symbol id="i-fast" viewBox="0 0 24 24"><path d="m13 3-7 10h5l-1 8 8-11h-5l1-7Z"/></symbol>
+  <symbol id="i-hub" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 10h6m-6 4h6M9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/></symbol>
+  <symbol id="i-github" viewBox="0 0 24 24"><circle cx="7" cy="5.5" r="2.5"/><circle cx="7" cy="18.5" r="2.5"/><circle cx="17" cy="5.5" r="2.5"/><path d="M7 8v8m10-8v1a4 4 0 0 1-4 4H7"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-feishu" viewBox="0 0 24 24"><path d="m3.5 10 17-6-4 16-5-5-4 3v-5L3.5 10Zm4 3 10-6"/></symbol>
+  <symbol id="i-track" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2"/></symbol>
+  <symbol id="i-signed" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M9 5V3m6 2V3M4 9h16m-12 5 2.5 2.5L16 12"/></symbol>
+</svg>
+<div class="app">
+  <aside class="rail" aria-label="AJinOS">
+    <button class="icon-btn brand" data-go="flow" aria-label="AJinOS 主页" data-tooltip="AJinOS 主页"></button>
+    <nav id="primary-nav" aria-label="主导航"></nav>
+    <div class="rail-foot">
+      <button id="theme-toggle" class="icon-btn rail-button" data-do="theme"></button>
+      <span class="rail-engine" role="img" aria-label="引擎在线" data-tooltip="引擎在线"><span class="dot live"></span></span>
+    </div>
+  </aside>
+  <div class="shell">
+    <header class="topbar">
+      <h1 id="page-title">工作台</h1>
+      <nav class="segmented" id="workbench-tabs" aria-label="工作台视图">
+        <button data-go="flow" aria-pressed="true">流转概览</button>
+        <button data-go="board" aria-pressed="false">工单看板</button>
+        <button data-go="dag" aria-pressed="false">DAG 协作计划</button>
+      </nav>
+      <div class="top-controls">
+        <nav class="segmented variants" aria-label="首页布局">
+          <button data-variant-mode="composer" aria-pressed="true">带底部快输条</button>
+          <button data-variant-mode="clean" aria-pressed="false">纯画布 + 顶部按钮</button>
+        </nav>
+        <button id="top-send" class="btn primary top-send" data-do="compose" title="Alt+Shift+A" aria-keyshortcuts="Alt+Shift+A" hidden></button>
+        <button id="pending" class="pending" data-go="inbox"></button>
+        <span class="engine" title="演示引擎状态"><span class="dot live"></span>引擎在线</span>
+      </div>
+    </header>
+    <div class="stage" id="stage">
+      <main class="workspace" id="workspace"></main>
+      <div class="drawer-slot" id="drawer-slot" inert><aside class="drawer" id="drawer" aria-label="详情抽屉"></aside></div>
+    </div>
+  </div>
+</div>
+<dialog id="compose-dialog" aria-labelledby="compose-title">
+  <header class="row between"><h2 id="compose-title">发给总管</h2><button class="icon-btn" data-do="close-compose" aria-label="关闭快输"></button></header>
+  <div id="dialog-form"></div>
+</dialog>
+<div class="notice" id="notice" role="status" hidden></div>
+<script>
+"use strict";
+
+const $ = (selector, parent = document) => parent.querySelector(selector);
+const all = (selector, parent = document) => [...parent.querySelectorAll(selector)];
+const root = document.documentElement;
+const query = new URLSearchParams(location.search);
+let variant = query.get("variant") === "clean" ? "clean" : "composer";
+let theme = query.get("theme") === "dark" ? "dark" : "light";
+let view = "flow";
+let drawer = null;
+let thread = "";
+let tracked = "";
+let flash = null;
+let flashTimer, noticeTimer, wireFrame, drawerOrigin;
+let draft = { text: "", attachment: "", project: "" };
+let digestCount = 12;
+const exchanges = [];
+const planTitle = "超时日志排查与文档同步";
+const placeholder = "告诉 AJinOS 要查进度、处理任务或安排跨项目协作…";
+const status = {
+  running: ["执行中", "blue"], approval: ["待拍板", "amber"], review: ["待验收", "amber"],
+  closed: ["已签收", "green"], waiting: ["待上游", "neutral"], queued: ["排队", "neutral"], declined: ["已拒绝", "neutral"],
+};
+const projects = {
+  orders: { name: "订单系统", icon: "folder", permission: "edit", path: "E:/workspace/order-service", rule: "按项目规则编辑并执行相关单测。生产库存操作须先发审批卡。" },
+  docs: { name: "对外文档", icon: "doc", permission: "read", path: "E:/workspace/partner-docs", rule: "读取项目资料并交付修订建议，由有编辑权限的流程应用。" },
+  ajinos: { name: "AJinOS", icon: "brand", permission: "edit", path: "~/.agent-autoloop/workspaces/ajinos", rule: "读取本机配置、校验并提出修订建议，由本人应用。" },
+};
+const sources = {
+  chat: { name: "AJinOS 主私聊", icon: "chat", route: "总管统一入口", note: "本人消息先经 Router。续聊沿 Thread 绑定直通，固定简报只读当前快照，新意图进入分诊。" },
+  feishu: { name: "飞书私聊 / 群采集", icon: "feishu", route: "私聊 / 采集", note: "飞书私聊与桌面共用 Router，群采集通常按来源规则提交标准事件。示例库存审批来自群线索，后续由本人在私聊确认请求后触发。" },
+  github: { name: "GitHub Issue", icon: "github", route: "标准事件直达", note: "来源插件校验事件，直接交 Hub 匹配可信规则。工单回执保留原 Issue 和 Thread 的关联。" },
+  timer: { name: "定时规则", icon: "clock", route: "Hub 到期唤醒", note: "Hub 按规则和到期时间唤醒。下一次演示触发为 18:00 的本机配置巡检。" },
+};
+const tickets = [
+  { id: "T-000129", title: "核查超时重试日志与补测", project: "orders", source: "chat", route: "slow", worker: "codex", time: "10:38", state: "running", summary: "正在核对失败重试时是否保留订单号与异常原因，完成后把只读结论交给文档步骤。", request: "先核查订单超时重试有没有漏记日志，确认后同步更新对外接入文档。" },
+  { id: "T-000128", title: "订单列表批量发货", project: "orders", source: "chat", route: "slow", worker: "codex", time: "10:21", state: "review", rounds: 2, summary: "批量发货交互、部分失败提示与接口回执均已验证。", request: "给订单列表加上批量发货，跑完单测再叫我验收。", evidence: [
+    ["批量提交选中的待发货订单", "OrderBatchShipmentTest · 可发货订单成功入列"],
+    ["部分失败时逐单返回原因", "重复发货与状态不符均返回对应错误码"],
+    ["相关单测全部通过", "14 项通过 · 0 失败 · 0 跳过"],
+  ] },
+  { id: "T-000127", title: "线上库存回填脚本审批", project: "orders", source: "feishu", route: "slow", time: "10:02", state: "approval", summary: "已核对影响范围，生产回填动作等待本人决定。本轮已结束，等待期间不占执行名额。", request: "请核查这批库存差异，回填前先发我确认。" },
+  { id: "T-000126", title: "修正接口回调签名示例", project: "docs", source: "github", route: "direct", worker: "claude", time: "09:46", state: "review", summary: "已按接口规范交付文档修订建议及可复核示例。", request: "Issue #42 · 回调签名的示例拼接顺序与接口规范不一致。", evidence: [
+    ["签名串的拼接顺序与规范一致", "回调示例已与规范逐字段比对"],
+    ["合法和非法签名均可验证", "6 项签名样例通过 · 0 失败"],
+  ] },
+  { id: "T-000125", title: "订单异常码归档", project: "orders", source: "chat", route: "fast", worker: "codex", time: "09:32", state: "running", summary: "沿原话题续接，正在归档支付失败与退款超时涉及的异常码。", request: "继续补上支付失败与退款超时的错误码。" },
+  { id: "T-000124", title: "核对 SDK 回调接入清单", project: "docs", source: "github", route: "direct", worker: "claude", time: "09:28", state: "running", summary: "正在逐条比对接入清单与 SDK 参数约束。", request: "Issue #39 · 请核对新增回调字段对接入清单的影响。" },
+  { id: "T-000130", title: "同步更新接口说明", project: "docs", source: "chat", route: "slow", time: "10:38", state: "waiting", summary: "等待 T-000129 提交只读结论，收到后再生成接口说明修订建议。", request: "核查完成后，把结论同步到对外接口说明。" },
+  ...[
+    ["T-000123", "整理 webhook 重放说明", "docs", "09:10"],
+    ["T-000122", "核对退款超时告警", "orders", "08:55"],
+    ["T-000121", "检查本机执行器连通性", "ajinos", "08:42"],
+    ["T-000120", "补齐订单状态枚举说明", "docs", "08:15"],
+  ].map(([id, title, project, time]) => ({
+    id, title, project, time, source: "timer", route: "direct", state: "closed",
+    worker: project === "docs" ? "claude" : "codex", summary: "本人已核对回执并签收。", request: title,
+  })),
+];
+const ticket = id => tickets.find(item => item.id === id);
+const inState = state => tickets.filter(item => item.state === state);
+const countPending = () => inState("approval").length + inState("review").length;
+const statusChip = item => chip(...status[item.state]);
+const safe = value => String(value).replace(/[&<>"']/g, letter => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[letter]);
+const icon = (name, extra = "") => `<svg class="icon ${extra}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-${name}"></use></svg>`;
+const chip = (label, tone = "") => `<span class="chip ${tone}">${safe(label)}</span>`;
+const avatar = (name, tone = "") => `<span class="avatar ${tone}">${icon(name)}</span>`;
+const btn = (action, label, glyph, classes = "", attrs = "") =>
+  `<button type="button" class="btn ${classes}" ${action} ${attrs}>${glyph ? icon(glyph) : ""}${safe(label)}</button>`;
+const panelSection = (title, content) => `<section class="drawer-section"><h3>${title}</h3>${content}</section>`;
+const workers = {
+  codex: { name: "Codex", limit: 3, note: "订单项目的编辑与测试由可信规则分配。继续原工单时优先续接既有会话。" },
+  claude: { name: "Claude", limit: 2, note: "对外文档的核对与修订建议使用只读项目沙箱。" },
+  verify: { name: "AI 校验", note: "辅助对照验收标准与结构化回执。最终验收由本人完成。" },
+};
+const activeSlots = key => inState("running").filter(item => item.worker === key).length;
+const pendingOf = source => tickets.filter(item => item.source === source && ["running", "review", "approval"].includes(item.state));
+const viewIsWorkbench = () => ["flow", "board", "dag"].includes(view);
+
+function updateShell() {
+  root.dataset.theme = theme;
+  root.dataset.variant = variant;
+  const current = viewIsWorkbench() ? "flow" : view === "capabilities" ? "capabilities" : "chat";
+  const count = countPending();
+  $("#primary-nav").innerHTML = [
+    ["flow", "工作台", "ops"], ["chat", "对话", "chat"], ["capabilities", "能力与沙箱", "cap"],
+  ].map(([id, name, symbol]) => `<button class="icon-btn rail-button" data-go="${id}" aria-label="${name}" data-tooltip="${name}" ${id === current ? 'aria-current="page"' : ""}>${icon(symbol)}${id === "chat" && count ? `<span class="rail-count" aria-hidden="true">${count}</span>` : ""}</button>`).join("");
+  $("#page-title").textContent = current === "flow" ? "工作台" : current === "capabilities" ? "能力与沙箱" : "对话";
+  $("#workbench-tabs").hidden = current !== "flow";
+  all("#workbench-tabs button").forEach(button => button.setAttribute("aria-pressed", button.dataset.go === view));
+  all("[data-variant-mode]").forEach(button => button.setAttribute("aria-pressed", button.dataset.variantMode === variant));
+  $("#top-send").hidden = variant !== "clean" || view !== "flow";
+  $("#pending").innerHTML = `${icon("inbox")}<span>待我处理 ${count}</span>`;
+  const label = theme === "dark" ? "切换日间主题" : "切换夜间主题";
+  const toggle = $("#theme-toggle");
+  toggle.setAttribute("aria-label", label);
+  toggle.dataset.tooltip = label;
+  toggle.innerHTML = icon(theme === "dark" ? "sun" : "moon");
+}
+
+function ticketRow(item, forTracking = false) {
+  return `<button type="button" class="ticket-row node-action" data-ticket="${item.id}" ${forTracking ? 'data-track="true"' : ""}>
+    <span class="node-copy"><span class="mono">${item.id}</span><strong>${safe(item.title)}</strong></span>${icon("right")}
+  </button>`;
+}
+
+function sourceCard(key, source) {
+  const count = pendingOf(key).length;
+  return `<button class="card node-row source-card" data-node="${key}" data-detail="${key}">
+    ${avatar(source.icon, key === "chat" ? "" : "plain")}
+    <span class="node-copy grow"><strong>${source.name}</strong><small class="node-meta"><span class="dot ${count ? "live" : "muted"}"></span>
+    <span class="count ${count ? "" : "idle"}">${count}</span> 活跃</small></span>
+  </button>`;
+}
+
+function projectCard(key, project) {
+  const open = inState("running").filter(item => item.project === key).length;
+  const review = inState("review").filter(item => item.project === key).length;
+  const activity = key === "docs" && review ? `${review} 轮待验` : open ? `${open} 轮活跃` : review ? `${review} 轮待验` : "空闲";
+  return `<button class="card node-row project-card" data-node="${key}" data-detail="${key}">
+    ${avatar(project.icon, !open && !review ? "plain" : "")}
+    <span class="node-copy"><strong>${project.name}</strong><small><span class="mono">${project.permission}</span> · ${activity}</small></span>
+    ${icon("down", "node-chevron")}
+  </button>`;
+}
+
+function workerCard(key, worker) {
+  const count = activeSlots(key);
+  const meter = Array.from({ length: worker.limit }, (_, index) => `<i class="${index < count ? "filled" : ""}"></i>`).join("");
+  return `<button class="worker node-action ${key}" data-node="${key}" data-detail="${key}"><strong>${worker.name}</strong>
+    ${key === "verify" ? '<span class="row ready"><span class="dot live"></span>就绪</span>' : `<span class="bar" aria-hidden="true">${meter}</span><span class="meter-label">${count}/${worker.limit}</span>`}
+  </button>`;
+}
+
+function resultCard(key, name, glyph, tone) {
+  const queue = inState(key);
+  return `<section class="card result-card" data-node="${key}">
+    <button class="result-head node-action ${tone}" data-detail="${key}">${icon(glyph)}<strong>${name}</strong>${chip(queue.length, tone)}</button>
+    <div class="result-list">${queue.map(item => ticketRow(item, true)).join("") || '<p class="empty-row">暂无工单</p>'}</div>
+  </section>`;
+}
+
+function composer() {
+  return `<form class="composer" aria-label="总管快输">
+    <button type="button" class="icon-btn" data-do="attach" title="添加图片" aria-label="添加图片">${icon("image")}</button>
+    <input type="file" accept="image/*" hidden>
+    <div class="option-wrap">
+      <button type="button" class="icon-btn" data-do="override" title="展开覆盖项" aria-label="展开覆盖项" aria-expanded="false">${icon("panel")}</button>
+      <div class="popover override-menu" hidden><label>本条消息的项目提示
+        <select name="project">
+          <option value="">由总管识别</option>
+          ${Object.entries(projects).map(([key, project]) => `<option value="${key}" ${draft.project === key ? "selected" : ""}>${project.name}</option>`).join("")}
+        </select></label></div>
+    </div>
+    ${draft.attachment ? `<button type="button" class="chip attachment" data-do="remove-attachment" title="${safe(draft.attachment)} · 点击移除">${safe(draft.attachment)}</button>` : ""}
+    <input type="text" name="message" aria-label="给 AJinOS 的消息" placeholder="${placeholder}" value="${safe(draft.text)}" autocomplete="off">
+    <button class="btn primary send" type="submit" aria-label="发送" ${draft.text.trim() || draft.attachment ? "" : "disabled"}>${icon("send")}</button>
+  </form>`;
+}
+
+function footer() {
+  if (variant === "clean") {
+    return `<section class="activity" aria-label="实时任务动态">
+      <span class="activity-title row">${icon("ops")}实时任务动态</span>
+      ${["T-000129", "T-000128", "T-000126"].map(id => {
+        const item = ticket(id);
+        return `<button class="activity-chip" data-ticket="${id}" data-track="true" aria-pressed="${tracked === id}" title="${status[item.state][0]}">
+          <span class="dot ${status[item.state][1]}"></span><span class="mono">${id}</span><strong>${item.title}</strong></button>`;
+      }).join("")}</section>`;
+  }
+  return `<section class="dock" aria-label="总管快输与任务跟踪">${composer()}
+    <button class="track-control" data-do="track-menu" aria-expanded="false" aria-controls="track-menu" aria-label="跟踪任务">
+      ${icon("track")}<span>${tracked || "跟踪任务"}</span>${icon("down")}</button>
+    <div class="popover track-menu" id="track-menu" hidden>
+      ${[...inState("running"), ...inState("approval"), ...inState("review")].map(item => ticketRow(item, true)).join("")}
+    </div>
+  </section>`;
+}
+
+function flowView() {
+  const lanes = [
+    ["plug", "入口触发", "Triggers"], ["route", "总管路由", "AJinOS Router"],
+    ["folder", "项目领地与执行器", "Sandboxes & Workers"], ["inbox", "结果与本人介入", "Results & Human in the Loop"],
+  ];
+  return `<section class="home">
+    <header class="overview-heading">
+      <div><h2>任务流转</h2><p>4 个触发来源 · 3 个项目领地</p></div>
+      <div class="row overview-stats">
+        <button class="overview-stat" data-detail="running">${icon("ops")}运行中 <strong>${inState("running").length}</strong></button>
+        <button class="overview-stat" data-go="dag">${icon("dag")}协作计划 <strong>1</strong></button>
+      </div>
+    </header>
+    <section class="canvas" aria-label="Super Agent 流转画布">
+      <header class="flow-columns lane-head">${lanes.map(([glyph, title, subtitle]) =>
+        `<div class="lane-title">${icon(glyph)}<div><h3>${title}</h3><p lang="en">${subtitle}</p></div></div>`).join("")}</header>
+      <div class="flow-columns flow-body">
+        <svg class="wires" aria-hidden="true"></svg>
+        <div class="lane source-lane">${Object.entries(sources).map(([key, source]) => sourceCard(key, source)).join("")}</div>
+        <div class="lane router-lane">
+          <section class="card router-card" data-node="router">
+            <button class="router-head node-action" data-detail="router">
+              ${avatar("brand")}<span class="node-copy"><strong>AJinOS Router</strong><small>总管路由大脑</small></span><span class="dot live"></span>
+            </button>
+            <div class="router-inner">
+              <button class="route fast node-action" data-node="fast" data-detail="fast">
+                <span class="row">${icon("fast", "path-icon")}<strong>Fast Path</strong></span>${chip("直通就绪", "green")}
+                <small>Thread 直通 · 今日零消耗简报 <b>${digestCount}</b></small>
+              </button>
+              <button class="route node-action" data-node="slow" data-detail="slow">
+                <span class="row">${icon("route", "path-icon")}<strong>Slow Path</strong></span>${chip("分诊就绪", "blue")}
+                <small>问答 / 立单 / DAG</small>
+              </button>
+              <button class="route router-plan node-action" data-detail="plan" title="${planTitle}">
+                <span class="row">${icon("dag", "path-icon")}<strong>跨项目协作</strong></span><span class="progress-label">1 / 3</span>
+                <small class="plan-name">${planTitle}</small>
+                <small class="plan-meter" aria-label="已完成 1 步，共 3 步"><i class="filled"></i><i class="active"></i><i></i></small>
+              </button>
+            </div>
+          </section>
+          <button class="card node-row hub" data-node="hub" data-detail="hub">
+            ${avatar("hub", "plain")}<span class="node-copy grow"><strong>Hub 确定性内核</strong><small>派单 · 并发 · 事实日志</small></span><span class="mono">/v1</span>
+          </button>
+        </div>
+        <div class="lane project-lane">
+          ${Object.entries(projects).map(([key, project]) => projectCard(key, project)).join("")}
+          <section class="card workers" data-node="workers">
+            <button class="workers-head node-action" data-detail="workers">${icon("term")}共享执行器</button>
+            <div class="worker-list">${Object.entries(workers).map(([key, worker]) => workerCard(key, worker)).join("")}</div>
+          </section>
+        </div>
+        <div class="lane result-lane">
+          ${resultCard("approval", "待拍板", "cap", "amber")}
+          ${resultCard("review", "待验收", "inbox", "blue")}
+          <button class="card node-row signed" data-node="closed" data-detail="closed">
+            ${avatar("signed", "checked")}<span class="node-copy"><strong>今日已本人签收</strong><small>核对依据后关单</small></span><span class="count">${inState("closed").length}</span>
+          </button>
+        </div>
+      </div>
+      <footer class="row between map-footer"><div id="map-caption"></div><span class="snapshot row"><span class="dot"></span>演示快照</span></footer>
+    </section>
+    ${footer()}
+  </section>`;
+}
+
+function planView() {
+  const steps = [
+    ["订单系统", "定位日志覆盖范围", "已完成", "green"],
+    ["订单系统", "核查超时重试日志与补测", "T-000129", "blue"],
+    ["对外文档", "同步更新接口说明", "T-000130", "neutral"],
+  ];
+  return `<section class="subview">
+    <h2>DAG 协作计划</h2>
+    <div class="row">${chip("推进中", "blue")}<h3>${planTitle}</h3></div>
+    <div class="plan-graph">${steps.map(([project, title, label, tone], index) =>
+      `${index ? icon("right") : ""}<article class="card content-card">${chip(project)}<p><strong>${title}</strong></p>
+      ${index ? btn(`data-ticket="${label}"`, label, "ticket", tone === "blue" ? "primary" : "") : chip(label, tone)}</article>`).join("")}
+    </div><p class="content-card secondary">订单系统核查通过后，对外文档接收只读结论并生成修订建议。</p>
+  </section>`;
+}
+
+function listView(groups, title, history = false) {
+  return `<section class="subview"><h2>${title}</h2>
+    ${history ? threadNav() : ""}
+    ${groups.map(([key, label]) => `<section class="list-group"><h3>${label} ${inState(key).length}</h3>
+      ${inState(key).map(item => `<div class="card">${ticketRow(item)}</div>`).join("") || '<p class="empty-row">暂无工单</p>'}
+    </section>`).join("")}
+  </section>`;
+}
+
+function boardView() {
+  const columns = [
+    ["流转中", [...inState("running"), ...inState("waiting"), ...inState("queued")]],
+    ["待拍板", inState("approval")], ["待验收", inState("review")], ["今日已签收", inState("closed")],
+  ];
+  return `<section class="subview"><h2>工单看板</h2><div class="board-columns">
+    ${columns.map(([title, items]) => `<section class="board-column"><h3>${title} ${items.length}</h3>
+      ${items.map(item => `<div class="card content-card">${statusChip(item)}${ticketRow(item)}</div>`).join("") || '<p class="empty-row">暂无工单</p>'}
+    </section>`).join("")}
+  </div></section>`;
+}
+
+const threadNav = () => `<nav class="row thread-switch" aria-label="对话视图">
+  ${btn('data-go="chat"', "AJinOS 主私聊", "brand", view === "chat" ? "primary" : "")}
+  ${btn('data-go="inbox"', `Inbox · ${countPending()}`, "inbox", view === "inbox" ? "primary" : "")}
+  ${btn('data-go="threads"', "Threads", "chat", ["threads", "thread"].includes(view) ? "primary" : "")}
+</nav>`;
+
+function chatView() {
+  if (view === "threads") {
+    return `<section class="subview"><h2>Threads</h2>${threadNav()}${tickets.filter(item => item.state !== "closed").map(item =>
+      `<article class="card content-card"><div class="row between"><h3>${item.title}</h3>${statusChip(item)}</div><p>${item.request}</p>
+      ${btn(`data-thread="${item.id}"`, "进入 Thread", "right")}</article>`).join("")}</section>`;
+  }
+  const item = ticket(thread);
+  if (view === "thread" && item) {
+    return `<section class="subview"><h2>${item.title}</h2>${threadNav()}
+      <article class="card content-card"><div class="row">${avatar(sources[item.source].icon, "plain")}<div><h3>${sources[item.source].name}</h3><span class="mono muted">${item.id}</span></div></div><p>${item.request}</p></article>
+      <article class="card content-card"><div class="row">${avatar("brand")}<h3>AJinOS 总管</h3>${statusChip(item)}</div>
+        <p>${item.summary}</p>${btn(`data-ticket="${item.id}"`, "展开详情", "panel")}
+        ${btn(`data-follow="${item.id}"`, "回到流转", "track", "ghost")}
+      </article></section>`;
+  }
+  return `<section class="subview"><h2>AJinOS 总管</h2>${threadNav()}
+    ${exchanges.map(entry => `<article class="card content-card"><div class="row">${avatar("chat", "plain")}<h3>本人</h3></div>
+      <p>${safe(entry.text)}</p>${entry.attachment ? chip(entry.attachment) : ""}
+      <div class="row">${avatar("brand")}<h3>AJinOS 总管</h3></div><p>${safe(entry.reply)}</p></article>`).join("") ||
+      '<article class="card content-card"><h3>主私聊</h3><p>查进度、处理单项目事项，或提交跨项目协作目标。</p></article>'}
+    <div class="content-card">${composer()}</div>
+  </section>`;
+}
+
+function capabilitiesView() {
+  const groups = [
+    ["projects", "项目领地", "folder", "登记目录、项目画像和可信规则。"],
+    ["workers", "执行器", "term", "查看共享执行名额和 AI 校验。"],
+    ["memory", "长期记忆", "history", "为关联项目提供可追溯的只读资料。"],
+    ["sources", "通道", "plug", "查看私聊来源、来源插件和定时规则。"],
+  ];
+  return `<section class="subview"><h2>能力与沙箱</h2>${groups.map(([id, title, glyph, hint]) =>
+    `<article class="card content-card"><div class="row">${avatar(glyph, "plain")}<h3>${title}</h3></div>
+      <p>${hint}</p>${btn(`data-detail="${id}"`, "查看详情", "right")}</article>`).join("")}</section>`;
+}
+
+function listDetails(items) {
+  return items.length ? `<div class="evidence">${items.map(item => ticketRow(item, true)).join("")}</div>` : "<p>暂无工单。</p>";
+}
+
+function ticketDetails(item) {
+  const project = projects[item.project];
+  const evidence = item.evidence?.map(([criterion, proof]) =>
+    `<div class="evidence-row"><div class="row">${chip("通过", "green")}<strong>${criterion}</strong></div><p>${proof}</p></div>`).join("");
+  const approval = item.state === "approval" ? panelSection("本人拍板",
+    '<p>本次演示可让原事项继续只读预检，或拒绝这项请求。</p><label class="approval-options">审批决定<select id="approval-decision"><option value="read">只执行只读预检</option><option value="decline">拒绝执行</option></select></label>') : "";
+  const trace = [
+    [item.time, item.route === "direct" ? "source.event.accepted" : "thread.message.bound"],
+    [item.time, item.state === "approval" ? "card.opened · askFirst" : "ticket.opened · " + item.id],
+    item.worker ? [item.time, item.state === "running" ? "run.claimed · " + item.worker : "run.receipt · " + item.worker] : [],
+    item.decision ? [item.time, "card.answered · " + item.decision] : [],
+    item.state === "closed" ? [item.time, "ticket.closed · 本人签收"] : [],
+  ].filter(entry => entry.length).map(entry => entry.join("  ")).join("\n");
+  return {
+    key: item.id, title: item.title,
+    badges: chip(project.name) + statusChip(item),
+    body: panelSection("当前进展", `<p>${item.summary}</p><div class="run-row"><span>来源</span><strong>${sources[item.source].name}</strong></div>`) +
+      (evidence ? panelSection("验收标准逐项依据", `<div class="evidence">${evidence}</div>`) : "") + approval +
+      panelSection("执行轮次与权限", `<div class="run-row"><span>已派发轮次</span><strong>${item.state === "waiting" ? 0 : item.rounds || 1}</strong></div>
+        <div class="run-row"><span>项目权限</span><strong class="mono">${project.permission}</strong></div>
+        ${item.worker ? `<div class="run-row"><span>执行器</span><strong>${workers[item.worker].name}</strong></div>` : ""}`) +
+      panelSection("<code>why</code> 事实与输出日志", `<pre class="log">${trace}</pre>`),
+    actions: btn(`data-thread="${item.id}"`, "进入原 Thread", "right") +
+      (item.state === "review" ? btn(`data-accept="${item.id}"`, "通过验收", "check", "primary") :
+        item.state === "approval" ? btn(`data-answer="${item.id}"`, "提交决定", "check", "primary") :
+        btn(`data-follow="${item.id}"`, "跟踪路径", "track", "primary")),
+  };
+}
+
+function nodeDetails(id) {
+  if (sources[id]) {
+    const source = sources[id];
+    return { key: "触发来源", title: source.name, badges: chip(source.route, "blue"),
+      body: panelSection("入口规则", `<p>${source.note}</p>`) + panelSection("当前活跃", listDetails(pendingOf(id))) };
+  }
+  if (projects[id]) {
+    const project = projects[id];
+    return { key: "项目领地", title: project.name, badges: chip(project.permission, "blue"),
+      body: panelSection("沙箱与可信规则", `<div class="details-table"><code>${project.path}</code></div><p>${project.rule}</p>`) +
+        panelSection("执行中与待验收", listDetails(tickets.filter(item => item.project === id && ["running", "review"].includes(item.state)))) };
+  }
+  if (workers[id]) {
+    const worker = workers[id];
+    return { key: "共享执行器", title: worker.name, badges: worker.limit ? chip(`${activeSlots(id)} / ${worker.limit} 已占用`, "blue") : chip("就绪", "green"),
+      body: panelSection("角色与边界", `<p>${worker.note}</p>`) + panelSection("当前执行轮次", listDetails(inState("running").filter(item => item.worker === id))) };
+  }
+  const copy = {
+    router: ["总管路由", "AJinOS Router", "共用桌面与飞书私聊的消息去重、身份校验与话题绑定。派单目录、权限和执行器来自可信规则。"],
+    fast: ["总管路由", "Fast Path", `已有 Thread 沿原事项续接。今日已发出 ${digestCount} 份零消耗简报，固定简报直接读取状态快照。`],
+    slow: ["总管路由", "Slow Path", "全局问答原地回复。单项目明确目标提交标准事件。跨项目目标先发 DAG 计划卡，本人确认后拆单。"],
+    hub: ["协议边界 /v1", "Hub 确定性内核", "统一收事件、匹配规则、派活并记录事实。GitHub Issue 与定时规则走标准事件，回执和人工决定关联原事项。"],
+    memory: ["能力与沙箱", "长期记忆", "长期记忆通过项目隔离归档，作为只读资料提供给关联任务。"],
+    plan: ["跨项目协作", planTitle, "已完成 1 / 3 步。订单系统正在核查超时重试日志。对外文档等待上游只读结论。"],
+  };
+  if (copy[id]) {
+    const [key, title, detail] = copy[id];
+    return { key, title, body: panelSection("当前状态", `<p>${detail}</p>`),
+      actions: id === "plan" ? btn('data-go="dag"', "打开 DAG 协作计划", "dag", "primary") : "" };
+  }
+  const lists = { approval: "待拍板", review: "待验收", closed: "今日已本人签收", running: "运行中的工单" };
+  if (lists[id]) return { key: "工单", title: lists[id], badges: chip(inState(id).length), body: listDetails(inState(id)) };
+  const menus = {
+    workers: ["共享执行器", workers], projects: ["项目领地", projects], sources: ["来源与通道", sources],
+  };
+  const [title, entries] = menus[id];
+  return { key: "能力与沙箱", title, body: `<div class="evidence">${Object.entries(entries).map(([key, entry]) =>
+    `<div class="evidence-row">${btn(`data-detail="${key}"`, entry.name, "right")}</div>`).join("")}</div>` };
+}
+
+function renderDrawer() {
+  const stage = $("#stage");
+  const slot = $("#drawer-slot");
+  stage.classList.toggle("has-drawer", Boolean(drawer));
+  slot.inert = !drawer;
+  if (!drawer) return;
+  const data = drawer.type === "ticket" ? ticketDetails(ticket(drawer.id)) : nodeDetails(drawer.id);
+  const target = $("#drawer");
+  target.innerHTML = `<header class="drawer-head"><div class="row between">
+    <strong class="key ${drawer.type === "ticket" ? "mono" : ""}">${data.key}</strong>
+    <button class="icon-btn" data-do="close-drawer" aria-label="关闭详情" title="关闭详情">${icon("close")}</button>
+    </div><h2>${safe(data.title)}</h2>${data.badges ? `<div class="wrap">${data.badges}</div>` : ""}</header>
+    <div class="drawer-body">${data.body}</div>${data.actions ? `<footer class="wrap drawer-footer">${data.actions}</footer>` : ""}`;
+}
+
+function routeFor(item) {
+  if (!item) return flash;
+  const nodes = [item.source, "hub", item.project];
+  const edges = [item.source + "-" + item.route, "hub-" + item.project];
+  if (item.route !== "direct") {
+    nodes.push("router", item.route);
+    edges.push("router-hub");
+  }
+  if (item.state === "approval") {
+    nodes.push("approval");
+    edges.push("ask");
+  }
+  if (item.worker) {
+    nodes.push("workers", item.worker);
+    edges.push(item.project + "-" + item.worker);
+  }
+  if (item.state === "review") {
+    nodes.push("review");
+    edges.push(item.worker + "-" + item.id);
+  }
+  if (item.state === "closed") {
+    nodes.push("review", "closed");
+    if (item.worker) edges.push(item.worker + "-review");
+    edges.push("signoff");
+  }
+  return { nodes, edges };
+}
+
+function drawWires() {
+  const field = $(".flow-body");
+  if (!field) return;
+  const svg = $(".wires", field);
+  const fieldBounds = svg.getBoundingClientRect();
+  const item = ticket(tracked);
+  const trace = routeFor(item);
+  const routes = [];
+  const box = node => {
+    const { left, right, top, bottom, width, height } = node.getBoundingClientRect();
+    return { left: left - fieldBounds.left, right: right - fieldBounds.left, top: top - fieldBounds.top, bottom: bottom - fieldBounds.top, width, height };
+  };
+  const node = id => $(`[data-node="${id}"]`, field);
+  const bounds = id => box(node(id));
+  const center = b => b.top + b.height / 2;
+  const endpoint = (id, side, dy = 0, level = id) => {
+    const outer = bounds(id);
+    return { x: outer[side] + (side === "right" ? .8 : -.8), y: center(bounds(level)) + dy };
+  };
+  const alignRow = (id, side, row) => ({ ...endpoint(id, side), y: center(box(row)) });
+  const curve = (a, b, t = .54) => {
+    const dx = (b.x - a.x) * t;
+    return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y} ${b.x - dx} ${b.y} ${b.x} ${b.y}`;
+  };
+  const sideLoop = (a, b, offset) => {
+    const x = Math.min(a.x, b.x) - offset;
+    const bend = Math.min(11, (b.y - a.y) / 3);
+    return `M ${a.x} ${a.y} C ${x} ${a.y} ${x} ${a.y + bend / 2} ${x} ${a.y + bend}
+      L ${x} ${b.y - bend} C ${x} ${b.y - bend / 2} ${x} ${b.y} ${b.x} ${b.y}`;
+  };
+  const add = (name, tone, a, b, path = curve(a, b), live = false) => routes.push({ name, tone, a, b, path, live });
+  const router = bounds("router");
+  const hub = bounds("hub");
+  const spineX = router.left + router.width * .53;
+  const routerOut = { x: spineX, y: router.bottom + .8 };
+  const hubIn = { x: spineX, y: hub.top - .8 };
+
+  add("chat-fast", "fast", endpoint("chat", "right", -7), endpoint("router", "left", 0, "fast"), undefined, true);
+  add("chat-slow", "router", endpoint("chat", "right", 7), endpoint("router", "left", -7, "slow"));
+  add("feishu-slow", "router", endpoint("feishu", "right", -3), endpoint("router", "left", 7, "slow"));
+  add("feishu-direct", "direct", endpoint("feishu", "right", 11), endpoint("hub", "left", -12));
+  add("github-direct", "direct", endpoint("github", "right"), endpoint("hub", "left"));
+  add("timer-direct", "direct", endpoint("timer", "right"), endpoint("hub", "left", 12));
+  add("router-hub", "router", routerOut, hubIn, `M ${spineX} ${routerOut.y} V ${hubIn.y}`);
+
+  const bindings = [["orders", "codex", -12, 14], ["docs", "claude", 0, 10], ["ajinos", "codex", 12, 6]];
+  for (const [project, worker, shift, offset] of bindings) {
+    add("hub-" + project, "router", endpoint("hub", "right", shift), endpoint(project, "left", -6));
+    const a = endpoint(project, "left", 12);
+    const b = endpoint("workers", "left", project === "ajinos" ? 8 : 0, worker);
+    add(project + "-" + worker, "worker-link", a, b, sideLoop(a, b, offset), project === "orders");
+  }
+  const approval = $('[data-node="approval"] [data-ticket]', field);
+  if (approval) add("ask", "approval", endpoint("orders", "right"), alignRow("approval", "left", approval));
+  const reviewRows = all('[data-node="review"] [data-ticket]', field);
+  for (const row of reviewRows) {
+    const { worker, id } = ticket(row.dataset.ticket);
+    const a = endpoint("workers", "right", 0, worker);
+    add(worker + "-" + id, "receipt", a, alignRow("review", "left", row));
+  }
+  if (item?.state === "closed" && item.worker) {
+    add(item.worker + "-review", "receipt", endpoint("workers", "right", 0, item.worker), endpoint("review", "left", -10));
+  }
+  add("signoff", "receipt", endpoint("review", "left", bounds("review").height / 2 - 11),
+    endpoint("closed", "left"), sideLoop(endpoint("review", "left", bounds("review").height / 2 - 11), endpoint("closed", "left"), 9));
+
+  svg.classList.toggle("tracking", Boolean(trace));
+  all("[data-node]", field).forEach(element => element.classList.toggle("on-path", Boolean(trace?.nodes.includes(element.dataset.node))));
+  all("[data-ticket]", field).forEach(element => element.classList.toggle("on-path", element.dataset.ticket === tracked));
+  svg.innerHTML = routes.map(({ name, tone, a, b, path, live }, index) => {
+    const hot = trace?.edges.includes(name);
+    const classes = `${tone}${hot ? " hot" : ""}`;
+    const ports = [a, b].map(point => `<circle class="port ${classes}" cx="${point.x}" cy="${point.y}" r="${hot ? 2.7 : 2}"/>`).join("");
+    const packet = hot || (!trace && live) ? `<circle class="packet ${tone}" r="${hot ? 3.7 : 2.6}" opacity="${hot ? 1 : .62}">
+      <animateMotion dur="${hot ? 2.5 : 4.1}s" begin="${-(index % 6) * .41}s" repeatCount="indefinite" path="${path}"/>
+    </circle>` : "";
+    return `<g><path class="wire ${classes}" data-edge="${name}" d="${path}"/>${ports}${packet}</g>`;
+  }).join("");
+  const focused = item ? `${item.id} · ${item.title}` : flash?.label;
+  const caption = focused ? `<div class="row track-caption">${icon("track")}<strong>${safe(focused)}</strong>
+    ${item ? statusChip(item) : ""}<button class="icon-btn clear" data-do="clear-track" aria-label="清除路径高亮" title="清除高亮">${icon("close")}</button></div>` :
+    '<div class="row legend"><span><i class="legend-line"></i>总管路由</span><span><i class="legend-line direct"></i>标准事件直达</span><span><i class="legend-line receipt"></i>执行回执与签收</span></div>';
+  if ($("#map-caption").innerHTML !== caption) $("#map-caption").innerHTML = caption;
+}
+
+function scheduleWires() {
+  if (wireFrame) return;
+  wireFrame = requestAnimationFrame(() => {
+    wireFrame = null;
+    drawWires();
+  });
+}
+
+const observer = new ResizeObserver(scheduleWires);
+function render() {
+  updateShell();
+  const workspace = $("#workspace");
+  observer.disconnect();
+  const renderView = {
+    flow: flowView, dag: planView, capabilities: capabilitiesView,
+    inbox: () => listView([["approval", "待拍板"], ["review", "待验收"]], "待我处理", true),
+    board: boardView,
+    chat: chatView, thread: chatView, threads: chatView,
+  };
+  workspace.innerHTML = renderView[view]();
+  const field = $(".flow-body");
+  if (field) observer.observe(field);
+  renderDrawer();
+  drawWires();
+}
+
+function updateURL() {
+  const url = new URL(location.href);
+  url.searchParams.set("variant", variant);
+  url.searchParams.set("theme", theme);
+  if (tracked) url.searchParams.set("track", tracked);
+  else url.searchParams.delete("track");
+  history.replaceState(null, "", url);
+}
+
+function showNotice(message) {
+  const notice = $("#notice");
+  notice.textContent = message;
+  notice.hidden = false;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => { notice.hidden = true; }, 3800);
+}
+
+function go(next) {
+  if (view === next && !drawer) return;
+  view = next;
+  drawer = null;
+  render();
+  $("#workspace").scrollTop = 0;
+}
+
+function setTracking(id) {
+  tracked = id;
+  flash = null;
+  clearTimeout(flashTimer);
+  updateURL();
+  all(".activity-chip").forEach(button => button.setAttribute("aria-pressed", button.dataset.ticket === id));
+  const label = $(".track-control span");
+  if (label) label.textContent = id || "跟踪任务";
+  drawWires();
+}
+
+function openDrawer(type, id, origin) {
+  drawerOrigin = origin;
+  drawer = { type, id };
+  renderDrawer();
+  $("#drawer [data-do='close-drawer']").focus({ preventScroll: true });
+  scheduleWires();
+}
+
+function closeDrawer() {
+  drawer = null;
+  renderDrawer();
+  const anchor = drawerOrigin?.isConnected && !drawerOrigin.closest("[hidden], [inert]") ? drawerOrigin :
+    (tracked && $(`#workspace [data-ticket="${tracked}"]:not(.track-menu *)`)) || $("#workbench-tabs button");
+  anchor?.focus({ preventScroll: true });
+  scheduleWires();
+}
+
+function openComposer() {
+  const dialog = $("#compose-dialog");
+  if (view === "flow" && variant === "composer") {
+    $(".dock input[type=text]").focus();
+  } else if (!dialog.open) {
+    $("#dialog-form").innerHTML = composer();
+    dialog.showModal();
+    $("input[type=text]", dialog).focus();
+  }
+}
+
+function resetComposerAfterSend(entry, messageType, project) {
+  const dialog = $("#compose-dialog");
+  if (dialog.open) dialog.close();
+  exchanges.push(entry);
+  draft = { text: "", attachment: "", project: "" };
+  tracked = "";
+  view = "flow";
+  drawer = null;
+  clearTimeout(flashTimer);
+  flash = {
+    nodes: ["chat", "router", messageType],
+    edges: ["chat-" + messageType],
+    label: entry.reply,
+  };
+  if (project) {
+    flash.nodes.push("hub", project);
+    flash.edges.push("router-hub", "hub-" + project);
+  }
+  updateURL();
+  render();
+  showNotice(entry.reply);
+  flashTimer = setTimeout(() => { flash = null; drawWires(); }, 4300);
+}
+
+function sendDraft() {
+  const text = draft.text.trim();
+  if (!text && !draft.attachment) return;
+  const related = Object.keys(projects).filter(id => text.includes(projects[id].name));
+  const isPlan = /跨项目|DAG|协作计划/i.test(text) || related.length > 1;
+  const isDigest = !isPlan && /简报|进度|待我处理|状态|进展/.test(text);
+  if (isDigest) digestCount += 1;
+  const project = !isDigest && !isPlan ? draft.project || related[0] : "";
+  const reply = isDigest ? `只读简报 · ${inState("running").length} 执行中 · ${countPending()} 待你处理` :
+    isPlan ? "已进入跨项目分诊 · DAG 计划须经本人确认" :
+    project ? `单项目派发预览 · ${projects[project].name}` : "已进入分诊 · 请补充要处理的项目";
+  resetComposerAfterSend({ text, attachment: draft.attachment, reply }, isDigest ? "fast" : "slow", project);
+}
+
+function togglePopover(button, element) {
+  element.hidden = !element.hidden;
+  button.setAttribute("aria-expanded", !element.hidden);
+}
+
+function closePopovers(except) {
+  for (const popover of all(".popover:not([hidden])")) {
+    const button = popover.previousElementSibling;
+    if (!popover.contains(except) && !button.contains(except)) {
+      popover.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+    }
+  }
+}
+
+$(".brand").innerHTML = icon("brand");
+$("#top-send").innerHTML = icon("send") + '<span>发给总管</span><kbd>Alt+Shift+A</kbd>';
+$("[data-do='close-compose']").innerHTML = icon("close");
+$("#compose-dialog").addEventListener("close", event => {
+  if (!event.currentTarget.open) $("#dialog-form").replaceChildren();
+});
+
+document.addEventListener("click", event => {
+  const button = event.target.closest("button");
+  closePopovers(event.target);
+  if (!button) return;
+  const { go: next, variantMode, detail, ticket: id, track, thread: threadId, follow, accept, answer } = button.dataset;
+  if (variantMode && variantMode !== variant) {
+    variant = variantMode;
+    updateURL();
+    render();
+  } else if (next) {
+    go(next);
+  } else if (detail) {
+    openDrawer("node", detail, button);
+  } else if (id) {
+    if (track && view === "flow") setTracking(id);
+    openDrawer("ticket", id, button);
+    closePopovers(null);
+  } else if (threadId) {
+    thread = threadId;
+    go("thread");
+  } else if (follow) {
+    go("flow");
+    setTracking(follow);
+  } else if (accept && ticket(accept).state === "review") {
+    ticket(accept).state = "closed";
+    ticket(accept).summary += " 本人已核对验收依据并签收。";
+    render();
+    showNotice(`${accept} 已通过验收 · 本人签收 +1`);
+  } else if (answer && ticket(answer).state === "approval") {
+    const item = ticket(answer);
+    const read = $("#approval-decision").value === "read";
+    item.state = read ? "queued" : "declined";
+    item.decision = read ? "只读预检" : "拒绝执行";
+    item.summary = read ? "本人已允许只读预检，原事项等待重新领取。" : "本人已拒绝这项请求。";
+    render();
+    showNotice(`${answer} · 已记录本人决定`);
+  } else {
+    const form = button.closest("form");
+    switch (button.dataset.do) {
+      case "theme":
+        theme = theme === "dark" ? "light" : "dark";
+        updateShell();
+        updateURL();
+        break;
+      case "track-menu": togglePopover(button, $("#track-menu")); break;
+      case "clear-track": setTracking(""); break;
+      case "close-drawer": closeDrawer(); break;
+      case "compose": openComposer(); break;
+      case "close-compose": $("#compose-dialog").close(); break;
+      case "attach": $('input[type="file"]', form).click(); break;
+      case "override": togglePopover(button, $(".override-menu", form)); break;
+      case "remove-attachment":
+        draft.attachment = "";
+        refreshForm(form);
+        break;
+    }
+  }
+});
+
+function refreshForm(form) {
+  form.outerHTML = composer();
+  const activeForm = $("#compose-dialog[open] .composer") || $("#workspace .composer");
+  $("input[type=text]", activeForm).focus();
+}
+
+document.addEventListener("input", event => {
+  if (!event.target.matches('.composer input[name="message"]')) return;
+  draft.text = event.target.value;
+  $(".send", event.target.form).disabled = !draft.text.trim() && !draft.attachment;
+});
+document.addEventListener("change", event => {
+  if (event.target.matches('.composer input[type="file"]') && event.target.files[0]) {
+    draft.attachment = event.target.files[0].name;
+    refreshForm(event.target.form);
+  }
+  if (event.target.matches('.composer select[name="project"]')) draft.project = event.target.value;
+});
+document.addEventListener("submit", event => {
+  if (!event.target.matches(".composer")) return;
+  event.preventDefault();
+  sendDraft();
+});
+document.addEventListener("keydown", event => {
+  if (event.code === "KeyA" && event.altKey && event.shiftKey && !event.ctrlKey) {
+    event.preventDefault();
+    openComposer();
+  }
+  if (event.key === "Escape" && !$("#compose-dialog").open) {
+    if ($(".popover:not([hidden])")) closePopovers(null);
+    else if (drawer) closeDrawer();
+    else if (tracked || flash) setTracking("");
+  }
+});
+
+const initialTicket = ticket(query.get("track"));
+if (initialTicket) {
+  tracked = initialTicket.id;
+  drawer = { type: "ticket", id: tracked };
+}
+render();
+</script>
+</body>
+</html>

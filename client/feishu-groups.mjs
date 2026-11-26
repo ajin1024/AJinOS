@@ -28,6 +28,18 @@ export function changeScanInterval(workspace, minutes) {
   scheduledRules(workspace).forEach((rule, i) => (rule.when.cron = cron[i]));
 }
 
+export function addScanRules(workspace, { worker, command, cwd }) {
+  workspace.rules.agents[readerId] = { name: "飞书群聊采集", worker, use: "command", command };
+  const crons = schedule(5);
+  for (const [i, name] of scheduleNames.entries()) {
+    workspace.rules.rules.push({ name, to: readerId, when: { cron: crons[i] }, cwd, group: "飞书采集" });
+  }
+}
+
+export function hasScanRules(workspace) {
+  return workspace.rules.agents[readerId] || workspace.rules.rules.some((rule) => scheduleNames.includes(rule.name));
+}
+
 export function groupsFor(settings) {
   return settings.groups.map(({ id, name, mode, targets, enabledSince }) => ({
     id,
@@ -91,6 +103,8 @@ export async function searchFeishuGroups(program, query) {
     "--page-size",
     "50",
   ]);
+  if (data?.chats === null && data.total === 0 && data.has_more === false)
+    return { groups: [], partial: false };
   if (!Array.isArray(data?.chats)) throw new Error("飞书没有返回群聊列表");
   const groups = data.chats
     .filter(

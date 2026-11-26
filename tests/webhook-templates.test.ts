@@ -1,6 +1,6 @@
 // Failure modes: a vendor receives the wrong JSON shape; an HTTP 200 API error is acknowledged as delivered; Discord
 // content exceeds its documented limit; externally supplied text triggers mentions; an unknown template is silently used;
-// WeCom renders what an Agent wrote as markup, so its text can pass off a link of its own as the card's.
+// WeCom renders agent markup as links, or DingTalk rejects messages that omit the configured robot keyword.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -58,7 +58,11 @@ for (const platform of ["dingtalk", "wecom", "slack", "discord"])
     try {
       await webhook({
         hub,
-        options: { platform, url: `http://127.0.0.1:${(server.address() as any).port}` },
+        options: {
+          platform,
+          url: `http://127.0.0.1:${(server.address() as any).port}`,
+          ...(platform === "dingtalk" && { keyword: "AJinOS" }),
+        },
         log: () => {},
         signal: stop.signal,
       });
@@ -68,6 +72,7 @@ for (const platform of ["dingtalk", "wecom", "slack", "discord"])
     assert.equal(received.length, 2);
     if (platform === "dingtalk") {
       assert.equal(received[0].msgtype, "text");
+      assert.match(received[0].text.content, /^AJinOS\n/);
       assert.match(received[0].text.content, /正文/);
       assert.deepEqual(calls, ["delivered", "failed"]);
     }

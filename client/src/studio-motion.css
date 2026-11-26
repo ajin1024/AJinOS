@@ -5,7 +5,7 @@
   --studio-motion-ease: cubic-bezier(0.2, 0.72, 0.25, 1);
 }
 
-.studio-header :is(.nav-item, .button, .studio-status-capsule),
+.studio-header :is(.nav-item, .button, .rail-control),
 .mc-page :is(.mc-conversation, .mc-filter-chip, .mc-icon-button, .mc-option-toggle),
 .sc-nav-item,
 .ps-project-link,
@@ -22,36 +22,11 @@
   outline-offset: -2px;
 }
 
-.studio-status-capsule > .semi-icon:last-child,
 .mc-option-toggle > .semi-icon {
   transition: transform var(--studio-motion-feedback) var(--studio-motion-ease);
 }
-.studio-status-capsule[aria-expanded="true"] > .semi-icon:last-child,
 .mc-option-toggle[aria-expanded="true"] > .semi-icon {
   transform: rotate(180deg);
-}
-
-.studio-capsule-dropdown {
-  transform-origin: top right;
-  visibility: hidden;
-  opacity: 0;
-  transform: translateY(-4px) scale(0.985);
-  transition:
-    transform var(--studio-motion-exit) var(--studio-motion-ease),
-    opacity var(--studio-motion-exit) ease,
-    visibility 0s var(--studio-motion-exit);
-}
-.studio-capsule-dropdown[data-open="true"] {
-  visibility: visible;
-  opacity: 1;
-  transform: none;
-  transition:
-    transform var(--studio-motion-enter) var(--studio-motion-ease),
-    opacity var(--studio-motion-enter) ease,
-    visibility 0s;
-}
-.studio-status-popover {
-  width: min(296px, calc(100vw - 24px));
 }
 
 .semi-modal-content-animate-show {
@@ -145,13 +120,6 @@
 @media (max-width: 650px) {
   .studio-header {
     position: relative;
-  }
-  .studio-header .studio-capsule-wrap {
-    position: static;
-  }
-  .studio-header .studio-capsule-dropdown {
-    right: 10px;
-    top: 100%;
   }
   .studio-header #nav .nav-item {
     padding-block: 9px;

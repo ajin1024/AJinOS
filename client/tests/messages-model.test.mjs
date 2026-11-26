@@ -7,7 +7,27 @@ import {
   filterConversations,
   countActionableConversations,
   diffDesktopNotifications,
+  buildMessageInbox,
 } from "../src/messages/messages-model.mjs";
+
+test("Inbox counts each approval, ticket and unresolved intake once across sources", () => {
+  const card = { id: 7, state: "open", kind: "ask" };
+  const intake = { id: "a", state: "needsProject" };
+  const receipts = [
+    { ticket: { id: 3 }, runs: [{ id: 8 }], workflow: { status: "awaiting_acceptance" } },
+    { ticket: { id: 3 }, runs: [{ id: 9 }], workflow: { status: "awaiting_acceptance" } },
+  ];
+  const inbox = buildMessageInbox({
+    cards: [card, { id: 9, state: "open", kind: "tell" }],
+    conversations: [{ topic: "original", openCards: [card] }],
+    intakes: [intake, intake, { id: "b", state: "routed" }],
+    receipts,
+  });
+  assert.equal(inbox.total, 3);
+  assert.equal(inbox.approvals[0].conversation.topic, "original");
+  assert.equal(inbox.reviews.length, 1);
+  assert.deepEqual(inbox.intakes, [intake]);
+});
 
 const CONFIG = {
   projects: [

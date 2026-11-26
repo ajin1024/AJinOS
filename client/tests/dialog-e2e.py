@@ -41,11 +41,11 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
                 try:
                     page = browser.new_page(viewport={"width": 1440, "height": 960})
                     page.set_default_timeout(15000)
-                    page.goto(url)
-                    page.wait_for_selector(".fc-canvas")
+                    page.goto(url + "/#messages")
+                    page.wait_for_selector(".mc-stage")
 
                     # Create project on first-level Project Space page
-                    page.get_by_role("button", name="项目空间", exact=True).click()
+                    page.get_by_role("button", name="能力与沙箱", exact=True).click()
                     page.get_by_role("button", name="添加项目", exact=True).click()
                     page.locator('input[name="cwd"]').fill(str(workspace))
                     page.get_by_role("button", name="添加项目", exact=True).click()
@@ -78,7 +78,7 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
                     expect(sheet).not_to_be_visible()
 
                     # Move project directory & rule name to verify flow rule isolation
-                    page.locator('#nav [data-view="projects"]').click()
+                    page.locator('#nav [data-view="settings"]').click()
                     page.get_by_role("button", name="查看ui-review", exact=True).click()
                     page.locator('input[name="cwd"]').fill(str(moved))
                     page.get_by_role("button", name="保存项目", exact=True).click()
@@ -93,15 +93,15 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
 
                     # Gateway blockedTerms persistence & real 422 interception
                     page.locator('#nav [data-view="settings"]').click()
-                    page.locator('[data-settings-section="gateway"]').click()
+                    page.locator('[data-settings-section="agents"]').click()
+                    page.get_by_role("button", name="配置项目识别网关").click()
                     page.locator('textarea[name="blockedTerms"]').fill("禁止测试词")
                     page.get_by_role("button", name="保存网关规则", exact=True).click()
                     page.reload()
                     expect(page.locator('textarea[name="blockedTerms"]')).to_have_value("禁止测试词")
 
                     form = page.locator("#new-task-form")
-                    page.locator("#status-capsule").click()
-                    page.locator("#studio-status-menu").get_by_role("button", name="新建任务", exact=True).click()
+                    page.locator("#rail-new-task").click()
                     form.locator('[name="project"]').select_option("ui-review")
                     form.locator('[name="text"]').fill("禁止测试词")
                     page.locator("#dialog-submit").click()

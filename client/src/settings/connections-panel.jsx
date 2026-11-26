@@ -1,19 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { Banner, Button, Empty, Form, Modal, SideSheet, Switch, Tag } from "@douyinfe/semi-ui";
+import { Banner, Button, Empty, Form, Modal, SideSheet, Tag } from "@douyinfe/semi-ui";
 import { IconDelete, IconPlus } from "@douyinfe/semi-icons";
 import { agentOptionsOf, parseList } from "../studio-helpers.mjs";
 
-const DESKTOP_NOTIFY_KEY = "studio-desktop-notify";
-
 const required = (message) => [{ required: true, whitespace: true, message }];
 
-function ConnectionSheet({ editor, config, onSaveConfig, onClose }) {
+export function ConnectionSheet({ editor, config, onSaveConfig, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const kind = editor?.kind;
   const id = editor?.id;
   const bucket = kind === "source" ? "sources" : "channels";
   const old = id ? config.rules?.[bucket]?.[id] : null;
+  const title = `${old ? "编辑" : "添加"}${kind === "source" ? "来源" : "通道"}`;
 
   useEffect(() => {
     setError("");
@@ -49,7 +48,8 @@ function ConnectionSheet({ editor, config, onSaveConfig, onClose }) {
 
   return (
     <SideSheet
-      title={old ? `编辑${kind === "source" ? "来源" : "通道"}` : `添加${kind === "source" ? "来源" : "通道"}`}
+      title={title}
+      aria-label={title}
       visible={!!editor}
       onCancel={() => !busy && onClose()}
       width={460}
@@ -190,23 +190,6 @@ export function ConnectionsPanel({
   const [integrationProject, setIntegrationProject] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [desktopNotify, setDesktopNotify] = useState(() => {
-    try {
-      return localStorage.getItem(DESKTOP_NOTIFY_KEY) !== "off";
-    } catch {
-      return true;
-    }
-  });
-
-  function changeDesktopNotify(next) {
-    setDesktopNotify(next);
-    try {
-      localStorage.setItem(DESKTOP_NOTIFY_KEY, next ? "on" : "off");
-    } catch {
-      /* Storage may be unavailable; the switch still reflects the session choice. */
-    }
-  }
-
   useEffect(() => {
     onEditingChange?.(Boolean(editor || connectChannel || integrationProject));
     return () => onEditingChange?.(false);
@@ -256,28 +239,6 @@ export function ConnectionsPanel({
           <p>管理事件来源、通知通道定义以及仅接收消息的接入配置。</p>
         </div>
       </header>
-
-      <section className="sc-card">
-        <div className="sc-card-head">
-          <h2>桌面端消息接收器</h2>
-          <Tag color="green">已就绪</Tag>
-        </div>
-        <p className="sc-muted">
-          客户端内置消息中心，支持图文对话、行内卡片答复、验收与项目选择；不配置飞书也能完整使用。
-        </p>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <span className="sc-muted">系统通知提醒</span>
-          <Switch checked={desktopNotify} onChange={changeDesktopNotify} aria-label="系统通知提醒" />
-        </div>
-        <div className="sc-header-actions">
-          <span className="sc-muted">
-            全局快捷键：<b>Alt + Shift + A</b> 随时唤起消息输入框
-          </span>
-          <Button size="small" onClick={() => (location.hash = "#messages")}>
-            前往消息中心
-          </Button>
-        </div>
-      </section>
 
       <div className="sc-grid-2">
         <section className="sc-card">

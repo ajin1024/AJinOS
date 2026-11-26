@@ -2,12 +2,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  missionColumnFor,
   BOARD_COLUMNS,
   boardColumnFor,
   cardSubItemsOf,
   formatWaitAge,
   reviewReasonLabel,
 } from "../src/tasks/task-board-model.mjs";
+
+test("Mission Control groups queued, unresolved and cancelled work without losing those tickets", () => {
+  assert.equal(missionColumnFor({ workflow: { status: "queued" } }), "in_progress");
+  assert.equal(missionColumnFor({ intake: { id: "ambiguous" }, workflow: { status: "awaiting_project" } }), "review");
+  assert.equal(missionColumnFor({ workflow: { status: "closed", outcome: "cancelled" } }), "done");
+});
 
 test("boardColumnFor maps every task workflow state into the 7 Kanban columns", () => {
   assert.equal(BOARD_COLUMNS.length, 7);

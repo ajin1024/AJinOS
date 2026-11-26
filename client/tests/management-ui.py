@@ -1,4 +1,4 @@
-# Prevent canvas shortcuts from opening nested dialogs, keep the 4-item top navigation,
+# Prevent canvas shortcuts from losing their direct navigation in the three-entry shell,
 # check independent executor imports, and verify direct navigation + gateway preview/persistence.
 import json
 import os
@@ -39,29 +39,33 @@ def run_test(url):
 
         page.route("**/api/**", protect_workspace)
         page.goto(url)
-        page.wait_for_selector(".fc-canvas")
+        page.wait_for_selector(".super-agent-flow .canvas")
 
-        # Verify 4 clean primary nav items and zero management dialog.
-        for view in ("overview", "tasks", "projects", "settings"):
+        # Verify the three primary entrances.
+        for view in ("messages", "tasks", "settings"):
             expect(page.locator(f'#nav [data-view="{view}"]')).to_have_count(1)
         expect(page.locator("#management-dialog")).to_have_count(0)
 
         # Canvas shortcuts navigate directly to pages/sections.
-        for name, expected_hash, heading in [
-            ("消息接收管理", "#settings/connections", "来源与通知"),
-            ("项目管理", "#projects", None),
-            ("模型执行器管理", "#settings/agents", "执行器与模型"),
-            ("项目网关管理", "#settings/gateway", "项目识别网关"),
-            ("规则与定时", "#settings/rules", "规则与定时"),
+        for node, expected_hash, heading in [
+            ("github", "#settings/connections", "来源与通知"),
+            ("project:ajinos", "#settings/projects/ajinos", None),
+            ("workers", "#settings/agents", "执行器与模型"),
+            ("hub", "#settings/runtime", "运行环境与引擎"),
+            ("timer", "#settings/rules", "规则与定时"),
         ]:
-            page.locator('#nav [data-view="overview"]').click()
-            page.wait_for_selector(".fc-canvas")
-            page.get_by_role("button", name=name, exact=True).click()
+            page.locator('#nav [data-view="tasks"]').click()
+            page.get_by_role("button", name="流转概览").click()
+            page.wait_for_selector(".super-agent-flow .canvas")
+            card = page.locator('.project-card').first if node.startswith('project:') else page.locator(f'[data-node="{node}"]')
+            if node.startswith("project:"):
+                expected_hash = "#settings/projects/" + card.get_attribute("data-node").split(":", 1)[1]
+            (card.get_by_role("button") if node == "workers" else card).click()
             expect(page).to_have_url(re.compile(re.escape(expected_hash) + "$"))
             if heading:
                 expect(page.get_by_role("heading", name=heading, exact=True)).to_be_visible()
             else:
-                expect(page.get_by_role("button", name="添加项目", exact=True)).to_be_visible()
+                expect(page.locator(".ps-page-host")).to_be_visible()
 
         # Verify static import templates and selection in the normal task entry.
         page.locator('[data-settings-section="agents"]').click()
@@ -94,8 +98,7 @@ def run_test(url):
             assert dialog.evaluate("el => el.getBoundingClientRect().width <= window.innerWidth")
             dialog.get_by_role("button", name="取消", exact=True).click()
             page.set_viewport_size({"width": 1600, "height": 1000})
-            page.locator("#status-capsule").click()
-            page.locator("#studio-status-menu").get_by_role("button", name="新建任务", exact=True).click()
+            page.locator("#rail-new-task").click()
             page.locator("#new-task-form select[name=project]").select_option("orders")
             executors = page.locator("#new-task-form select[name=executor] option")
             expect(executors.filter(has_text="我的 Sol 执行器")).to_have_count(1)
@@ -105,7 +108,8 @@ def run_test(url):
         assert not discoveries, discoveries
 
         # Verify gateway preview & save.
-        page.locator('[data-settings-section="gateway"]').click()
+        page.locator('[data-settings-section="agents"]').click()
+        page.get_by_role("button", name="配置项目识别网关").click()
         page.locator('textarea[name="blockedTerms"]').fill("删除生产数据\nDROP TABLE")
         page.locator('textarea[name="probe"]').fill("please drop table orders")
         expect(page.locator("#gateway-probe-result")).to_contain_text("会拦截")
@@ -115,13 +119,13 @@ def run_test(url):
         # Verify responsive layout across all settings sections and projects.
         for width in (1280, 640, 390):
             page.set_viewport_size({"width": width, "height": 800})
-            for section in ("gateway", "rules", "connections", "runtime", "agents", "advanced"):
+            for section in ("rules", "connections", "runtime", "agents", "advanced"):
                 if width < 960:
-                    page.get_by_role("button", name="系统配置导航", exact=True).click()
+                    page.get_by_role("button", name="能力与沙箱导航", exact=True).click()
                 page.locator(f'[data-settings-section="{section}"]').click()
-                expect(page.get_by_role("region", name="系统配置内容")).to_be_visible()
+                expect(page.get_by_role("region", name="能力与沙箱内容")).to_be_visible()
                 assert page.locator("#main").evaluate("el => el.scrollWidth <= el.clientWidth + 1")
-            page.locator('#nav [data-view="projects"]').click()
+            page.locator('#nav [data-view="settings"]').click()
             expect(page.locator(".ps-page-host")).to_be_visible()
             assert page.locator("#main").evaluate("el => el.scrollWidth <= el.clientWidth + 1")
             page.locator('#nav [data-view="settings"]').click()

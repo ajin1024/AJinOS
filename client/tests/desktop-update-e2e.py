@@ -75,9 +75,10 @@ with tempfile.TemporaryDirectory(prefix="studio-desktop-e2e-") as temp:
             browser = wait_for(connect)
             print("Connected", flush=True)
             page = desktop_page(browser, port)
-            page.wait_for_selector(".fc-canvas")
+            page.wait_for_selector(".mc-stage, .super-agent-flow .canvas")
             print("Canvas ready", flush=True)
-            page.locator("#theme-mode").select_option("dark")
+            page.locator("#rail-theme").click()
+            page.locator('#rail-theme-picker [data-theme-choice="dark"]').click()
             config = page.request.get(f"http://127.0.0.1:{port}/api/config").json()
             config["value"]["projects"][0]["aliases"].append("更新后必须保留")
             assert page.request.put(f"http://127.0.0.1:{port}/api/config", headers={"x-studio-action":"1"}, data={"value":config["value"], "revision":config["revision"]}).ok
@@ -99,7 +100,7 @@ with tempfile.TemporaryDirectory(prefix="studio-desktop-e2e-") as temp:
             assert (Path(updated["root"]) / "client/release-proof.txt").read_text(encoding="utf-8") == "真实更新后的程序文件"
             browser = wait_for(connect)
             page = desktop_page(browser, port)
-            page.wait_for_selector(".fc-canvas")
+            page.wait_for_selector(".mc-stage, .super-agent-flow .canvas")
             expect(page.locator("html")).to_have_attribute("data-theme", "dark")
             actual = page.request.get(f"http://127.0.0.1:{port}/api/version").json()
             assert actual["current"]["tag"] == "v90.1.0", actual
@@ -111,7 +112,7 @@ with tempfile.TemporaryDirectory(prefix="studio-desktop-e2e-") as temp:
             wait_for(lambda: switched("v90.0.0"), 60)
             browser = wait_for(connect)
             page = desktop_page(browser, port)
-            page.wait_for_selector(".fc-canvas")
+            page.wait_for_selector(".mc-stage, .super-agent-flow .canvas")
             assert page.request.get(f"http://127.0.0.1:{port}/api/version").json()["current"]["tag"] == "v90.0.0"
             assert "更新后必须保留" in page.request.get(f"http://127.0.0.1:{port}/api/config").json()["value"]["projects"][0]["aliases"]
             assert (repo / "local-work.txt").read_text(encoding="utf-8") == "保留未提交工作"
@@ -129,7 +130,7 @@ with tempfile.TemporaryDirectory(prefix="studio-desktop-e2e-") as temp:
             wait_for(lambda: "自动恢复" in json.loads(state_file.read_text(encoding="utf-8"))["notice"], 240)
             browser = wait_for(connect)
             page = desktop_page(browser, port)
-            page.wait_for_selector(".fc-canvas")
+            page.wait_for_selector(".mc-stage, .super-agent-flow .canvas")
             assert page.request.get(f"http://127.0.0.1:{port}/api/version").json()["current"]["tag"] == "v90.0.0"
             assert page.request.get(f"http://127.0.0.1:{port}/api/state").json()["connected"] is True
             process.stdin.write(b"shutdown\n"); process.stdin.flush()

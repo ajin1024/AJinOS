@@ -71,6 +71,7 @@ export function readWorkbenchData({ home, latest, gateway, activity, pending, ru
         effort: agent.effort || null,
         speed: agent.speed || null,
         worker: runtime.name,
+        ...(["read", "edit", "full"].includes(agent.access) && { access: agent.access }),
         launchedAt: entry.launchedAt ? new Date(entry.launchedAt).toISOString() : null,
       };
       const key = `job:${run.id}:${run.attempts || 0}`;

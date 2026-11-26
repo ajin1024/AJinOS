@@ -1,0 +1,271 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1420" height="1672" viewBox="0 0 1420 1672" role="img" aria-labelledby="title description" xml:lang="zh-CN">
+  <title id="title">AJinOS Super Agent 系统设计</title>
+  <desc id="description">目标架构。触发器进入讨论串，需要执行的事项由 Hub 原生工单承接，再由隔离的 Worker 会话处理。Studio 总管路由统一桌面和飞书私聊，以快路径续接原事项，以慢路径处理新意图，沿用现有 HTTP 与 SSE 协议。</desc>
+  <defs>
+    <style>
+      text { font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif; fill: #1e2940; }
+      .title { font-size: 47px; font-weight: 700; }
+      .heading { font-size: 27px; font-weight: 700; }
+      .section { font-size: 22px; font-weight: 700; }
+      .lead { font-size: 19px; font-weight: 700; }
+      .body { font-size: 17px; }
+      .small { font-size: 15px; }
+      .strong { font-weight: 700; }
+      .muted { fill: #52617a; }
+      .indigo { fill: #3c4b9b; }
+      .teal { fill: #116358; }
+      .amber { fill: #81501c; }
+      .white { fill: #f8faff; }
+      .light { fill: #d5e0f4; }
+      .panel { fill: #fff; stroke: #d4dbea; }
+      .route { fill: none; stroke: #617199; stroke-width: 1.7; marker-end: url(#arrow); }
+      .feedback { fill: none; stroke: #27786c; stroke-width: 1.7; stroke-dasharray: 4 4; marker-end: url(#return); }
+    </style>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#617199"/>
+    </marker>
+    <marker id="return" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#27786c"/>
+    </marker>
+  </defs>
+
+  <rect width="1420" height="1672" fill="#f6f7fa"/>
+  <rect x="52" y="38" width="4" height="20" rx="2" fill="#4d60bb"/>
+  <text x="68" y="50" class="small indigo strong">AJinOS / 目标设计</text>
+  <text x="52" y="105" class="title">Super Agent 系统设计</text>
+  <text x="54" y="137" class="body muted">从同一讨论串接收和答复，在项目沙箱中并行执行，由本人验收关单。</text>
+
+  <g aria-label="图例">
+    <rect x="1018" y="38" width="350" height="107" rx="15" class="panel"/>
+    <text x="1042" y="63" class="small muted strong">图例</text>
+    <circle cx="1048" cy="85" r="6" fill="#4d60bb"/>
+    <text x="1064" y="90" class="small">前台与路由</text>
+    <circle cx="1206" cy="85" r="6" fill="#273956"/>
+    <text x="1222" y="90" class="small">确定性内核</text>
+    <circle cx="1048" cy="111" r="6" fill="#ad7029"/>
+    <text x="1064" y="116" class="small">本人介入</text>
+    <circle cx="1206" cy="111" r="6" fill="#27786c"/>
+    <text x="1222" y="116" class="small">直通与执行</text>
+  </g>
+
+  <g aria-label="对象流转">
+    <text x="52" y="170" class="small muted strong">对象流转</text>
+    <path class="route" d="M356 229H384"/>
+    <path class="route" d="M694 229H722"/>
+    <path class="route" d="M1032 229H1060"/>
+    <g>
+      <rect x="52" y="182" width="302" height="98" rx="15" class="panel"/>
+      <text x="76" y="217" class="section">Trigger</text>
+      <text x="330" y="217" text-anchor="end" class="small muted">触发器</text>
+      <text x="76" y="244" class="body muted">桌面私聊、飞书、GitHub、定时</text>
+      <text x="76" y="265" class="small muted">私聊经 Router，外部来源走标准事件</text>
+    </g>
+    <g>
+      <rect x="390" y="182" width="302" height="98" rx="15" fill="#eff1ff" stroke="#cbd3f1"/>
+      <text x="414" y="217" class="section indigo">Thread</text>
+      <text x="668" y="217" text-anchor="end" class="small indigo">讨论串 / 话题</text>
+      <text x="414" y="244" class="body">消息、答复与卡片聚在原话题</text>
+      <text x="414" y="265" class="small muted">需执行时绑定事项，可关联多张工单</text>
+    </g>
+    <g>
+      <rect x="728" y="182" width="302" height="98" rx="15" fill="#edf1f8" stroke="#c9d4e6"/>
+      <text x="752" y="217" class="section">Ticket</text>
+      <text x="1006" y="217" text-anchor="end" class="small muted">Hub 原生工单</text>
+      <text x="752" y="244" class="body strong">T-xxxxxx</text>
+      <text x="752" y="265" class="small muted">首次派活时开单，同一事项可多轮</text>
+    </g>
+    <g>
+      <rect x="1066" y="182" width="302" height="98" rx="15" fill="#e9f5f1" stroke="#bfdbd3"/>
+      <text x="1090" y="217" class="section teal">Worker Session</text>
+      <text x="1090" y="244" class="body">隔离目录沙箱中的执行会话</text>
+      <text x="1090" y="265" class="small muted">按原绑定优先续接既有会话</text>
+    </g>
+  </g>
+
+  <g aria-label="Studio 客户端与总管路由">
+    <rect x="52" y="307" width="1316" height="787" rx="22" fill="#eceff8" stroke="#ccd4e7"/>
+    <text x="76" y="346" class="section indigo">Studio 客户端层</text>
+    <text x="291" y="345" class="small indigo">顶层导航 5 → 3</text>
+    <text x="1344" y="345" text-anchor="end" class="small muted">位于内核之外 · 桌面端与飞书私聊同构</text>
+
+    <g aria-label="对话默认入口">
+      <rect x="76" y="368" width="850" height="257" rx="16" class="panel"/>
+      <text x="100" y="400" class="section indigo">① 对话</text>
+      <text x="902" y="399" text-anchor="end" class="small muted">默认主入口 · 消息和人工处理合在同一条对话流</text>
+      <path d="M77 418H925 M338 418V624" fill="none" stroke="#dde3f0"/>
+
+      <rect x="96" y="432" width="222" height="35" rx="8" fill="#eff1ff"/>
+      <circle cx="113" cy="450" r="4" fill="#4d60bb"/>
+      <text x="125" y="455" class="small strong indigo">置顶 AJinOS 主私聊</text>
+
+      <rect x="96" y="478" width="222" height="62" rx="8" fill="#fff2dd"/>
+      <text x="120" y="503" class="small strong amber">待我处理 Inbox</text>
+      <text x="120" y="525" class="small amber">待拍板 / 待验收 / 歧义</text>
+
+      <text x="100" y="566" class="body strong">Threads</text>
+      <text x="100" y="589" class="small muted">按活跃时间排序</text>
+      <text x="100" y="610" class="small muted">项目仅作标签与筛选</text>
+
+      <text x="362" y="450" class="body strong">主私聊 / 所选话题</text>
+      <text x="362" y="475" class="small muted">本人消息与 Router / Worker 回复</text>
+      <rect x="362" y="489" width="294" height="37" rx="8" fill="#eef2fa"/>
+      <text x="386" y="513" class="small">状态卡 · 进度与验收依据</text>
+      <rect x="362" y="536" width="294" height="37" rx="8" fill="#fff2dd"/>
+      <text x="386" y="560" class="small amber">计划卡 · 步骤、依赖及确认</text>
+      <text x="362" y="603" class="small muted">卡片可回到所属 Thread</text>
+
+      <rect x="680" y="432" width="222" height="168" rx="10" fill="#f8f9fe" stroke="#a9b5d4" stroke-dasharray="5 4"/>
+      <text x="704" y="463" class="body strong indigo">详情抽屉</text>
+      <text x="704" y="490" class="small muted">默认收起，点卡按需展开</text>
+      <path d="M704 506H878" stroke="#dae0f1"/>
+      <text x="704" y="535" class="small">why / 日志</text>
+      <text x="704" y="563" class="small">AI 校验 / 本人验收</text>
+    </g>
+
+    <g aria-label="运行与低频配置入口">
+      <rect x="946" y="368" width="398" height="116" rx="16" class="panel"/>
+      <text x="970" y="400" class="section indigo">② 运行</text>
+      <text x="1320" y="399" class="small muted" text-anchor="end">Mission Control</text>
+      <text x="970" y="435" class="body">工单看板 / DAG 协作计划 / SVG 流转画布</text>
+      <text x="970" y="460" class="small muted">从运行状态下钻排查卡点、批量验收</text>
+
+      <rect x="946" y="500" width="398" height="125" rx="16" class="panel"/>
+      <text x="970" y="532" class="section indigo">③ 能力与沙箱</text>
+      <text x="1320" y="531" class="small muted" text-anchor="end">低频配置</text>
+      <text x="970" y="559" class="small">项目领地 · 目录 / 画像 / 规则 / 权限</text>
+      <text x="970" y="582" class="small">执行器 · 规划 / 执行 / 校验及降级链</text>
+      <text x="970" y="605" class="small">MemoryStore 长期记忆档案 · 外部来源与通道</text>
+    </g>
+
+    <path class="route" d="M504 628V649"/>
+    <g aria-label="总管快慢路径">
+      <rect x="76" y="653" width="1268" height="413" rx="16" fill="#f8f9ff" stroke="#b9c5e6"/>
+      <text x="100" y="690" class="heading indigo">Router 总管路由层</text>
+      <text x="1320" y="687" class="small indigo" text-anchor="end">拟合并 client/gateway.mjs + client/chief.mjs</text>
+      <text x="100" y="716" class="body muted">唯一常驻轻量路由 · 校验本人、消息去重与话题绑定 · 目录、执行器和权限取自可信规则</text>
+
+      <g aria-label="Fast Path 确定性直通">
+        <rect x="100" y="735" width="382" height="270" rx="13" fill="#eaf5f2" stroke="#bddbd2"/>
+        <text x="124" y="772" class="section teal">Fast Path</text>
+        <text x="458" y="770" text-anchor="end" class="small teal strong">确定性直通</text>
+        <text x="124" y="797" class="small muted">沿用绑定与协议，零重模型开销</text>
+
+        <rect x="124" y="815" width="334" height="80" rx="9" fill="#fff"/>
+        <text x="148" y="839" class="body teal strong">Thread 直通</text>
+        <text x="148" y="862" class="small">已有 Thread / Ticket 续聊 → 原事项</text>
+        <text x="148" y="884" class="small muted">沿原 Worker 绑定续接，跳过项目识别</text>
+
+        <rect x="124" y="902" width="334" height="84" rx="9" fill="#fff"/>
+        <text x="148" y="930" class="body teal strong">协议操作与零消耗简报</text>
+        <text x="148" y="953" class="small">审批卡回答 / 验收关单 → 原协议</text>
+        <text x="148" y="974" class="small muted">固定全局简报 → 直接读取状态快照</text>
+      </g>
+
+      <g aria-label="Slow Path 主私聊新意图分流">
+        <rect x="502" y="735" width="818" height="270" rx="13" fill="#eef0fd" stroke="#d0d7f0"/>
+        <text x="526" y="772" class="section indigo">Slow Path</text>
+        <text x="526" y="797" class="small muted">主私聊新意图 · 按需调用规划角色 · 仅选择已登记项目与流程</text>
+
+        <g>
+          <rect x="522" y="815" width="246" height="171" rx="9" fill="#fff"/>
+          <text x="546" y="847" class="lead indigo">A · 全局进度问答</text>
+          <text x="546" y="876" class="small">Router 只读状态快照</text>
+          <text x="546" y="899" class="small">在主私聊原地答复</text>
+          <rect x="546" y="939" width="96" height="29" rx="7" fill="#eff1ff"/>
+          <text x="594" y="959" text-anchor="middle" class="small indigo strong">0 工单</text>
+        </g>
+        <g>
+          <rect x="788" y="815" width="246" height="171" rx="9" fill="#fff"/>
+          <text x="812" y="847" class="lead indigo">B · 单项目明确任务</text>
+          <text x="812" y="876" class="small">目标明确即提交标准事件</text>
+          <text x="812" y="899" class="small">Hub 开单并派发 Worker</text>
+          <text x="812" y="922" class="small muted">取消默认需求确认</text>
+          <rect x="812" y="939" width="96" height="29" rx="7" fill="#eff1ff"/>
+          <text x="860" y="959" text-anchor="middle" class="small indigo strong">1 工单</text>
+        </g>
+        <g>
+          <rect x="1054" y="815" width="246" height="171" rx="9" fill="#fff"/>
+          <text x="1078" y="847" class="lead indigo">C · 跨项目复合目标</text>
+          <text x="1078" y="876" class="small">原地发出 DAG 计划卡</text>
+          <text x="1078" y="899" class="small">本人确认后拆单并派发</text>
+          <text x="1078" y="922" class="small muted">按依赖推进 · 产物只读交接</text>
+          <rect x="1078" y="939" width="96" height="29" rx="7" fill="#eff1ff"/>
+          <text x="1126" y="959" text-anchor="middle" class="small indigo strong">N 工单</text>
+          <path d="M1200 945H1214L1230 954 M1200 963H1214L1230 954 M1236 954H1261" fill="none" stroke="#6374bb" stroke-width="1.4"/>
+          <circle cx="1200" cy="945" r="3.5" fill="#6374bb"/>
+          <circle cx="1200" cy="963" r="3.5" fill="#6374bb"/>
+          <circle cx="1232" cy="954" r="3.5" fill="#6374bb"/>
+          <path d="M1257 950L1262 954 1257 958" fill="none" stroke="#6374bb" stroke-width="1.4"/>
+        </g>
+      </g>
+
+      <rect x="100" y="1020" width="1220" height="29" rx="7" fill="#ffefd8"/>
+      <text x="124" y="1040" class="small amber">目标或归属有歧义时发澄清卡 · 命中 askFirst 则在高危动作前发审批卡 · 发卡后结束本轮</text>
+    </g>
+
+    <path class="route" d="M691 1069V1119"/>
+    <path class="feedback" d="M729 1119V1069"/>
+  </g>
+
+  <g aria-label="现有 Hub 协议边界">
+    <rect x="52" y="1122" width="1316" height="91" rx="15" fill="#e8edf7" stroke="#c7d2e5"/>
+    <text x="76" y="1156" class="section">/v1 HTTP + SSE</text>
+    <text x="298" y="1155" class="body muted">现有 Hub 协议边界</text>
+    <text x="1344" y="1155" class="small teal strong" text-anchor="end">虚线 · 结构化回执与卡片回到原 Thread</text>
+    <path d="M76 1167H1344 M495 1176V1199 M916 1176V1199" fill="none" stroke="#c7d2e5"/>
+    <text x="76" y="1194" class="small">写入 · /v1/events · 卡片回答 · 工单关单</text>
+    <text x="519" y="1194" class="small">读取 · /v1/state → /v1/stream · why</text>
+    <text x="940" y="1194" class="small">GitHub 来源直发 · 定时由 Hub 到期唤醒</text>
+    <path class="route" d="M389 1215V1239"/>
+    <path class="feedback" d="M421 1239V1215"/>
+  </g>
+
+  <g aria-label="确定性内核与执行生态">
+    <rect x="52" y="1242" width="708" height="191" rx="17" fill="#273956"/>
+    <text x="76" y="1280" class="heading white">Hub 确定性内核</text>
+    <text x="736" y="1278" class="body light" text-anchor="end">kernel/</text>
+    <text x="76" y="1309" class="body light">零外部依赖 · 不联网、不调模型</text>
+    <path d="M76 1324H736 M398 1336V1406" fill="none" stroke="#587091"/>
+    <text x="76" y="1354" class="body white strong">事件溯源与原生工单</text>
+    <text x="76" y="1380" class="small light">只追加事实日志 · 重放重建投影</text>
+    <text x="76" y="1406" class="small light">规则匹配与并发控制 · T-xxxxxx</text>
+    <text x="422" y="1354" class="body white strong">挂起零消耗 · 8 跳熔断</text>
+    <text x="422" y="1380" class="small light">待答或待复查时释放进程</text>
+    <text x="422" y="1406" class="small light">超过 8 跳只记录并通知，停止派发</text>
+
+    <path class="route" d="M763 1303H816"/>
+    <path class="feedback" d="M816 1382H763"/>
+    <rect x="820" y="1242" width="548" height="191" rx="17" fill="#e6f4ef" stroke="#b9d8ce"/>
+    <text x="844" y="1280" class="heading teal">Worker 与插件生态</text>
+    <text x="1344" y="1278" class="small teal" text-anchor="end">worker/ · plugins/</text>
+    <text x="844" y="1309" class="body teal">Claude Code / Codex / ACP / DSH / CLI</text>
+    <path d="M844 1324H1344" stroke="#bedbd2"/>
+    <text x="844" y="1351" class="small">领活 /v1/work · 按可信规则隔离目录和权限并发执行</text>
+    <text x="844" y="1377" class="small">结构化回执能力 · taskReportVersion: 1</text>
+    <text x="844" y="1403" class="small muted">交回 /v1/runs/:run/result · 验收证据、提问和通知</text>
+  </g>
+
+  <g aria-label="四条不可破红线">
+    <text x="52" y="1467" class="section amber">四条不可破红线</text>
+    <g>
+      <rect x="52" y="1483" width="646" height="70" rx="11" fill="#fffaf1" stroke="#e8d9c2"/>
+      <text x="76" y="1510" class="body amber strong">指令与资料分离</text>
+      <text x="76" y="1535" class="small">可信规则提供执行指令。用户原话、外部事件和长期记忆只进只读资料文件。</text>
+    </g>
+    <g>
+      <rect x="722" y="1483" width="646" height="70" rx="11" fill="#fffaf1" stroke="#e8d9c2"/>
+      <text x="746" y="1510" class="body amber strong">askFirst 高危审批</text>
+      <text x="746" y="1535" class="small">按可信规则先发卡请本人拍板。回答经原协议唤醒原事项。</text>
+    </g>
+    <g>
+      <rect x="52" y="1566" width="646" height="70" rx="11" fill="#fffaf1" stroke="#e8d9c2"/>
+      <text x="76" y="1593" class="body amber strong">本人签收关单</text>
+      <text x="76" y="1618" class="small">AI 最多把任务推进到待验收。本人核对证据后签收关单。</text>
+    </g>
+    <g>
+      <rect x="722" y="1566" width="646" height="70" rx="11" fill="#fffaf1" stroke="#e8d9c2"/>
+      <text x="746" y="1593" class="body amber strong">桌面与飞书同一入口模型</text>
+      <text x="746" y="1618" class="small">两端共享同一 Router 与 Thread 模型，回复和卡片沿用原绑定。</text>
+    </g>
+  </g>
+</svg>

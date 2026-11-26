@@ -1,722 +1,619 @@
-import React, { useEffect, useState } from "react";
-import { Banner, Button, Empty, Modal, Select, Tag } from "@douyinfe/semi-ui";
-import { IconClose, IconPlus } from "@douyinfe/semi-icons";
+import React, { useEffect, useRef, useState } from "react";
+import { Banner, Button, Modal, Select, Switch } from "@douyinfe/semi-ui";
+import {
+  IconComment, IconClose, IconDesktop, IconFeishuLogo, IconPlay, IconPlus, IconSearch, IconTickCircle, IconUser, IconUserGroup,
+} from "@douyinfe/semi-icons";
+import { ConnectionSheet } from "./connections-panel.jsx";
+import { NotificationChannelSheet } from "./notification-channel-sheet.jsx";
+import { notificationPlatforms } from "../channel-platforms.mjs";
+import channelCss from "./feishu-panel.css";
 
-export function FeishuPanel({ api, toast, onEditingChange }) {
-  const [settings, setSettings] = useState(null);
-  const [loadError, setLoadError] = useState("");
-  const [intervalDraft, setIntervalDraft] = useState("");
-  const [editor, setEditor] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [editorError, setEditorError] = useState("");
-  const [removeConfirm, setRemoveConfirm] = useState(false);
-  const [authStatus, setAuthStatus] = useState(null);
-  const [authBusy, setAuthBusy] = useState("");
-  const [qrState, setQrState] = useState(null);
+const DESKTOP_NOTIFY_KEY = "studio-desktop-notify";
+const SCAN_CONFIRM_TEXT = "我已扫码确认";
 
-  const modeLabel = (mode) => (mode === "mentions" ? "仅 @ 消息" : "全部消息");
-  const targetName = (target) => (settings && target.id === settings.owner.id ? "本人" : target.name);
+const shortMode = (mode) => (mode === "mentions" ? "仅 @ 消息" : "全部消息");
+const groupInput = ({ id, mode, targets }) => ({
+  id,
+  mode,
+  targetIds: targets.map((target) => target.id),
+});
+const sampleTime = (value) => {
+  if (!value) return "";
+  const date = new Date(/^\d{13}$/.test(String(value)) ? Number(value) : value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+};
 
-  async function loadAuth() {
+function DesktopReceiver() {
+  const [enabled, setEnabled] = useState(() => {
     try {
-      setAuthStatus(await api("/feishu/auth/status"));
+      return localStorage.getItem(DESKTOP_NOTIFY_KEY) !== "off";
     } catch {
-      setAuthStatus(null);
+      return true;
+    }
+  });
+
+  function changeNotification(next) {
+    setEnabled(next);
+    try {
+      localStorage.setItem(DESKTOP_NOTIFY_KEY, next ? "on" : "off");
+    } catch {
+      /* Storage may be unavailable; the switch still reflects the session choice. */
     }
   }
 
-  async function startQrLogin() {
-    setAuthBusy("qr");
-    try {
-      const res = await api("/feishu/auth/qr", "POST", {});
-      setQrState(res);
-      toast("请用手机飞书扫描二维码，确认后点击「我已扫码确认」");
-    } catch (error) {
-      toast(error.message || "生成飞书二维码失败", true);
-    } finally {
-      setAuthBusy("");
-    }
-  }
+  return (
+    <section className="sc-card channels-card" aria-labelledby="desktop-channel-name">
+      <div className="channels-identity">
+        <span className="channels-desktop-icon" aria-hidden="true"><IconDesktop size="large" /></span>
+        <div>
+          <div className="channels-provider">
+            <h2 id="desktop-channel-name">桌面端消息接收器</h2>
+            <span className="channels-badge">内置</span>
+          </div>
+          <p className="channels-account">在消息中心发消息、接收任务回执和待办。</p>
+        </div>
+      </div>
+      <div className="channels-purpose channels-desktop-actions">
+        <span id="desktop-channel-notify">系统通知提醒</span>
+        <Switch checked={enabled} onChange={changeNotification} aria-labelledby="desktop-channel-notify" size="small" />
+        <Button className="channels-row-action" size="small" onClick={() => (location.hash = "#messages")}>
+          前往消息中心
+        </Button>
+      </div>
+      <p className="channels-shortcut">快捷输入 <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd></p>
+    </section>
+  );
+}
 
-  async function completeQrLogin() {
-    if (!qrState?.deviceCode) return;
-    setAuthBusy("complete");
-    try {
-      const res = await api("/feishu/auth/complete", "POST", { deviceCode: qrState.deviceCode });
-      if (res?.status) setAuthStatus(res.status);
-      if (res?.ok) {
-        setQrState(null);
-        toast("飞书扫码授权成功！");
-      } else {
-        toast(res?.message || "尚未检测到扫码确认", true);
-      }
-    } catch (error) {
-      toast(error.message || "确认飞书授权失败", true);
-    } finally {
-      setAuthBusy("");
-    }
-  }
+export function FeishuPanel({ api, toast, snapshot, config, onSaveConfig, onSavedConfig, onRestartRequired, onRequestEngineRestart, onEditingChange }) {
+  const [settings, setSettings] = useState(null);
+  const [error, setError] = useState("");
+  const [interval, setInterval] = useState("");
+  const [drawer, setDrawer] = useState(null);
+  const [sourceEditor, setSourceEditor] = useState(null);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [notificationChannels, setNotificationChannels] = useState([]);
+  const [savingInterval, setSavingInterval] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [auth, setAuth] = useState(null);
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState("");
+  const [qr, setQr] = useState(null);
+  const addButton = useRef(null);
+  const authorized = Boolean(auth?.userReady && auth?.openId);
+  const owner = settings?.owner ?? (authorized ? { id: auth.openId, name: "本人", kind: "user" } : null);
+  const wrongAccount = authorized && settings?.owner && settings.owner.id !== auth.openId;
+  const intervalChanged = settings?.configured && settings.interval !== null && Number(interval) !== settings.interval;
 
-  async function applyFeishuAuth() {
-    setAuthBusy("apply");
-    try {
-      await api("/feishu/auth/apply", "POST", {});
-      toast("已将扫码身份自动写入飞书通道配置");
-      await Promise.all([loadAuth(), load()]);
-    } catch (error) {
-      toast(error.message || "写入飞书通道配置失败", true);
-    } finally {
-      setAuthBusy("");
-    }
+  function updateSettings(data, updateInterval = true) {
+    setSettings(data);
+    if (updateInterval) setInterval(data.interval == null ? "" : String(data.interval));
   }
 
   async function load() {
-    setLoadError("");
     try {
-      const data = await api("/feishu-groups");
-      setSettings(data);
-      setIntervalDraft(data.interval === null ? "" : String(data.interval));
-    } catch (error) {
-      setLoadError(error.message);
+      setError("");
+      updateSettings(await api("/feishu-groups"));
+    } catch (cause) {
+      setError(cause.message);
     }
   }
 
-  useEffect(() => {
-    void load();
-    void loadAuth();
-  }, []);
-
-  const intervalChanged =
-    settings && settings.interval !== null && Number(intervalDraft) !== settings.interval;
-
-  useEffect(() => {
-    onEditingChange?.(Boolean(editor || saving || intervalChanged));
-    return () => onEditingChange?.(false);
-  }, [editor, saving, intervalChanged, onEditingChange]);
-
-  async function persist(groups, interval) {
-    setSaving(true);
+  async function loadAuth() {
     try {
-      const updated = await api("/feishu-groups", "PUT", {
-        revision: settings.revision,
-        interval,
-        groups: groups.map(({ id, mode, targets }) => ({
-          id,
-          mode,
-          targetIds: targets.map((t) => t.id),
-        })),
-      });
-      setSettings(updated);
-      setIntervalDraft(updated.interval === null ? "" : String(updated.interval));
-      return updated;
-    } finally {
-      setSaving(false);
+      setAuthError("");
+      setAuth(await api("/feishu/auth/status"));
+    } catch (cause) {
+      setAuthError(cause.message);
     }
+  }
+
+  useEffect(() => { void load(); }, []);
+  useEffect(() => { void loadAuth(); }, [snapshot.connected, snapshot.restartRequired]);
+  useEffect(() => {
+    let current = true;
+    void api("/notification-channels").then(({ channels }) => {
+      if (current) setNotificationChannels(channels);
+    }).catch((cause) => { if (current && cause.status !== 404) toast(cause.message, true); });
+    return () => { current = false; };
+  }, [snapshot.connected, snapshot.restartRequired]);
+  useEffect(() => {
+    onEditingChange?.(Boolean(drawer || sourceEditor || setupOpen || restoreOpen || qr || intervalChanged || savingInterval));
+    return () => onEditingChange?.(false);
+  }, [drawer, sourceEditor, setupOpen, restoreOpen, qr, intervalChanged, savingInterval, onEditingChange]);
+
+  async function authorization(action) {
+    setAuthBusy(action);
+    setAuthError("");
+    try {
+      if (action === "qr") {
+        setQr(await api("/feishu/auth/qr", "POST", {}));
+      } else if (action === "complete") {
+        const result = await api("/feishu/auth/complete", "POST", { deviceCode: qr.deviceCode });
+        if (!result.ok) throw new Error(result.message || "尚未检测到扫码确认");
+        setQr(null);
+        await loadAuth();
+        toast("飞书授权成功");
+      } else {
+        const result = await api("/feishu/auth/apply", "POST", {});
+        if (result.config) onSavedConfig?.(result.config);
+        else if (result.restartRequired) onRestartRequired?.();
+        await loadAuth();
+        toast(result.restartRequired ? "通知已配置，重启引擎后生效" : "通知已配置");
+      }
+    } catch (cause) {
+      setAuthError(action === "apply" && !auth?.notification && cause.status === 404
+        ? "请退出并重新打开 AJinOS，再开启私聊通知。"
+        : cause.message);
+    } finally {
+      setAuthBusy("");
+    }
+  }
+
+  function saveExisting(groups, minutes = settings.interval) {
+    return api("/feishu-groups", "PUT", { revision: settings.revision, interval: minutes, groups: groups.map(groupInput) });
   }
 
   async function saveInterval(event) {
     event.preventDefault();
-    if (saving || !intervalChanged) return;
+    setSavingInterval(true);
     try {
-      await persist(settings.groups, Number(intervalDraft));
+      updateSettings(await saveExisting(settings.groups, Number(interval)));
       toast("扫描周期已保存");
-    } catch (error) {
-      toast(error.message, true);
+    } catch (cause) {
+      toast(cause.message, true);
+    } finally {
+      setSavingInterval(false);
     }
   }
 
-  function openEditor(kind, group = null) {
-    setEditorError("");
-    setEditor({
-      kind,
-      group: group ? structuredClone(group) : null,
-      matches: [],
-      query: "",
-      notice: "",
-      searching: false,
-      roster: null,
-      loadingMembers: false,
-      memberNotice: "",
-      memberQuery: "",
-    });
+  async function saveGroup(group, testId) {
+    const next = drawer.kind === "add"
+      ? await api("/feishu-groups/enable", "POST", { revision: settings.revision, group: groupInput(group), testId })
+      : await saveExisting(settings.groups.map((item) => item.id === group.id ? group : item));
+    updateSettings(next, !intervalChanged);
+    toast(drawer.kind === "add" ? `已启用「${group.name}」采集` : "采集设置已保存");
   }
 
-  function selectChat(chat) {
-    const existing = settings.groups.find((g) => g.id === chat.id);
-    if (existing) {
-      openEditor("edit", existing);
-      toast("该群已在采集名单中");
-      return;
-    }
-    setEditor((prev) => ({
-      ...prev,
-      searching: false,
-      group: { id: chat.id, name: chat.name, mode: "mentions", targets: [settings.owner] },
-      query: chat.name,
-      matches: [],
-      notice: "",
-      roster: null,
-      memberQuery: "",
-      memberNotice: "",
-    }));
+  async function removeGroup(group) {
+    updateSettings(await saveExisting(settings.groups.filter((item) => item.id !== group.id)), !intervalChanged);
+    toast("已移出采集");
   }
 
-  async function searchChats() {
-    if (!editor || editor.searching || editor.group) return;
-    const query = editor.query.trim();
-    if (!query) {
-      setEditor((prev) => ({ ...prev, notice: "请输入群聊名称", matches: [] }));
-      return;
-    }
-    setEditor((prev) => ({ ...prev, searching: true, notice: "正在查找群聊…", matches: [] }));
+  async function restoreGroups() {
+    setRestoring(true);
     try {
-      const result = await api("/feishu-groups/search", "POST", { query });
-      const exact = result.groups.filter((chat) => chat.name.toLowerCase() === query.toLowerCase());
-      if (exact.length === 1 && !result.partial) {
-        selectChat(exact[0]);
-      } else {
-        setEditor((prev) =>
-          prev
-            ? {
-                ...prev,
-                searching: false,
-                matches: result.groups,
-                notice: !result.groups.length
-                  ? "没有找到可读取的群聊"
-                  : result.partial
-                    ? "可以输入更完整的群名缩小范围"
-                    : "",
-              }
-            : prev,
-        );
-      }
-    } catch (error) {
-      setEditor((prev) => (prev ? { ...prev, searching: false, notice: error.message } : prev));
+      updateSettings(await api("/feishu-groups/restore", "POST", { revision: settings.revision }));
+      setRestoreOpen(false);
+      toast("已恢复飞书群聊采集");
+    } catch (cause) {
+      toast(cause.message, true);
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  function closeDrawer() {
+    const returnFocus = drawer.trigger;
+    setDrawer(null);
+    requestAnimationFrame(() => returnFocus?.focus());
+  }
+
+  function savedNotification({ channel, configuration, restartRequired }) {
+    setNotificationChannels((previous) => previous.some(({ id }) => id === channel.id) ? previous : [...previous, channel]);
+    onSavedConfig?.({ ...configuration, restartRequired });
+    setSetupOpen(false);
+    toast(!snapshot.connected ? "连接已保存，启动引擎后生效" : restartRequired ? "连接已保存，重启引擎后生效" : "连接已保存");
+  }
+
+  const notification = auth?.notification;
+  const hasNotification = notification?.configured && notification.accountMatches;
+  const canConfigureNotification = notification?.canConfigure ?? (snapshot.managed && snapshot.connected);
+  const groups = settings?.groups ?? [];
+
+  return (
+    <div className="sc-container channels-page" data-drawer-open={Boolean(drawer)}>
+      <style>{channelCss}</style>
+      <header className="sc-header channels-heading">
+        <div><h1>消息渠道</h1><p>使用内置消息中心，连接外部通知和消息来源。</p></div>
+        <button
+          className="channels-outline"
+          type="button"
+          disabled={Boolean(drawer)}
+          onClick={() => setSetupOpen(true)}
+        >
+          <IconPlus aria-hidden="true" /> 添加其他来源
+        </button>
+      </header>
+      <DesktopReceiver />
+      <section className="sc-card channels-card" aria-labelledby="feishu-channel-name">
+        <div className="channels-identity">
+          <span className="channels-feishu-icon" aria-hidden="true"><IconFeishuLogo size="extra-large" /></span>
+          <div>
+            <div className="channels-provider">
+              <h2 id="feishu-channel-name">飞书</h2>
+              {authorized && <span className="channels-badge is-success"><IconTickCircle aria-hidden="true" />已授权</span>}
+            </div>
+            <p className="channels-account">
+              {authorized && <IconUser size="small" aria-hidden="true" />}
+              {authorized ? (auth.userName || "飞书账号") : auth ? (auth.installed ? "待授权" : "未找到飞书 CLI") : authError ? "授权状态读取失败" : "正在检查授权…"}
+            </p>
+          </div>
+          {(authorized || auth?.installed) && (
+            <Button className="channels-row-action" size="small" theme={authorized ? "borderless" : "solid"}
+              disabled={Boolean(drawer || qr || (authBusy && authBusy !== "qr"))} loading={authBusy === "qr"} onClick={() => authorization("qr")}>
+              {authorized ? "重新扫码授权" : "扫码授权"}
+            </Button>
+          )}
+        </div>
+        <div className="channels-purpose">
+          <IconComment aria-hidden="true" /><span>私聊通知</span>
+          {hasNotification && auth.restartRequired && canConfigureNotification ? (
+            <Button className="channels-row-action" size="small" onClick={onRequestEngineRestart}>重启引擎以生效</Button>
+          ) : hasNotification ? (
+            <span className={`channels-row-action channels-badge ${snapshot.connected ? "is-success" : ""}`}>
+              {snapshot.connected ? "已配置" : "引擎未启动"}
+            </span>
+          ) : authorized && auth.ready && canConfigureNotification ? (
+            <Button className="channels-row-action" size="small" disabled={Boolean(qr || (authBusy && authBusy !== "apply"))}
+              loading={authBusy === "apply"} onClick={() => authorization("apply")}>
+              {notification?.configured ? "改用当前飞书账号" : "开启私聊通知"}
+            </Button>
+          ) : (
+            <span className="channels-row-action sc-muted">
+              {!authorized ? "请先扫码授权" : !auth.ready ? "飞书应用未就绪" : !snapshot.connected ? "请先启动引擎" : "请在引擎端配置"}
+            </span>
+          )}
+        </div>
+        <div className="channels-purpose">
+          <IconUserGroup aria-hidden="true" /><span>群聊采集</span>
+          {groups.length > 0 && <span className="sc-muted">{groups.length} 个群</span>}
+          {settings?.restore ? (
+            <button className="channels-outline channels-row-action" type="button" disabled={!authorized || Boolean(wrongAccount)}
+              onClick={() => setRestoreOpen(true)}>
+              恢复已保存的群
+            </button>
+          ) : <button
+            className="channels-outline channels-row-action"
+            type="button"
+            ref={addButton}
+            aria-expanded={drawer?.kind === "add"}
+            disabled={!authorized || !settings || Boolean(wrongAccount) || Boolean(drawer) || savingInterval}
+            onClick={() => setDrawer({ kind: "add", trigger: addButton.current })}
+          >
+            <IconPlus aria-hidden="true" /> 添加采集群
+          </button>}
+        </div>
+      </section>
+      {notificationChannels.length > 0 && (
+        <section className="sc-card channels-card channels-external" aria-labelledby="external-channel-title">
+          <h2 id="external-channel-title">外部通知</h2>
+          {notificationChannels.map((channel) => (
+            <div className="channels-purpose" key={channel.id}>
+              <span>{channel.name}</span>
+              <small className="sc-muted">{notificationPlatforms[channel.platform]?.name}</small>
+              <span className="channels-row-action channels-badge">
+                {!snapshot.connected ? "待启动" : snapshot.state?.channels?.some(({ id, online }) => id === channel.id && online)
+                  ? "在线" : snapshot.restartRequired ? "待重启" : "已配置"}
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
+      {wrongAccount && <Banner type="warning" closeIcon={null} description="当前授权账号与采集账号不同。切回原飞书账号后可添加新群。" />}
+      {!qr && authError && <Banner type="danger" closeIcon={null} description={authError}
+        extra={!auth && <Button size="small" onClick={loadAuth}>重试</Button>} />}
+      {qr && <Modal title="飞书扫码授权" visible okText={SCAN_CONFIRM_TEXT} onOk={() => authorization("complete")}
+        confirmLoading={authBusy === "complete"} okButtonProps={{ "aria-label": SCAN_CONFIRM_TEXT }}
+        cancelButtonProps={{ "aria-label": "取消", disabled: Boolean(authBusy) }}
+        onCancel={() => {
+          if (authBusy) return;
+          setQr(null);
+          setAuthError("");
+        }}>
+        <div className="channels-qr">
+          {qr.qrDataUrl && <img src={qr.qrDataUrl} alt="飞书扫码授权二维码" />}
+          <p>请用手机飞书确认授权。</p>
+          {qr.userCode && <p>验证码 {qr.userCode}</p>}
+          {!qr.qrDataUrl && qr.url && <p>也可复制授权链接到浏览器打开。<br /><code>{qr.url}</code></p>}
+          {authError && <Banner type="danger" closeIcon={null} description={authError} />}
+        </div>
+      </Modal>}
+      {error && <Banner type="danger" closeIcon={null} description={error} extra={<Button size="small" onClick={load}>重试</Button>} />}
+      {settings?.configured && (
+        <section className="sc-card channels-groups" aria-label="已启用的群">
+          <div className="sc-card-head"><h2>采集群聊</h2></div>
+          {!snapshot.connected && <p className="sc-muted">引擎未启动，启动后按定时规则采集。</p>}
+          <div className="channels-table-wrap">
+            <table className="feishu-table" aria-label="采集群聊">
+              <thead><tr><th scope="col">群聊</th><th scope="col">采集范围</th><th scope="col">@ 对象</th><th scope="col">操作</th></tr></thead>
+              <tbody>
+                {groups.map((group) => (
+                  <tr key={group.id}>
+                    <th scope="row">{group.name}</th>
+                    <td><span className="channels-badge">{shortMode(group.mode)}</span></td>
+                    <td>{group.mode === "mentions" ? group.targets.map((target) => target.name).join("、") : "—"}</td>
+                    <td><Button size="small" disabled={Boolean(drawer) || savingInterval} onClick={(event) => setDrawer({ kind: "edit", group, trigger: event.currentTarget })}>编辑</Button></td>
+                  </tr>
+                ))}
+                {!groups.length && <tr><td colSpan={4} className="feishu-empty">暂无采集群聊</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <details className="channels-details">
+            <summary>扫描设置</summary>
+            <form className="channels-actions" onSubmit={saveInterval}>
+              <label id="feishu-scan-interval-label" htmlFor="feishu-scan-interval">扫描周期</label>
+              <Select
+                id="feishu-scan-interval"
+                aria-labelledby="feishu-scan-interval-label"
+                value={interval}
+                disabled={savingInterval || settings.interval === null}
+                onChange={(value) => setInterval(String(value ?? ""))}
+                optionList={settings.interval === null
+                  ? [{ value: "", label: "自定义定时规则" }]
+                  : settings.intervals.map((n) => ({ value: String(n), label: `每 ${n} 分钟` }))}
+                style={{ width: 132 }}
+              />
+              {settings.interval !== null && <span className="sc-muted" title={settings.timezone}>09:30–18:30</span>}
+              <Button htmlType="submit" size="small" disabled={Boolean(drawer) || savingInterval || !intervalChanged}>保存周期</Button>
+            </form>
+          </details>
+        </section>
+      )}
+      {drawer && (
+        <FeishuGroupDrawer
+          api={api} initial={drawer.group ?? null} groups={groups} owner={owner}
+          onClose={closeDrawer} onSave={saveGroup} onRemove={removeGroup}
+        />
+      )}
+      {setupOpen && (
+        <NotificationChannelSheet api={api} snapshot={snapshot} onClose={() => setSetupOpen(false)} onSaved={savedNotification}
+          onCustomSource={() => { setSetupOpen(false); setSourceEditor({ kind: "source" }); }} />
+      )}
+      <Modal title="恢复群聊采集" visible={restoreOpen} onOk={restoreGroups} onCancel={() => !restoring && setRestoreOpen(false)}
+        okText="恢复采集" cancelText="取消" confirmLoading={restoring}>
+        <p className="sc-muted">从恢复时开始采集以下群的新消息。</p>
+        <ul>{settings?.restore?.groups.map((group) => <li key={group.id}>{group.name} · {shortMode(group.mode)}</li>)}</ul>
+      </Modal>
+      <ConnectionSheet editor={sourceEditor} config={config} onSaveConfig={onSaveConfig} onClose={() => setSourceEditor(null)} />
+    </div>
+  );
+}
+
+function FeishuGroupDrawer({ api, initial, groups, owner, onClose, onSave, onRemove }) {
+  const [group, setGroup] = useState(initial);
+  const [query, setQuery] = useState("");
+  const [matches, setMatches] = useState(null);
+  const [searchError, setSearchError] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [testError, setTestError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [busy, setBusy] = useState("");
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [roster, setRoster] = useState(null);
+  const [memberQuery, setMemberQuery] = useState("");
+  const [memberError, setMemberError] = useState("");
+  const title = initial ? "编辑群聊" : "添加采集群";
+  const valid = group && (group.mode === "all" || group.targets.length > 0);
+  const targetsOwner = group?.targets.length === 1 && group.targets[0].id === owner?.id;
+  const available = [...new Map(
+    [owner, ...(initial?.targets ?? []), ...(group?.targets ?? []), ...(roster?.targets ?? [])]
+      .filter(Boolean).map((target) => [target.id, target]),
+  ).values()].filter((target) => target.name.toLowerCase().includes(memberQuery.trim().toLowerCase()));
+
+  function select(chat) {
+    setGroup({ id: chat.id, name: chat.name, mode: "mentions", targets: [owner] });
+    setPreview(null);
+    setTestError("");
+    setSaveError("");
+    setRoster(null);
+    setMemberQuery("");
+    setMemberError("");
+  }
+
+  function changeScope(change) {
+    setGroup({ ...group, ...change });
+    setPreview(null);
+    setTestError("");
+    setSaveError("");
+  }
+
+  async function search(event) {
+    event.preventDefault();
+    if (!query.trim() || busy) return;
+    setBusy("search");
+    setSearchError("");
+    try {
+      setMatches(await api("/feishu-groups/search", "POST", { query: query.trim() }));
+    } catch (cause) {
+      setSearchError(cause.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function testRead() {
+    setBusy("test");
+    setPreview(null);
+    setTestError("");
+    setSaveError("");
+    try {
+      setPreview(await api("/feishu-groups/test", "POST", groupInput(group)));
+    } catch (cause) {
+      setTestError(cause.message);
+    } finally {
+      setBusy("");
     }
   }
 
   async function loadMembers() {
-    if (!editor?.group || editor.loadingMembers) return;
-    const id = editor.group.id;
-    setEditor((prev) => ({ ...prev, loadingMembers: true, memberNotice: "正在读取群成员…" }));
+    setBusy("members");
+    setMemberError("");
     try {
-      const roster = await api(`/feishu-groups/${encodeURIComponent(id)}/members`);
-      setEditor((prev) =>
-        prev?.group?.id === id
-          ? {
-              ...prev,
-              loadingMembers: false,
-              roster,
-              memberNotice: roster.partial ? "飞书仅返回部分群成员。" : "",
-            }
-          : prev,
-      );
-    } catch (error) {
-      setEditor((prev) =>
-        prev?.group?.id === id ? { ...prev, loadingMembers: false, memberNotice: error.message } : prev,
-      );
+      setRoster(await api(`/feishu-groups/${encodeURIComponent(group.id)}/members`));
+    } catch (cause) {
+      setMemberError(cause.message);
+    } finally {
+      setBusy("");
     }
   }
 
-  function availableTargets() {
-    if (!editor?.group || !settings) return [];
-    const registered = settings.groups.find((g) => g.id === editor.group.id)?.targets ?? [];
-    return [
-      ...new Map(
-        [settings.owner, ...registered, ...editor.group.targets, ...(editor.roster?.targets || [])].map((t) => [
-          t.id,
-          t,
-        ]),
-      ).values(),
-    ];
-  }
-
-  function toggleTarget(target, checked) {
-    setEditor((prev) => {
-      if (!prev?.group) return prev;
-      const nextTargets = checked
-        ? [...prev.group.targets.filter((t) => t.id !== target.id), target]
-        : prev.group.targets.filter((t) => t.id !== target.id);
-      return { ...prev, group: { ...prev.group, targets: nextTargets } };
-    });
-  }
-
-  async function saveGroup(event) {
-    event.preventDefault();
-    if (!editor?.group || editor.searching || saving) return;
-    setEditorError("");
-    const next =
-      editor.kind === "add"
-        ? [...settings.groups, editor.group]
-        : settings.groups.map((item) => (item.id === editor.group.id ? editor.group : item));
+  async function commit(remove = false) {
+    setBusy("save");
+    setSaveError("");
     try {
-      await persist(next, settings.interval);
-      setEditor(null);
-      toast("群聊采集设置已保存");
-    } catch (error) {
-      setEditorError(error.message);
+      if (remove) await onRemove(group);
+      else await onSave(group, preview?.testId);
+      onClose();
+    } catch (cause) {
+      setConfirmRemove(false);
+      setSaveError(cause.message);
+    } finally {
+      setBusy("");
     }
   }
 
-  async function confirmRemove() {
-    if (!editor?.group) return;
-    try {
-      await persist(
-        settings.groups.filter((item) => item.id !== editor.group.id),
-        settings.interval,
-      );
-      setRemoveConfirm(false);
-      setEditor(null);
-      toast("已移出采集");
-    } catch (error) {
-      setRemoveConfirm(false);
-      setEditorError(error.message);
-    }
-  }
-
-  const filteredTargets = editor?.roster
-    ? availableTargets().filter((t) =>
-        `${targetName(t)} ${t.name}`.toLowerCase().includes(editor.memberQuery.trim().toLowerCase()),
-      )
-    : [];
+  const scope = group && (
+    <fieldset className="channels-scope" disabled={Boolean(busy)}>
+      <legend>采集范围</legend>
+      <div className="channels-actions">
+        <label><input type="radio" name="feishu-scope" checked={group.mode === "mentions"} onChange={() => changeScope({ mode: "mentions" })} />
+          {targetsOwner ? "仅采集 @ 我的消息" : "仅采集指定 @ 消息"}
+        </label>
+        <label><input type="radio" name="feishu-scope" checked={group.mode === "all"} onChange={() => changeScope({ mode: "all" })} />采集全部消息</label>
+      </div>
+      {group.mode === "mentions" && (
+        <details className="channels-details">
+          <summary>@ 对象设置</summary>
+          <p className="sc-muted">{group.targets.map((target) => target.name).join("、") || "请选择至少一个 @ 对象"}</p>
+          <Button size="small" loading={busy === "members"} onClick={loadMembers}>选择成员和机器人</Button>
+          {memberError && <p role="alert">{memberError}</p>}
+          {roster && (
+            <>
+              <input className="channels-input" type="search" aria-label="筛选用户或机器人" placeholder="筛选用户或机器人" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} />
+              {roster.partial && <p className="sc-muted">飞书只返回了部分群成员。</p>}
+              <div className="channels-member-list">
+                {available.map((target) => (
+                  <label key={target.id}>
+                    <input type="checkbox" checked={group.targets.some((item) => item.id === target.id)} onChange={(event) =>
+                      changeScope({ targets: event.target.checked ? [...group.targets, target] : group.targets.filter((item) => item.id !== target.id) })
+                    } />
+                    {target.name} <small>{target.kind === "bot" ? "机器人" : "用户"}</small>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </details>
+      )}
+    </fieldset>
+  );
 
   return (
-    <div
-      className="sc-container"
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && editor && !saving) {
-          event.stopPropagation();
-          setEditor(null);
-        }
-      }}
-    >
-      <header className="sc-header">
-        <div>
-          <h1>飞书接入与群聊采集</h1>
-          <p>扫码完成飞书 CLI 授权并一键接入，管理采集群名单、监听模式与扫描周期。</p>
-        </div>
+    <aside className="channels-drawer" aria-labelledby="feishu-drawer-title" onKeyDown={(event) => {
+      if (event.key === "Escape" && busy !== "save" && !confirmRemove) {
+        event.stopPropagation();
+        onClose();
+      }
+    }}>
+      <header className="channels-drawer-head">
+        <h2 id="feishu-drawer-title">{title}</h2>
+        <Button theme="borderless" aria-label="关闭侧栏" icon={<IconClose />} disabled={busy === "save"} onClick={onClose} />
       </header>
-
-      <section className="sc-card">
-        <div className="sc-card-head">
-          <div>
-            <h2>飞书 CLI 扫码接入</h2>
-            <p className="sc-muted">
-              {authStatus ? authStatus.detail : "正在检查本机 lark-cli 登录状态…"}
-            </p>
-          </div>
-          {authStatus && (
-            <Tag color={authStatus.ready ? "green" : authStatus.installed ? "amber" : "grey"} shape="circle">
-              {authStatus.ready ? "已授权就绪" : authStatus.installed ? "待扫码授权" : "未安装 CLI"}
-            </Tag>
-          )}
-        </div>
-        {authStatus?.installed && (
-          <dl className="sc-kv-grid" style={{ marginBottom: 12 }}>
-            <div>
-              <dt>飞书 CLI</dt>
-              <dd><code style={{ fontSize: 11 }}>{authStatus.larkPath}</code></dd>
-            </div>
-            <div>
-              <dt>当前账号</dt>
-              <dd>{authStatus.userName ? `${authStatus.userName} (${authStatus.openId})` : authStatus.openId || "未登录"}</dd>
-            </div>
-            <div>
-              <dt>应用 App ID</dt>
-              <dd><code>{authStatus.appId || "未绑定"}</code></dd>
-            </div>
-          </dl>
-        )}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <Button size="small" loading={authBusy === "qr"} disabled={!authStatus?.installed || !!authBusy} onClick={startQrLogin}>
-            {authStatus?.ready ? "重新扫码授权" : "扫码登录飞书"}
-          </Button>
-          {authStatus?.ready && (
-            <Button size="small" theme="solid" loading={authBusy === "apply"} disabled={!!authBusy} onClick={applyFeishuAuth}>
-              一键写入飞书通道配置
-            </Button>
-          )}
-          <Button size="small" disabled={!!authBusy} onClick={() => void loadAuth()}>
-            刷新状态
-          </Button>
-        </div>
-        {qrState && (
-          <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center" }}>
-            {qrState.qrDataUrl && (
-              <img
-                src={qrState.qrDataUrl}
-                alt="飞书扫码授权二维码"
-                style={{ width: 180, height: 180, borderRadius: 8, background: "#fff", padding: 6 }}
-              />
-            )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 420 }}>
-              <strong>请用手机飞书扫码确认授权</strong>
-              {qrState.userCode && (
-                <span className="sc-muted">验证码：<code>{qrState.userCode}</code></span>
-              )}
-              <code style={{ fontSize: 11, overflowWrap: "anywhere" }}>{qrState.url}</code>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Button theme="solid" size="small" loading={authBusy === "complete"} onClick={completeQrLogin}>
-                  我已扫码确认
-                </Button>
-                <Button size="small" disabled={authBusy === "complete"} onClick={() => setQrState(null)}>
-                  取消
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {loadError && (
-        <Banner
-          type="danger"
-          description={loadError}
-          closeIcon={null}
-          extra={
-            <Button size="small" onClick={() => void load()}>
-              重试
-            </Button>
-          }
-        />
-      )}
-
-      {!settings && !loadError && <p className="sc-muted">正在读取采集设置…</p>}
-
-      {settings && !settings.configured && (
-        <section className="sc-card">
-          <Empty title="当前数据目录尚未接入飞书群聊采集" />
-        </section>
-      )}
-
-      {settings && settings.configured && (
-        <div className={`sc-feishu-layout ${editor ? "has-editor" : ""}`}>
-          <section className="sc-card" style={{ gap: 16 }}>
-            <div className="sc-feishu-toolbar">
-              <form className="sc-feishu-schedule" onSubmit={saveInterval}>
-                <label id="feishu-scan-interval-label" htmlFor="feishu-scan-interval" style={{ fontSize: 13, fontWeight: 560 }}>
-                  扫描周期
-                </label>
-                <Select
-                  id="feishu-scan-interval"
-                  aria-labelledby="feishu-scan-interval-label"
-                  value={intervalDraft}
-                  disabled={saving || settings.interval === null}
-                  onChange={(value) => setIntervalDraft(String(value ?? ""))}
-                  style={{ width: 130 }}
-                  optionList={[
-                    ...(settings.interval === null
-                      ? [{ value: "", label: "自定义定时规则" }]
-                      : []),
-                    ...settings.intervals.map((n) => ({ value: String(n), label: `每 ${n} 分钟` })),
-                  ]}
+      <div className="channels-drawer-scroll">
+        {initial ? <div className="channels-edit"><h3>{initial.name}</h3>{scope}</div> : (
+          <>
+            <section className="channels-step">
+              <span className="channels-step-dot" aria-hidden="true">1</span>
+              <h3>选择群聊</h3>
+              <p>搜索并选中要采集的飞书群。</p>
+              <form className="channels-search" onSubmit={search}>
+                <IconSearch aria-hidden="true" />
+                <input
+                  autoFocus type="search" aria-label="搜索群名称" placeholder="搜索群名称" maxLength={64}
+                  value={query} disabled={Boolean(busy)} onChange={(event) => {
+                    setQuery(event.target.value);
+                    setMatches(null);
+                    setGroup(null);
+                    setPreview(null);
+                    setSearchError("");
+                    setTestError("");
+                    setSaveError("");
+                  }}
                 />
-                {settings.interval !== null && (
-                  <span className="sc-muted" style={{ fontSize: 12 }} title={settings.timezone || "系统时区"}>
-                    09:30–18:30
-                  </span>
-                )}
-                <Button htmlType="submit" size="small" disabled={saving || !intervalChanged}>
-                  保存周期
-                </Button>
+                <button type="submit" disabled={!query.trim() || Boolean(busy)}>{busy === "search" ? "查找中…" : "搜索"}</button>
               </form>
-              <Button theme="solid" icon={<IconPlus aria-hidden="true" />} disabled={saving} onClick={() => openEditor("add")}>
-                添加群聊
-              </Button>
-            </div>
-
-            <div style={{ overflowX: "auto" }}>
-              <table className="feishu-table" aria-label="采集群聊" style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th scope="col" style={{ textAlign: "left", padding: "10px 12px", borderBottom: "1px solid var(--ui-line)" }}>
-                      群聊
-                    </th>
-                    <th scope="col" style={{ textAlign: "left", padding: "10px 12px", borderBottom: "1px solid var(--ui-line)" }}>
-                      监听模式
-                    </th>
-                    <th scope="col" style={{ textAlign: "left", padding: "10px 12px", borderBottom: "1px solid var(--ui-line)" }}>
-                      @ 对象
-                    </th>
-                    <th scope="col" style={{ textAlign: "right", padding: "10px 12px", borderBottom: "1px solid var(--ui-line)" }}>
-                      操作
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {settings.groups.length ? (
-                    settings.groups.map((group) => {
-                      const names = group.mode === "mentions" ? group.targets.map(targetName).join("、") : "";
-                      const selected = editor?.group?.id === group.id;
-                      return (
-                        <tr
-                          key={group.id}
-                          style={{
-                            background: selected ? "var(--ui-soft)" : undefined,
-                            borderBottom: "1px solid var(--ui-line)",
-                          }}
-                        >
-                          <th scope="row" style={{ textAlign: "left", padding: "12px", fontWeight: 600 }}>
-                            {group.name}
-                          </th>
-                          <td style={{ padding: "12px" }}>
-                            <Tag color={group.mode === "mentions" ? "cyan" : "grey"} shape="circle">
-                              {modeLabel(group.mode)}
-                            </Tag>
-                          </td>
-                          <td style={{ padding: "12px", color: "var(--ui-muted)" }} title={names}>
-                            {names || "—"}
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "right" }}>
-                            <Button size="small" disabled={saving} onClick={() => openEditor("edit", group)}>
-                              编辑
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan={4} style={{ padding: 24, textAlign: "center", color: "var(--ui-muted)" }}>
-                        暂无采集群聊
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          {editor && (
-            <aside className="sc-feishu-editor" aria-labelledby="feishu-editor-title">
-              <form onSubmit={saveGroup} style={{ display: "flex", flexDirection: "column", minHeight: 0, height: "100%" }}>
-                <header className="sc-feishu-editor-head">
-                  <h2 id="feishu-editor-title">{editor.kind === "edit" ? "编辑群聊" : "添加群聊"}</h2>
-                  <Button
-                    theme="borderless"
-                    size="small"
-                    icon={<IconClose aria-hidden="true" />}
-                    aria-label="关闭侧栏"
-                    disabled={saving}
-                    onClick={() => setEditor(null)}
-                  />
-                </header>
-                <div className="sc-feishu-editor-body">
-                  <div>
-                    {editor.kind === "add" ? (
-                      <>
-                        <label htmlFor="feishu-chat-query" style={{ display: "block", fontSize: 13, fontWeight: 560, marginBottom: 6 }}>
-                          群聊名称
-                        </label>
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <input
-                            id="feishu-chat-query"
-                            type="search"
-                            maxLength={64}
-                            autoFocus
-                            value={editor.query}
-                            placeholder="输入飞书群聊名称"
-                            autoComplete="off"
-                            style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--ui-line)" }}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setEditor((prev) => ({
-                                ...prev,
-                                query: value,
-                                notice: "",
-                                matches: [],
-                                group: null,
-                                roster: null,
-                                memberNotice: "",
-                              }));
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                                e.preventDefault();
-                                void searchChats();
-                              }
-                            }}
-                          />
-                          <Button disabled={editor.searching} onClick={() => void searchChats()}>
-                            查找
-                          </Button>
-                        </div>
-                        <div className="sc-feishu-matches" aria-live="polite">
-                          {editor.group ? (
-                            <span style={{ color: "var(--ui-accent-ink)", fontSize: 12.5 }}>✓ 已匹配群聊</span>
-                          ) : (
-                            <>
-                              {editor.notice && <p className="sc-muted" style={{ fontSize: 12 }}>{editor.notice}</p>}
-                              {editor.matches.map((chat) => {
-                                const details = [
-                                  chat.external && "外部群",
-                                  chat.members && `${chat.members} 人`,
-                                  chat.id.slice(-6),
-                                ].filter(Boolean);
-                                return (
-                                  <button
-                                    key={chat.id}
-                                    type="button"
-                                    className="sc-feishu-match"
-                                    onClick={() => selectChat(chat)}
-                                  >
-                                    <strong>{chat.name}</strong>
-                                    <small>{details.join(" · ")}</small>
-                                  </button>
-                                );
-                              })}
-                            </>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <div>
-                        <span className="sc-muted" style={{ fontSize: 12 }}>
-                          群聊
-                        </span>
-                        <p style={{ fontWeight: 600, marginTop: 2 }}>{editor.group.name}</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {editor.group && (
-                    <>
-                      <fieldset style={{ border: 0, padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-                        <legend style={{ fontSize: 13, fontWeight: 560, marginBottom: 4 }}>监听模式</legend>
-                        <div style={{ display: "flex", gap: 16 }}>
-                          {["mentions", "all"].map((mode) => (
-                            <label key={mode} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
-                              <input
-                                type="radio"
-                                name="feishu-mode"
-                                value={mode}
-                                checked={editor.group.mode === mode}
-                                onChange={() =>
-                                  setEditor((prev) => ({ ...prev, group: { ...prev.group, mode } }))
-                                }
-                              />
-                              {modeLabel(mode)}
-                            </label>
-                          ))}
-                        </div>
-                      </fieldset>
-
-                      {editor.group.mode === "mentions" && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          <span style={{ fontSize: 13, fontWeight: 560 }}>@ 对象</span>
-                          <div className="sc-feishu-chips">
-                            {editor.group.targets.length ? (
-                              editor.group.targets.map((target) => (
-                                <Tag
-                                  key={target.id}
-                                  closable
-                                  onClose={() => toggleTarget(target, false)}
-                                  color={target.kind === "bot" ? "amber" : "cyan"}
-                                >
-                                  {targetName(target)}
-                                  {target.kind === "bot" ? " · 机器人" : ""}
-                                </Tag>
-                              ))
-                            ) : (
-                              <span className="sc-muted" style={{ fontSize: 12 }}>
-                                请选择至少一个 @ 对象
-                              </span>
-                            )}
-                          </div>
-                          <div>
-                            <Button size="small" loading={editor.loadingMembers} onClick={() => void loadMembers()}>
-                              {editor.roster ? "刷新成员和机器人" : "选择成员和机器人"}
-                            </Button>
-                          </div>
-                          {editor.memberNotice && (
-                            <span role="status" className="sc-muted" style={{ fontSize: 12 }}>
-                              {editor.memberNotice}
-                            </span>
-                          )}
-                          {editor.roster && (
-                            <>
-                              <input
-                                id="feishu-member-query"
-                                type="search"
-                                aria-label="筛选用户或机器人"
-                                placeholder="筛选用户或机器人"
-                                value={editor.memberQuery}
-                                onChange={(e) => setEditor((prev) => ({ ...prev, memberQuery: e.target.value }))}
-                                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--ui-line)" }}
-                              />
-                              <div className="sc-feishu-options" aria-label="@ 对象列表">
-                                {filteredTargets.length ? (
-                                  filteredTargets.map((target) => {
-                                    const checked = editor.group.targets.some((item) => item.id === target.id);
-                                    return (
-                                      <label className="sc-feishu-option" key={target.id}>
-                                        <input
-                                          type="checkbox"
-                                          checked={checked}
-                                          onChange={(e) => toggleTarget(target, e.target.checked)}
-                                        />
-                                        <span>{targetName(target)}</span>
-                                        <small>{target.kind === "bot" ? "机器人" : "用户"}</small>
-                                      </label>
-                                    );
-                                  })
-                                ) : (
-                                  <span className="sc-muted" style={{ fontSize: 12 }}>
-                                    没有匹配的对象
-                                  </span>
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      )}
-                      <p className="sc-muted" style={{ fontSize: 12 }}>
-                        采集他人发送的群消息，跳过本人和机器人的发言。
-                      </p>
-                    </>
-                  )}
-                  {editorError && <Banner type="danger" description={editorError} closeIcon={null} />}
+              {searchError && <p role="alert" className="channels-error">{searchError}</p>}
+              {matches && (
+                <fieldset className="channels-matches" aria-label="找到的群聊" disabled={Boolean(busy)}>
+                  {!matches.groups.length && <p className="sc-muted">没有找到可读取的群聊。可以换一个关键词。</p>}
+                  {matches.groups.map((chat) => {
+                    const registered = groups.some((item) => item.id === chat.id);
+                    const sameName = matches.groups.some((other) => other.id !== chat.id && other.name === chat.name);
+                    return (
+                      <label key={chat.id} data-selected={group?.id === chat.id}>
+                        <input type="radio" name="feishu-group" checked={group?.id === chat.id} disabled={registered} onChange={() => select(chat)} />
+                        <strong>{chat.name}</strong>
+                        {registered ? <small>已启用</small> : sameName || chat.external ? (
+                          <small>{[chat.external && "外部群", chat.members && `${chat.members} 人`, sameName && chat.id.slice(-6)].filter(Boolean).join(" · ")}</small>
+                        ) : null}
+                      </label>
+                    );
+                  })}
+                  {matches.partial && <p className="sc-muted">结果较多，可输入更完整的群名缩小范围。</p>}
+                </fieldset>
+              )}
+            </section>
+            <section className="channels-step">
+              <span className="channels-step-dot" data-pending={!group} aria-hidden="true">2</span>
+              <h3>测试读取</h3>
+              <p>试读近期消息，预览一条符合采集范围的结果。</p>
+              {scope}
+              <Button className="channels-outline" icon={<IconPlay />} loading={busy === "test"} disabled={!valid || Boolean(busy)} onClick={testRead}>测试读取</Button>
+              {testError && <p role="alert" className="channels-error">{testError}</p>}
+              {preview && (
+                <div className="channels-test-result" role="status">
+                  <strong><IconTickCircle aria-hidden="true" />读取成功</strong>
+                  {preview.sample ? (
+                    <div className="channels-sample">
+                      <time>{sampleTime(preview.sample.time)}</time>
+                      <b>{preview.sample.sender}</b>
+                      {group.mode === "mentions" && targetsOwner && <span className="channels-mention">@我</span>}
+                      <span>{preview.sample.text}</span>
+                    </div>
+                  ) : <p>最近读取的消息中没有符合当前范围的消息。</p>}
                 </div>
-                <footer className="sc-feishu-editor-foot">
-                  <div>
-                    {editor.kind === "edit" && (
-                      <Button type="danger" theme="borderless" size="small" onClick={() => setRemoveConfirm(true)}>
-                        移出采集
-                      </Button>
-                    )}
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <Button disabled={saving} onClick={() => setEditor(null)}>
-                      取消
-                    </Button>
-                    <Button
-                      theme="solid"
-                      htmlType="submit"
-                      disabled={saving || !editor.group || editor.searching}
-                      loading={saving}
-                    >
-                      保存
-                    </Button>
-                  </div>
-                </footer>
-              </form>
-            </aside>
+              )}
+            </section>
+          </>
+        )}
+      </div>
+      <footer className="channels-drawer-footer">
+        {saveError && <p role="alert" className="channels-error">{saveError}</p>}
+        <div className="channels-footer-row">
+          {initial ? (
+            <Button type="danger" theme="borderless" disabled={Boolean(busy)} onClick={() => setConfirmRemove(true)}>移出采集</Button>
+          ) : (
+            <div className="channels-step">
+              <span className="channels-step-dot" data-pending={!preview} aria-hidden="true">3</span>
+              <h3>启用采集</h3>
+              <p>启用后定期读取此群的新消息。</p>
+            </div>
           )}
+          <div className="channels-actions">
+            {initial ? <Button disabled={Boolean(busy)} onClick={onClose}>取消</Button> : <span className="channels-badge">待启用</span>}
+            <Button theme="solid" loading={busy === "save"} disabled={!valid || Boolean(busy) || (!initial && !preview?.testId)} onClick={() => commit()}>
+              {initial ? "保存" : "启用采集"}
+            </Button>
+          </div>
         </div>
-      )}
-
-      <Modal
-        title="移出采集"
-        visible={removeConfirm}
-        onOk={confirmRemove}
-        onCancel={() => !saving && setRemoveConfirm(false)}
-        okText="移出采集"
-        cancelText="取消"
-        okType="danger"
-        confirmLoading={saving}
-      >
-        <p className="sc-muted">停止采集「{editor?.group?.name}」的新消息？</p>
+      </footer>
+      <Modal title="移出采集" visible={confirmRemove} onOk={() => commit(true)} onCancel={() => !busy && setConfirmRemove(false)}
+        okText="移出采集" cancelText="取消" okType="danger" confirmLoading={busy === "save"}>
+        <p>停止采集「{group?.name}」的新消息？</p>
       </Modal>
-    </div>
+    </aside>
   );
 }

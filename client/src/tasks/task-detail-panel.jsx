@@ -10,10 +10,12 @@ import {
   intakeWorkflow,
   pendingNotices,
 } from "../task-workflow.mjs";
-import { executionEvidence } from "../task-detail.mjs";
-import { taskRecord, taskConversation, conversationNoteFor } from "../task-record.mjs";
+import { elapsedOf, executionEvidence } from "../task-detail.mjs";
+import { taskRecord, taskConversation, conversationNoteFor, outputExcerpt } from "../task-record.mjs";
 import { CardReplyForm } from "./card-reply-form.jsx";
 import { formatDate, formatTime } from "../studio-helpers.mjs";
+import { ThreadDetail } from "../messages/thread-detail.jsx";
+import { useTaskVerification } from "./use-task-verification.mjs";
 
 const RUN_STATE_NAMES = {
   queued: "排队中",
@@ -35,14 +37,6 @@ const RUN_TONES = {
   nothing: "grey",
   cancelled: "red",
 };
-
-function elapsedOf(run) {
-  const ms = (run.finishedAt ? Date.parse(run.finishedAt) : Date.now()) - Date.parse(run.claimedAt || run.createdAt);
-  if (!Number.isFinite(ms)) return "—";
-  return ms < 60000
-    ? Math.max(0, Math.floor(ms / 1000)) + " 秒"
-    : Math.floor(ms / 60000) + " 分 " + Math.floor((ms % 60000) / 1000) + " 秒";
-}
 
 function workflowTone(workflow) {
   if (!workflow) return "grey";
@@ -122,32 +116,14 @@ function WorkflowSection({
   const actions = availableTaskActions(task, saved);
   const latestRunId = task.runs?.at(-1)?.id;
   const [extracting, setExtracting] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [localVerify, setLocalVerify] = useState(null);
   const [drafts, setDrafts] = useState([]);
   const [draftBusy, setDraftBusy] = useState("");
-  const activeVerify =
-    localVerify && localVerify.runId === latestRunId ? localVerify : verification || null;
-  const canVerify = Boolean(
-    connected && api && latestRunId && ["awaiting_acceptance", "reviewing"].includes(w.status),
-  );
+  const { activeVerify, canVerify, verifying, runAiVerify } = useTaskVerification({
+    api, toast, connected, runId: latestRunId, status: w.status, verification,
+  });
   const canExtract = Boolean(
     connected && api && latestRunId && ["awaiting_acceptance", "reviewing", "closed"].includes(w.status),
   );
-
-  async function runAiVerify() {
-    if (!canVerify || verifying) return;
-    setVerifying(true);
-    try {
-      const res = await api(`/tasks/${latestRunId}/verify`, "POST", {});
-      if (res?.report) setLocalVerify(res.report);
-      toast?.("AI 独立校验已完成，请结合校验意见验收");
-    } catch (err) {
-      toast?.(err.message || "AI 校验失败", true);
-    } finally {
-      setVerifying(false);
-    }
-  }
 
   async function extractMemory() {
     if (!canExtract || extracting) return;
@@ -397,7 +373,10 @@ export function TaskDetailPanel({
   onCancelRun,
   onInspectRun,
   onCloseDrawer,
+  onOpenThread,
+  approvalId,
   inDrawer = false,
+  compact = false,
 }) {
   const [tab, setTab] = useState("result");
   const [roundsData, setRoundsData] = useState({ key: null, rounds: [], loading: false, error: "" });
@@ -447,6 +426,7 @@ export function TaskDetailPanel({
             return {
               run,
               record: taskRecord(run, facts, output, provider),
+              ...(compact && { facts, outputTail: outputExcerpt(output) }),
             };
           }),
         );
@@ -470,7 +450,7 @@ export function TaskDetailPanel({
       cancelled = true;
       if (timer) clearInterval(timer);
     };
-  }, [taskKey, runIdsSig, hasLiveRun]);
+  }, [taskKey, runIdsSig, hasLiveRun, compact]);
 
   if (!task) {
     return (
@@ -582,6 +562,18 @@ export function TaskDetailPanel({
   const report = latestRun?.task || task.assessment?.report;
   const summary = latestRun?.error || latestRun?.summary;
   const agentName = (id) => config?.rules?.agents?.[id]?.name || id;
+
+  const approval = approvalId && (task.openCards || []).find((card) => String(card.id) === approvalId);
+  if (compact && !intake)
+    return <ThreadDetail task={task} report={report} rounds={validRounds} roundsData={roundsData}
+      verification={snapshot.taskVerifications?.[latestRun?.id]} actions={actions} connected={canWorkflowAct}
+      api={api} toast={toast} onAction={onWorkflowAction} onClose={onCloseDrawer} onCancel={onCancelRun}
+      onOpenThread={onOpenThread} accessFor={(run) => {
+        const rule = config.rules.rules.find((entry) => entry.name === run.rule);
+        return snapshot.workbench?.jobs?.[run.id]?.access || rule?.access || config.rules.agents[run.agent]?.access || "";
+      }} approval={approval && <CardReplyForm card={approval} draft={drafts.get(String(approval.id))}
+        submitting={submittingCards.has(String(approval.id))} connected={snapshot.connected}
+        onDraftChange={onDraftChange} onSubmit={onCardSubmit} />} />;
 
   return (
     <div className="tc-detail-root">

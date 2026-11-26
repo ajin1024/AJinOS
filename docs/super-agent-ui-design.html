@@ -1,0 +1,1293 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AJinOS · Super Agent</title>
+<style>
+/* Brand tokens from client/src/theme.css. */
+:root {
+  --ui-rail: #eef0f6;
+  --ui-surface: #f4f6fa;
+  --ui-bg: #f9fafc;
+  --ui-panel: #ffffff;
+  --ui-raised: #ffffff;
+  --ui-line: #e2e6f0;
+  --ui-wire: #bfc7da;
+  --ui-text: #171c28;
+  --ui-secondary: var(--ui-text-secondary);
+  --ui-text-secondary: #475166;
+  --ui-muted: #747f96;
+  --ui-accent: #4f6ae8;
+  --ui-accent-on: #ffffff;
+  --ui-accent-ink: #3b53cc;
+  --ui-soft: #e9eefd;
+  --ui-success: #168a5b;
+  --ui-success-soft: #e7f7ef;
+  --ui-warn: #b4690e;
+  --ui-warn-soft: #fdf3e3;
+  --ui-danger: #c93b44;
+  --ui-danger-soft: #fdecef;
+  --ui-neutral-badge: #646e82;
+  --ui-neutral-badge-soft: #eceff5;
+  --ui-accent-hover: #3f58d6;
+  --ui-accent-active: #3349bd;
+  --ui-accent-line: #7a91f2;
+  --ui-overlay: #161924;
+  --ui-shadow: #171c28;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --ui-rail: #11131c;
+  --ui-surface: #161924;
+  --ui-bg: #1b1f2c;
+  --ui-panel: #212636;
+  --ui-raised: #272d40;
+  --ui-line: #2e354a;
+  --ui-wire: #444e6b;
+  --ui-text: #e8ecf7;
+  --ui-secondary: var(--ui-text-secondary);
+  --ui-text-secondary: #b4bed6;
+  --ui-muted: #7d88a3;
+  --ui-accent: #7aa2f7;
+  --ui-accent-on: #101524;
+  --ui-accent-ink: #8db1fa;
+  --ui-soft: #252e47;
+  --ui-success: #34d399;
+  --ui-success-soft: #18352c;
+  --ui-warn: #f2b84b;
+  --ui-warn-soft: #3a2e1b;
+  --ui-danger: #f87171;
+  --ui-danger-soft: #3b2026;
+  --ui-neutral-badge: #8b95b0;
+  --ui-neutral-badge-soft: #252a3a;
+  --ui-accent-hover: #8db1fa;
+  --ui-accent-active: #658ee8;
+  --ui-accent-line: #5d82d6;
+  --ui-overlay: #10131c;
+  --ui-shadow: #10131c;
+  color-scheme: dark;
+}
+
+:root {
+  --rail-width: 52px;
+  --sidebar-width: 268px;
+  --drawer-width: 368px;
+  --content-width: 760px;
+  --aside-bg: color-mix(in srgb, var(--ui-bg) 75%, var(--ui-panel));
+  --warm-line: color-mix(in srgb, var(--ui-warn) 20%, var(--ui-line));
+  --mono: "Cascadia Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; color: var(--ui-text); background: var(--ui-panel);
+  font: 14px/1.55 "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .58; }
+:where(button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--ui-accent-line); outline-offset: 2px; }
+:where(h1, h2, h3, p, dl, dd, pre, fieldset) { margin: 0; }
+:where(h1, h2, h3) { line-height: 1.35; }
+small { font-size: 12px; }
+svg.icon { width: 18px; height: 18px; flex: none; }
+svg.symbols { position: absolute; width: 0; height: 0; pointer-events: none; }
+.muted { color: var(--ui-muted); }
+.secondary { color: var(--ui-text-secondary); }
+.mono { font-family: var(--mono); }
+.row, .wrap { display: flex; align-items: center; gap: 8px; }
+.wrap { flex-wrap: wrap; }
+.between { justify-content: space-between; }
+.grow { flex: 1; min-width: 0; }
+.dot { display: inline-block; width: 7px; height: 7px; flex: none; border-radius: 50%; background: currentColor; }
+.dot.live { color: var(--ui-success); }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; width: max-content; max-width: 100%;
+  padding: 2px 7px; border-radius: 5px; background: var(--ui-surface);
+  color: var(--ui-text-secondary); font-size: 11px; line-height: 1.5;
+}
+.chip svg { width: 13px; height: 13px; }
+.chip.amber { color: var(--ui-warn); background: var(--ui-warn-soft); }
+.chip.green { color: var(--ui-success); background: var(--ui-success-soft); }
+.chip.blue { color: var(--ui-accent-ink); background: var(--ui-soft); }
+.chip.neutral { color: var(--ui-text-secondary); background: var(--ui-neutral-badge-soft); }
+.btn, .icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--ui-line); border-radius: 7px; background: var(--ui-panel);
+  padding: 5px 11px; min-height: 31px; font-size: 12px; font-weight: 600;
+}
+.btn:hover:not(:disabled), .icon-btn:hover:not(:disabled) { background: var(--ui-surface); }
+.btn.primary { color: var(--ui-accent-on); background: var(--ui-accent); border-color: var(--ui-accent); }
+.btn.primary:hover:not(:disabled) { background: var(--ui-accent-hover); border-color: var(--ui-accent-hover); }
+.btn.ghost, .icon-btn { border-color: transparent; background: transparent; }
+.btn.ghost { color: var(--ui-text-secondary); }
+.btn.danger { color: var(--ui-danger); }
+.btn svg { width: 15px; height: 15px; }
+.icon-btn { width: 32px; height: 32px; padding: 0; color: var(--ui-text-secondary); }
+.link {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none;
+  color: var(--ui-accent-ink); font-size: inherit; text-align: left;
+}
+.link svg { width: 13px; height: 13px; }
+.link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.app { display: grid; grid-template-columns: var(--rail-width) minmax(0, 1fr); height: 100dvh; }
+.rail { z-index: 6; background: var(--ui-rail); border-right: 1px solid var(--ui-line); }
+.rail, .rail nav, .rail-foot { display: flex; flex-direction: column; align-items: center; }
+.rail nav { gap: 9px; }
+.rail-foot { gap: 14px; margin: auto 0 18px; }
+.brand { margin: 15px 0 19px; width: 34px; height: 34px; color: var(--ui-accent-ink); }
+.brand svg { width: 25px; height: 25px; }
+.rail-button { position: relative; width: 36px; height: 36px; border-radius: 9px; }
+.rail-button svg { width: 20px; height: 20px; }
+.rail-button[aria-current] { color: var(--ui-accent-ink); background: var(--ui-soft); }
+.rail-button[aria-current]::before {
+  content: ""; position: absolute; left: -8px; top: 8px; bottom: 8px; width: 2px;
+  background: var(--ui-accent); border-radius: 0 2px 2px 0;
+}
+.rail-count {
+  position: absolute; top: -5px; right: -4px; min-width: 17px; height: 17px; padding: 0 3px;
+  border: 1px solid var(--ui-rail); border-radius: 9px; background: var(--ui-warn-soft); color: var(--ui-warn);
+  font-size: 10px; line-height: 15px; text-align: center; font-weight: 750;
+}
+[data-tooltip] { position: relative; }
+[data-tooltip]::after {
+  content: attr(data-tooltip); position: absolute; z-index: 1; left: calc(100% + 9px); top: 50%;
+  transform: translateY(-50%); opacity: 0; visibility: hidden; pointer-events: none;
+  padding: 4px 8px; border-radius: 5px; background: var(--ui-raised); border: 1px solid var(--ui-line);
+  color: var(--ui-text); font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+[data-tooltip]:is(:hover, :focus-visible)::after { visibility: visible; opacity: 1; }
+.rail-engine { display: grid; place-items: center; width: 24px; height: 15px; }
+.stage {
+  display: grid; grid-template-columns: minmax(0, 1fr); position: relative; isolation: isolate;
+  min-height: 0; min-width: 0;
+}
+.stage.has-sidebar { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
+.stage.has-drawer { grid-template-columns: minmax(0, 1fr) var(--drawer-width); }
+.stage.has-sidebar.has-drawer { grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--drawer-width); }
+.sidebar {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto;
+  padding: 18px 13px; border-right: 1px solid var(--ui-line); background: var(--aside-bg);
+}
+.side-heading { min-height: 30px; padding: 0 4px 0 5px; }
+.wordmark { font-size: 20px; font-weight: 720; letter-spacing: -.65px; line-height: 1.2; }
+.side-filters { display: grid; gap: 8px; padding: 10px 4px 15px; }
+.control {
+  width: 100%; min-width: 0; min-height: 34px; padding: 6px 9px; border: 1px solid var(--ui-line);
+  border-radius: 7px; background: var(--ui-panel); font-size: 12px;
+}
+.select-project { padding-left: 30px; appearance: none; padding-right: 27px; cursor: pointer; }
+.select-wrap { position: relative; }
+.select-wrap svg { position: absolute; left: 9px; top: 9px; width: 15px; height: 15px; color: var(--ui-muted); pointer-events: none; }
+.select-wrap svg:last-child { left: auto; right: 8px; }
+.side-card {
+  width: 100%; display: flex; align-items: center; gap: 9px; text-align: left; border: 1px solid transparent;
+  background: transparent; border-radius: 9px; padding: 10px 8px; min-width: 0;
+}
+.side-card:hover { background: var(--ui-surface); }
+.side-card[aria-current] { background: var(--ui-soft); border-color: color-mix(in srgb, var(--ui-accent) 14%, var(--ui-line)); }
+.side-card strong { display: block; font-size: 13px; }
+.side-card small { font-size: 10px; }
+.avatar {
+  display: grid; place-items: center; flex: none; position: relative; width: 30px; height: 30px;
+  border-radius: 8px; background: var(--ui-soft); color: var(--ui-accent-ink);
+}
+.avatar svg { width: 19px; height: 19px; }
+.avatar.large { width: 36px; height: 36px; border-radius: 9px; }
+.avatar.large svg { width: 22px; height: 22px; }
+.avatar .dot { position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; border: 2px solid var(--ui-panel); }
+.avatar.plain { background: var(--ui-surface); color: var(--ui-text-secondary); }
+.avatar.checked { background: var(--ui-success-soft); color: var(--ui-success); }
+.inbox-entry { margin-top: 9px; background: var(--ui-warn-soft); border-color: var(--warm-line); }
+.inbox-entry:hover, .inbox-entry[aria-current] { background: color-mix(in srgb, var(--ui-warn) 12%, var(--ui-warn-soft)); border-color: var(--warm-line); }
+.inbox-entry .avatar { color: var(--ui-warn); background: transparent; }
+.inbox-entry small, .inbox-entry .count { color: var(--ui-warn); }
+.count { min-width: 22px; text-align: center; border-radius: 5px; font-size: 12px; font-weight: 700; }
+.inbox-entry .count { background: var(--ui-panel); }
+.recent { margin-top: 22px; }
+.recent h2 { padding: 0 5px; font-size: 12px; margin-bottom: 8px; color: var(--ui-text-secondary); }
+.filters { gap: 3px; padding: 0 4px 8px; }
+.filter { min-height: 25px; border: 0; border-radius: 5px; padding: 3px 8px; background: transparent; color: var(--ui-text-secondary); font-size: 11px; }
+.filter:hover { background: var(--ui-surface); }
+.filter[aria-pressed="true"] { color: var(--ui-accent-ink); background: var(--ui-soft); font-weight: 650; }
+.thread-item {
+  position: relative; width: 100%; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center;
+  gap: 5px 6px; padding: 9px 8px; border: 1px solid transparent; border-radius: 8px; text-align: left;
+  background: transparent;
+}
+.thread-item:hover { background: var(--ui-surface); }
+.thread-item[aria-current] { background: var(--ui-soft); border-color: color-mix(in srgb, var(--ui-accent) 14%, var(--ui-line)); }
+.thread-item strong { font-size: 12px; font-weight: 650; }
+.thread-item time { font-size: 10px; font-variant-numeric: tabular-nums; color: var(--ui-muted); }
+.thread-item .chip { font-size: 10px; padding: 1px 5px; }
+.thread-item .thread-status { justify-self: end; }
+.sidebar-empty { color: var(--ui-muted); padding: 12px 6px; font-size: 12px; }
+
+.workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.view-header {
+  display: flex; align-items: center; gap: 12px; min-height: 68px; flex: none;
+  padding: 11px 26px; border-bottom: 1px solid var(--ui-line); background: var(--ui-panel);
+}
+.view-header h1 { font-size: 18px; font-weight: 700; letter-spacing: -.25px; }
+.view-header .subtitle { margin-top: 2px; font-size: 11px; color: var(--ui-text-secondary); }
+.view-header .sub-row { gap: 6px; }
+.engine {
+  display: inline-flex; align-items: center; flex: none; gap: 6px; border: 1px solid var(--ui-line);
+  padding: 4px 9px; border-radius: 50px; color: var(--ui-text-secondary); font-size: 11px; white-space: nowrap;
+}
+.engine .dot { width: 6px; height: 6px; }
+.snapshot { gap: 7px; margin-right: 2px; }
+.snapshot button {
+  display: flex; gap: 5px; align-items: center; border: 0; border-radius: 5px; background: transparent;
+  color: var(--ui-text-secondary); padding: 4px; font-size: 11px; white-space: nowrap;
+}
+.snapshot button:hover { background: var(--ui-surface); }
+.snapshot b { font: 650 11px var(--mono); }
+.snapshot button:nth-of-type(-n+2) b { color: var(--ui-warn); }
+.snapshot .divider { color: var(--ui-wire); }
+.mobile-menu { display: none; }
+.scroller { flex: 1; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--ui-wire) transparent; }
+.conversation { width: min(100%, var(--content-width)); margin: 0 auto; padding: 12px 0 12px; }
+.conversation-scroll { padding-inline: 26px; }
+.day-divider {
+  display: flex; align-items: center; gap: 10px; color: var(--ui-muted);
+  font-size: 11px; margin: 1px 0 11px;
+}
+.day-divider::before, .day-divider::after { content: ""; flex: 1; border-top: 1px solid var(--ui-line); }
+.exchange + .exchange { margin-top: 13px; }
+.user-message { display: grid; justify-items: end; margin: 0 0 8px 34px; gap: 4px; }
+.user-message time { color: var(--ui-muted); font: 11px var(--mono); }
+.main-flow .user-message { grid-template-columns: auto minmax(0, max-content); align-items: center; justify-content: end; column-gap: 8px; }
+.main-flow .user-message > :not(time, .bubble) { grid-column: 2; }
+.main-flow .day-divider { margin-bottom: 10px; }
+.main-flow .exchange + .exchange { margin-top: 12px; }
+.bubble {
+  max-width: 100%; border: 1px solid var(--ui-line); border-radius: 10px 10px 3px 10px; padding: 6px 11px;
+  background: var(--ui-surface); overflow-wrap: anywhere; font-size: 13px; white-space: pre-wrap;
+}
+.agent-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 9px; align-items: start; }
+.agent-message + .agent-message { margin-top: 14px; }
+.agent-name { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; margin-bottom: 4px; }
+.agent-name strong { font-size: 12px; }
+.agent-name time { color: var(--ui-muted); font: 10px var(--mono); }
+.agent-copy { min-width: 0; }
+.agent-copy > p { color: var(--ui-text-secondary); margin-bottom: 5px; font-size: 13px; }
+.brief { border: 1px solid var(--ui-line); border-radius: 9px; overflow: hidden; }
+.brief-row {
+  display: flex; align-items: center; gap: 8px; justify-content: space-between;
+  padding: 4px 9px; min-height: 28px; background: var(--ui-panel); font-size: 12px;
+}
+.brief-row + .brief-row { border-top: 1px solid var(--ui-line); }
+.brief-row .row { flex-wrap: wrap; gap: 5px 8px; min-width: 0; }
+.brief-row .link { font-size: 11px; flex: none; }
+.receipt, .plan, .record {
+  border: 1px solid var(--ui-line); border-radius: 10px; background: var(--ui-panel); padding: 9px 11px;
+}
+.card-heading { display: flex; align-items: start; justify-content: space-between; gap: 7px; }
+.card-heading h2, .card-heading h3 { font-size: 14px; }
+.card-heading .icon { width: 17px; height: 17px; }
+.card-heading .avatar { width: 29px; height: 29px; border-radius: 7px; }
+.card-heading .title-stack { display: grid; gap: 3px; min-width: 0; }
+.card-meta { gap: 5px; }
+.ai-note {
+  display: flex; align-items: center; gap: 6px; padding: 5px 7px; margin-top: 6px;
+  border-radius: 6px; background: var(--ui-success-soft); color: var(--ui-success); font-size: 11px;
+}
+.ai-note svg { width: 15px; height: 15px; }
+.card-actions { margin-top: 7px; }
+.plan .card-heading { align-items: center; }
+.plan-graph { display: grid; grid-template-columns: minmax(0,1fr) 22px minmax(0,1fr); align-items: stretch; gap: 4px; margin: 8px 0 0; }
+.plan-node { display: grid; grid-template-columns: 22px minmax(0,1fr); align-items: start; gap: 6px; border: 1px solid var(--ui-line); background: var(--ui-surface); border-radius: 7px; padding: 6px 7px; }
+.plan-node h3 { font-size: 11px; font-weight: 650; margin: 3px 0 0; }
+.plan-node small { display: block; margin-top: 3px; font-size: 10px; color: var(--ui-text-secondary); }
+.node-index {
+  display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--ui-line); border-radius: 5px;
+  background: var(--ui-panel); color: var(--ui-text-secondary); font: 11px var(--mono);
+}
+.plan-arrow { align-self: center; justify-self: center; color: var(--ui-muted); }
+
+.composer-slot { flex: none; padding: 9px 26px 16px; }
+.composer {
+  position: relative; z-index: 1; margin: 0 auto; max-width: var(--content-width);
+  border: 1px solid var(--ui-line); border-radius: 13px; background: var(--ui-panel);
+  padding: 7px 9px 7px 12px; box-shadow: 0 2px 8px color-mix(in srgb,var(--ui-shadow) 5%,transparent);
+}
+.composer:focus-within { border-color: var(--ui-accent-line); }
+.composer textarea { display: block; width: 100%; resize: none; min-height: 31px; max-height: 118px; overflow: auto; padding: 5px 1px; border: 0; outline: none; background: transparent; font-size: 13px; }
+.composer textarea::placeholder { color: var(--ui-muted); }
+.composer .send { background: var(--ui-accent); color: var(--ui-accent-on); border-radius: 50%; cursor: pointer; }
+.composer .send:hover { background: var(--ui-accent-hover); }
+.composer .send svg { width: 17px; height: 17px; }
+.composer .tools { gap: 1px; }
+.composer .tools .btn { padding-inline: 5px; font-size: 11px; min-height: 29px; }
+.override {
+  position: absolute; z-index: 3; bottom: calc(100% + 7px); left: 0; width: min(286px, 100%);
+  border: 1px solid var(--ui-line); border-radius: 10px; background: var(--ui-raised); padding: 12px;
+  box-shadow: 0 3px 13px color-mix(in srgb,var(--ui-shadow) 10%,transparent);
+}
+.override label, .draft-form label { display: grid; gap: 4px; font-size: 12px; color: var(--ui-text-secondary); }
+.override label + label, .draft-form label + label { margin-top: 9px; }
+.attachments { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.attachments:empty { display: none; }
+.attachment { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--ui-line); border-radius: 6px; padding: 1px 5px; font-size: 11px; overflow-wrap: anywhere; max-width: 100%; }
+.attachment img { width: 24px; height: 24px; object-fit: cover; border-radius: 4px; }
+.attachment button { padding: 0; width: 24px; height: 24px; }
+.message-overrides { justify-content: end; }
+
+.thread-flow { padding-top: 17px; }
+.thread-flow > .user-message { margin-bottom: 15px; }
+.thread-flow .record { padding: 11px 12px; }
+.thread-flow .record p { margin: 6px 0; color: var(--ui-text-secondary); font-size: 12px; }
+.record.approval-record { background: color-mix(in srgb,var(--ui-warn-soft) 53%,var(--ui-panel)); border-color: var(--warm-line); }
+.record .record-foot { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--ui-line); font-size: 11px; }
+.checklist { list-style: none; padding: 0; margin: 7px 0 0; }
+.checklist li { display: flex; align-items: start; gap: 6px; padding: 3px 0; font-size: 12px; }
+.checklist svg { color: var(--ui-success); width: 14px; height: 14px; margin-top: 2px; }
+.drawer {
+  min-width: 0; min-height: 0; display: flex; flex-direction: column; z-index: 4;
+  border-left: 1px solid var(--ui-line); background: var(--ui-panel);
+  animation: slide-in 150ms ease-out;
+}
+@keyframes slide-in { from { opacity: .55; clip-path: inset(0 0 0 6px); } to { opacity: 1; clip-path: inset(0); } }
+.drawer-head { padding: 14px 15px; border-bottom: 1px solid var(--ui-line); }
+.drawer-head h2 { font-size: 16px; margin: 5px 0; }
+.drawer-body { padding: 0 15px; }
+.drawer-section { padding: 13px 0; }
+.drawer-section + .drawer-section { border-top: 1px solid var(--ui-line); }
+.drawer-section h3 { font-size: 13px; }
+.drawer-section > p { margin-top: 5px; font-size: 12px; color: var(--ui-text-secondary); }
+.evidence { padding: 7px 0 0; }
+.evidence-row { padding: 6px 0; }
+.evidence-row + .evidence-row { border-top: 1px solid var(--ui-line); }
+.evidence-row strong { font-size: 12px; }
+.evidence-row p { margin-top: 3px; font-size: 11px; color: var(--ui-text-secondary); }
+.meter-summary { margin: 6px 0; font-size: 11px; }
+.run-row { display: flex; justify-content: space-between; gap: 6px; padding: 4px 0; font-size: 11px; color: var(--ui-text-secondary); }
+.log { margin-top: 8px; padding: 7px; border: 1px solid var(--ui-line); border-radius: 7px; background: var(--ui-surface); white-space: pre-wrap; overflow-wrap: anywhere; font: 10.5px/1.6 var(--mono); }
+.drawer-footer { padding: 11px 13px; border-top: 1px solid var(--ui-line); }
+.drawer-footer .btn { flex: 1 0 auto; }
+.scrim { display: none; }
+
+.inbox-scroll { padding: 20px 26px; background: var(--ui-bg); }
+.inbox-content { max-width: var(--content-width); margin-inline: auto; }
+.queue-section + .queue-section { margin-top: 20px; }
+.section-title { margin-bottom: 9px; }
+.section-title h2 { font-size: 14px; }
+.queue-card { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--ui-line); background: var(--ui-panel); }
+.queue-card + .queue-card { margin-top: 8px; }
+.queue-card.attention { border-color: var(--warm-line); }
+.queue-card h3 { font-size: 15px; margin-top: 4px; }
+.queue-card p { font-size: 12px; margin-top: 6px; color: var(--ui-text-secondary); }
+.queue-card .queue-actions { margin-top: 8px; justify-content: end; }
+.draft-form + .queue-actions { justify-content: end; }
+.queue-card fieldset { display: flex; flex-wrap: wrap; gap: 5px 10px; border: 0; padding: 0; margin-top: 8px; }
+.choice {
+  display: flex; align-items: center; gap: 5px; border: 1px solid var(--ui-line); border-radius: 6px;
+  padding: 3px 7px; font-size: 11px; cursor: pointer;
+}
+.choice:has(:checked) { border-color: var(--warm-line); background: var(--ui-warn-soft); }
+.choice input { margin: 0; accent-color: var(--ui-accent); }
+.empty { display: grid; justify-items: center; gap: 8px; padding: 40px 15px; text-align: center; color: var(--ui-text-secondary); }
+.empty svg { color: var(--ui-success); width: 25px; height: 25px; }
+.empty h2 { font-size: 16px; color: var(--ui-text); }
+
+.ops-scroll, .cap-scroll { background: var(--ui-bg); padding: 23px 26px; }
+.ops-content { max-width: 1260px; margin-inline: auto; }
+.ops-tabs { display: flex; gap: 4px; flex-wrap: wrap; width: fit-content; padding: 3px; background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 8px; margin-bottom: 17px; }
+.ops-tabs button { border: 1px solid transparent; background: transparent; border-radius: 6px; min-height: 29px; padding: 3px 10px; font-size: 12px; color: var(--ui-text-secondary); }
+.ops-tabs button:hover { background: var(--ui-panel); }
+.ops-tabs button[aria-pressed="true"] { color: var(--ui-accent-ink); background: var(--ui-panel); border-color: var(--ui-line); font-weight: 700; }
+.board { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; }
+.board-column { min-width: 0; background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 9px; padding: 9px; min-height: 243px; }
+.board-column > header { display: flex; align-items: center; gap: 6px; padding: 2px 2px 10px; }
+.board-column h2 { flex: 1; font-size: 13px; }
+.board-column header .dot { width: 6px; height: 6px; color: var(--ui-muted); }
+.board-column header .dot.warm { color: var(--ui-warn); }
+.board-column header .dot.running { color: var(--ui-accent); }
+.board-column .count { background: var(--ui-panel); }
+.board-card { display: grid; width: 100%; gap: 5px; padding: 9px; border-radius: 7px; border: 1px solid var(--ui-line); background: var(--ui-panel); text-align: left; }
+.board-card:hover, .board-card[aria-expanded="true"] { border-color: var(--ui-accent-line); }
+.board-card + .board-card { margin-top: 7px; }
+.board-card strong { font-size: 13px; }
+.board-card .row { font-size: 11px; flex-wrap: wrap; gap: 4px 6px; }
+.board-card .mono { font-size: 11px; }
+.board-card .icon { width: 13px; height: 13px; }
+.ops-plans { margin-top: 22px; }
+.plan-progress { display: grid; gap: 10px; padding: 13px; border: 1px solid var(--ui-line); border-radius: 9px; background: var(--ui-panel); }
+.plan-progress + .plan-progress { margin-top: 8px; }
+.plan-progress h3 { font-size: 14px; }
+.plan-progress p { font-size: 12px; }
+.progress-track { width: 100%; height: 5px; border-radius: 6px; background: var(--ui-surface); overflow: hidden; }
+.progress-track > span { display: block; background: var(--ui-accent); height: 100%; border-radius: inherit; }
+.flow-map { display: grid; grid-template-columns: minmax(0,1fr) 20px minmax(0,1fr) 20px minmax(0,1fr) 20px minmax(0,1fr); gap: 6px; margin: 10px 0 14px; align-items: stretch; }
+.flow-node { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--ui-line); border-radius: 8px; background: var(--ui-panel); }
+.flow-node strong { font-size: 13px; }
+.flow-node small { color: var(--ui-text-secondary); }
+.flow-node svg { color: var(--ui-accent-ink); }
+
+.cap-sidebar { padding-top: 22px; }
+.cap-sidebar h2 { margin: 0 5px 15px; font-size: 14px; }
+.cap-nav { display: grid; gap: 4px; }
+.cap-nav button {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 6px 8px;
+  background: transparent; border: 1px solid transparent; border-radius: 7px; text-align: left; font-size: 12px;
+}
+.cap-nav button:hover { background: var(--ui-surface); }
+.cap-nav button[aria-current] { color: var(--ui-accent-ink); background: var(--ui-soft); font-weight: 650; }
+.cap-nav .icon { width: 16px; height: 16px; }
+.cap-content { max-width: 970px; margin-inline: auto; }
+.territory { padding: 15px; border: 1px solid var(--ui-line); border-radius: 10px; background: var(--ui-panel); }
+.territory + .territory { margin-top: 10px; }
+.territory .title-stack h2 { font-size: 16px; }
+.territory .title-stack p { margin-top: 3px; font-size: 12px; color: var(--ui-text-secondary); }
+.territory-fields { display: grid; grid-template-columns: minmax(0,2fr) repeat(3,minmax(0,1fr)); gap: 9px 13px; margin-top: 12px; border-top: 1px solid var(--ui-line); padding-top: 10px; }
+.territory-fields dt { font-size: 11px; color: var(--ui-muted); margin-bottom: 4px; }
+.territory-fields dd { overflow-wrap: anywhere; font-size: 12px; }
+.territory-fields .mono { font-size: 11px; }
+
+.toast {
+  position: fixed; z-index: 12; max-width: calc(100vw - 26px); left: 50%; bottom: 18px; transform: translateX(-50%);
+  padding: 8px 12px; border: 1px solid var(--ui-line); border-radius: 8px; background: var(--ui-raised);
+  box-shadow: 0 3px 12px color-mix(in srgb,var(--ui-shadow) 10%,transparent); font-size: 12px;
+}
+dialog { width: min(420px,calc(100vw - 28px)); padding: 15px; border: 1px solid var(--ui-line); border-radius: 10px; background: var(--ui-panel); color: var(--ui-text); }
+dialog::backdrop { background: color-mix(in srgb,var(--ui-overlay) 27%,transparent); }
+dialog h2 { font-size: 16px; }
+dialog p { margin: 8px 0; color: var(--ui-text-secondary); font-size: 12px; }
+dialog .btn { margin-top: 10px; }
+dialog textarea { min-height: 64px; resize: vertical; }
+
+@media (max-width: 1120px) {
+  .stage.has-drawer { grid-template-columns: minmax(0,1fr); }
+  .stage.has-sidebar.has-drawer { grid-template-columns: var(--sidebar-width) minmax(0,1fr); }
+  .drawer { position: absolute; right: 0; top: 0; bottom: 0; width: min(var(--drawer-width),100%); }
+  .drawer-scrim { display: block; position: absolute; inset: 0; z-index: 3; border: 0; background: color-mix(in srgb,var(--ui-overlay) 23%,transparent); }
+  .snapshot { display: none; }
+}
+@media (max-width: 1000px) {
+  .board { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .board-column { min-height: 150px; }
+}
+@media (max-width: 760px) {
+  .stage.has-sidebar, .stage.has-sidebar.has-drawer { grid-template-columns: minmax(0,1fr); }
+  .sidebar { display: none; position: absolute; inset: 0 auto 0 0; width: min(var(--sidebar-width),100%); z-index: 5; }
+  .sidebar.is-open { display: flex; }
+  .sidebar-scrim { display: block; position: absolute; inset: 0; z-index: 4; border: 0; background: color-mix(in srgb,var(--ui-overlay) 23%,transparent); }
+  .mobile-menu { display: inline-flex; flex: none; }
+  .mobile-menu + .avatar { display: none; }
+  .view-header { padding-inline: 10px; gap: 6px; }
+  .conversation-scroll, .composer-slot, .inbox-scroll, .ops-scroll, .cap-scroll { padding-inline: 12px; }
+  .territory-fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 485px) {
+  .view-header h1 { font-size: 15px; }
+  .view-header .subtitle { font-size: 10px; }
+  .view-header .engine { padding: 4px; }
+  .engine-label { display: none; }
+  .agent-message { grid-template-columns: minmax(0,1fr); }
+  .agent-message > .avatar { display: none; }
+  .user-message { margin-left: 12px; }
+  .card-heading { flex-wrap: wrap; }
+  .plan-graph, .flow-map { grid-template-columns: minmax(0,1fr); }
+  .plan-arrow { transform: rotate(90deg); }
+  .board { grid-template-columns: minmax(0,1fr); }
+  .board-column { min-height: 0; }
+  .territory .card-heading > .btn { margin-left: 37px; }
+  .territory .card-heading > .row { align-items: start; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
+</style>
+</head>
+<body>
+<svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="i-brand" viewBox="0 0 24 24"><path d="M12 12c-2.1-2.8-3.6-4.4-5.8-4.4a4.4 4.4 0 0 0 0 8.8c2.2 0 3.7-1.6 5.8-4.4s3.6-4.4 5.8-4.4a4.4 4.4 0 0 1 0 8.8c-2.2 0-3.7-1.6-5.8-4.4Z"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 3v-3.3A2 2 0 0 1 3 16V7a2 2 0 0 1 2-2Z"/><path d="M7 10h10m-10 4h6"/></symbol>
+  <symbol id="i-ops" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 14h2l2-5 3 7 2-4h1.5"/></symbol>
+  <symbol id="i-cap" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.6c0 4.2 2.6 7.4 7.5 9.4 4.9-2 7.5-5.2 7.5-9.4V6L12 3Z"/><path d="M9 12h6m-3-3v6"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.4 15a8.6 8.6 0 0 1-11.5-11.5A8.8 8.8 0 1 0 20.4 15Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2m0 15v2m9.5-9.5h-2m-15 0h-2m16.2-6.7-1.4 1.4M6.7 17.3l-1.4 1.4m13.4 0-1.4-1.4M6.7 6.7 5.3 5.3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.8"/><path d="m15 15 4.3 4.3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 13 7 5h10l3 8v5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18Zm0 .5h5l1.5 2.5h3l1.5-2.5h5"/></symbol>
+  <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M4 6h16v4a2 2 0 1 0 0 4v4H4v-4a2 2 0 1 0 0-4V6Zm10 2v1m0 2.5v1m0 2.5v1"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-dag" viewBox="0 0 24 24"><rect x="4" y="4" width="5" height="5" rx="1"/><rect x="15" y="15" width="5" height="5" rx="1"/><path d="M6.5 9v5.5a3 3 0 0 0 3 3H15m0-11h5m-2.5-2.5v5"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><circle cx="9" cy="9" r="1.4"/><path d="m4 17 4.5-4 3 2.5L15 12l5 4.4"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M15 5v14m3-9h.01m0 4h.01"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20H6Zm7.5 0V8H18m-9 4h6m-6 4h5"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 2.3 5.7M4 7v5h5m3-5v5l3 2"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M8 4v5m8-5v5M6 9h12v2a6 6 0 0 1-6 6v4m-6-10a6 6 0 0 0 6 6"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+</svg>
+<div class="app">
+  <aside id="rail" class="rail" aria-label="应用导航"></aside>
+  <div id="stage" class="stage"></div>
+</div>
+<div id="toast" class="toast" role="status" hidden></div>
+<dialog id="dialog"></dialog>
+<script>
+"use strict";
+
+
+const icon = (name) => '<svg class="icon" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-' + name + '"></use></svg>';
+const el = (selector) => document.querySelector(selector);
+const safe = (value) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const chip = (label, tone = "", symbol = "") => '<span class="chip ' + tone + '">' + (symbol ? icon(symbol) : "") + safe(label) + '</span>';
+const avatar = (symbol, classes = "", live = false) => '<span class="avatar ' + classes + '">' + icon(symbol) + (live ? '<span class="dot live"></span>' : '') + '</span>';
+const current = (active) => active ? ' aria-current="page"' : '';
+const action = (id, label, style = "", value = "", symbol = "", attrs = "") =>
+  '<button type="button" class="' + style + '" data-action="' + id + '"' + (value ? ' data-value="' + safe(value) + '"' : '') + attrs + '>' + (symbol ? icon(symbol) : '') + label + '</button>';
+const button = (id, label, style = "", value = "", symbol = "", attrs = "") => action(id, label, "btn " + style, value, symbol, attrs);
+const iconButton = (id, label, symbol, style = "", value = "", attrs = "") => action(id, "", "icon-btn " + style, value, symbol, ' aria-label="' + label + '"' + attrs);
+const link = (id, label, value = "") => action(id, label, "link", value, "right");
+
+const projects = {
+  ajinos: { name: "AJinOS", icon: "brand", description: "内置配置助手", path: "~/.agent-autoloop/workspaces/ajinos", permission: "edit", limit: 1, portrait: "维护本机执行器、插件接入和规则配置。", profile: "已更新", rules: "读取现有配置后生成修订建议，由本人应用。" },
+  orders: { name: "订单系统", icon: "folder", description: "订单、库存与发货服务", path: "E:/workspace/order-service", permission: "edit", limit: 2, portrait: "订单服务使用 Java。变更先跑相关单测，高危操作须问本人。", profile: "已更新", rules: "代码按 edit 档执行。触及生产库存时，先发 askFirst 审批卡。" },
+  docs: { name: "对外文档", icon: "doc", description: "对外接口协议与接入说明", path: "E:/workspace/partner-docs", permission: "read", limit: 1, portrait: "对外接口文档按上游结论维护，交付前核对接口示例和状态码。", profile: "待复核", rules: "read 档只生成修订建议。实际更新须由具备编辑权限的流程接手。" },
+};
+const shipId = "T-000128";
+const inventoryId = "T-000127";
+const githubId = "T-000126";
+const planId = "timeout";
+const shipRequest = "给订单列表加上批量发货，跑完单测再叫我验收";
+const planRequest = "先核查订单超时重试有没有漏记日志，确认后同步更新对外接入文档";
+const inventoryTitle = "线上库存回填脚本审批";
+const planTitle = "超时日志排查与文档同步";
+const tickets = [
+  { id: shipId, title: "订单列表批量发货", project: "orders", time: "10:21", state: "review", source: "主私聊", rounds: 2, summary: "批量发货交互、部分失败提示与接口回执均已验证。", evidence: [
+    ["批量提交选中的待发货订单", "OrderBatchShipmentTest · 可发货订单成功入列"],
+    ["部分失败时逐单返回原因", "重复发货与状态不符均返回对应错误码"],
+    ["相关单测全部通过", "14 项通过 · 0 失败 · 0 跳过"],
+  ] },
+  { id: inventoryId, title: inventoryTitle, project: "orders", time: "10:02", state: "approval", source: "飞书群采集", rounds: 1, summary: "检测到生产环境回填库存的请求。当前只完成影响范围核对，执行须本人授权。" },
+  { id: githubId, title: "修正接口回调签名示例", project: "docs", time: "09:46", state: "review", source: "GitHub Issue #42", rounds: 1, summary: "对照接口规范核对了签名拼接顺序，已交付文档修订建议和可复核示例。", evidence: [
+    ["签名串的拼接顺序与规范一致", "回调示例已与规范逐字段比对"],
+    ["合法和非法签名均可验证", "6 项签名样例通过 · 0 失败"],
+  ] },
+  { id: "T-000125", title: "订单异常码归档", project: "orders", time: "09:18", state: "running", source: "协作计划", rounds: 1, summary: "正在归档支付失败与退款超时涉及的错误码，结果将作为接入指南的只读资料。" },
+  { id: "T-000124", title: "巡检本机执行器配置", project: "ajinos", time: "08:54", state: "running", source: "定时触发", rounds: 1, summary: "正在检查手动导入的 CLI 执行器及配置可用性。" },
+  { id: "T-000123", title: "整理 webhook 重放说明", project: "docs", time: "昨天", state: "closed", source: "主私聊", rounds: 2, summary: "本人已验收，重放条件和重复事件的返回语义已核对。" },
+];
+const names = { running: ["执行中", "blue"], approval: ["待拍板", "amber"], review: ["待验收", "amber"], closed: ["已关闭", "neutral"], draft: ["待确认草案", "amber"], cancelled: ["草案已取消", "neutral"], queued: ["待上游", "neutral"] };
+const states = ["main", "thread", "inbox", "ops", "capabilities"];
+const tabs = { board: "工单看板", plans: "DAG 协作计划", flow: "流转概览" };
+const groups = { territory: ["项目领地", "folder"], roles: ["执行器与三角色", "term"], memory: ["长期记忆档案", "history"], sources: ["外部来源与通道", "plug"] };
+const queue = (state) => tickets.filter((ticket) => ticket.state === state);
+const pending = () => queue("approval").length + queue("review").length;
+const byId = (id) => tickets.find((ticket) => ticket.id === id);
+const order = (ticket) => ticket.time === "昨天" ? "00" : ticket.time;
+const status = (entry) => chip(...names[entry.state]);
+const projectTag = (key) => chip(projects[key]?.name ?? key);
+const ticketId = (id) => '<span class="mono muted">' + id + '</span>';
+const upNext = { id: planId, title: planTitle, project: "跨项目 · 2单", time: "10:38", state: "draft" };
+const approvalOptions = { preview: "只执行只读预检", scoped: "按确认范围回填", decline: "拒绝执行" };
+const drafts = new Map();
+const draftsConfig = new Map();
+const messages = new Map();
+const approvals = new Map();
+let filters = { project: "", status: "all", search: "", searching: false };
+let state = "main";
+let thread = shipId;
+let drawer = "";
+let tab = "board";
+let group = "territory";
+let sideOpen = false;
+let overrideOpen = false;
+let toastTimer;
+let modal = null;
+
+function readLocation() {
+  const query = new URLSearchParams(location.search);
+  const next = query.get("state");
+  state = states.includes(next) ? next : "main";
+  const id = query.get("thread");
+  thread = id === planId || byId(id) ? id : shipId;
+  drawer = state === "thread" && thread !== planId && query.get("details") !== "closed" ? thread : "";
+  tab = Object.hasOwn(tabs, query.get("tab")) ? query.get("tab") : "board";
+  group = Object.hasOwn(groups, query.get("group")) ? query.get("group") : "territory";
+  document.documentElement.dataset.theme = query.get("theme") === "dark" ? "dark" : "light";
+  sideOpen = false;
+  overrideOpen = false;
+}
+function syncLocation(mode = "pushState") {
+  const url = new URL(location.href);
+  url.searchParams.set("state", state);
+  for (const [key, value] of Object.entries({
+    theme: document.documentElement.dataset.theme === "dark" ? "dark" : "",
+    thread: state === "thread" && thread !== shipId ? thread : "",
+    details: state === "thread" && thread !== planId && !drawer ? "closed" : "",
+    tab: state === "ops" && tab !== "board" ? tab : "",
+    group: state === "capabilities" && group !== "territory" ? group : "",
+  })) {
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+  }
+  history[mode]({}, "", url);
+}
+function navigate(next, id = shipId) {
+  state = next;
+  thread = id;
+  drawer = next === "thread" && id !== planId ? id : "";
+  tab = "board";
+  group = "territory";
+  sideOpen = false;
+  overrideOpen = false;
+  syncLocation();
+  render({ preserveScroll: false });
+}
+function renderRail() {
+  const inChat = ["main", "thread", "inbox"].includes(state);
+  const theme = document.documentElement.dataset.theme === "dark";
+  const nav = (view, label, symbol, active, count = 0) =>
+    '<button type="button" class="icon-btn rail-button" data-action="navigate" data-value="' + view + '" aria-label="' + label +
+    '" data-tooltip="' + label + '"' + current(active) + (count ? ' aria-description="' + count + ' 项待处理"' : '') + '>' + icon(symbol) +
+    (count ? '<span id="inbox-count" class="rail-count" aria-hidden="true">' + count + '</span>' : '') + '</button>';
+  el("#rail").innerHTML = iconButton("navigate", "AJinOS 主页", "brand", "brand", "main", ' data-tooltip="AJinOS 主页"') +
+    '<nav aria-label="主导航">' + nav("main", "对话", "chat", inChat, pending()) + nav("ops", "运行", "ops", state === "ops") +
+    nav("capabilities", "能力与沙箱", "cap", state === "capabilities") + '</nav>' +
+    '<div class="rail-foot">' + iconButton("theme", theme ? "切换到日间主题" : "切换到夜间主题", theme ? "sun" : "moon",
+      "rail-button", "", ' data-tooltip="' + (theme ? "切换到日间主题" : "切换到夜间主题") + '"') +
+    '<span class="rail-engine" role="img" aria-label="引擎在线" data-tooltip="引擎在线"><span class="dot live"></span></span></div>';
+}
+const engine = '<span class="engine" aria-label="引擎在线" title="演示引擎状态"><span class="dot live"></span><span class="engine-label">引擎在线</span></span>';
+function header(title, subtitle, { leading = "", tools = "", menu = "" } = {}) {
+  return '<header class="view-header">' +
+    (menu ? iconButton("side-menu", menu, "menu", "mobile-menu", "", ' aria-expanded="' + sideOpen + '" aria-controls="sidebar"') : '') +
+    leading + '<div class="grow"><h1>' + safe(title) + '</h1><div class="subtitle">' + subtitle + '</div></div>' + tools + engine + '</header>';
+}
+function projectOptions(first) {
+  return '<option value="">' + first + '</option>' +
+    Object.entries(projects).map(([key, project]) => '<option value="' + key + '">' + project.name + '</option>').join("");
+}
+function sidebar() {
+  const needApproval = queue("approval").length;
+  const needReview = queue("review").length;
+  return '<aside id="sidebar" class="sidebar' + (sideOpen ? ' is-open' : '') + '" aria-label="对话与最近事项">' +
+    '<div class="side-heading row between"><span class="wordmark">AJinOS</span>' +
+    iconButton("search", "搜索事项", "search", "", "", ' title="搜索事项" aria-expanded="' + filters.searching + '" aria-controls="thread-search"') + '</div>' +
+    '<div class="side-filters"><input class="control" id="thread-search" type="search" aria-label="搜索事项" placeholder="搜索标题、工单号或项目" value="' + safe(filters.search) + '"' + (filters.searching ? "" : " hidden") + '>' +
+    '<label class="select-wrap">' + icon("folder") + '<select class="control select-project" id="project-filter" aria-label="按项目筛选">' +
+    projectOptions("全部项目") + '<option value="cross">跨项目</option></select>' + icon("down") + '</label></div>' +
+    '<button type="button" class="side-card" data-action="navigate" data-value="main"' + current(state === "main") + '>' +
+    avatar("brand", "large", true) + '<span class="grow"><strong>AJinOS 总管</strong><small class="secondary">统一入口 · 问答 / 派单 / 跨项目计划</small></span></button>' +
+    '<button type="button" class="side-card inbox-entry" data-action="navigate" data-value="inbox"' + current(state === "inbox") + '>' +
+    avatar("inbox", "large") + '<span class="grow"><strong>待我处理</strong><small>' +
+    (pending() ? needApproval + ' 项待拍板 · ' + needReview + ' 项待验收' : '目前没有待处理事项') +
+    '</small></span><span class="count">' + pending() + '</span></button>' +
+    '<section class="recent"><h2>最近事项</h2><div class="row filters" role="group" aria-label="事项状态">' +
+    [["all", "全部"], ["open", "进行中"], ["closed", "已结束"]].map(([id, label]) =>
+      action("filter", label, "filter", id, "", ' aria-pressed="' + (filters.status === id) + '"')).join("") +
+    '</div><div id="threads">' + threadList() + '</div></section></aside>';
+}
+function threadList() {
+  const query = filters.search.trim().toLowerCase();
+  const entries = [...tickets, upNext].filter((item) => {
+    const closed = ["closed", "cancelled"].includes(item.state);
+    const matchesProject = !filters.project || item.project === filters.project || (filters.project === "cross" && item === upNext);
+    const matchesStatus = filters.status === "all" || (filters.status === "closed" ? closed : !closed);
+    return matchesProject && matchesStatus &&
+      [item.id, item.title, projects[item.project]?.name ?? item.project].some((value) => value.toLowerCase().includes(query));
+  }).sort((a,b) => order(b).localeCompare(order(a)));
+  return entries.length ? entries.map((item) =>
+    '<button type="button" class="thread-item" data-action="thread" data-value="' + item.id + '"' + current(state === "thread" && thread === item.id) + '>' +
+    '<strong>' + item.title + '</strong><time>' + item.time + '</time>' + projectTag(item.project) +
+    '<span class="thread-status">' + status(item) + '</span></button>').join("") :
+    '<p class="sidebar-empty">没有符合条件的事项</p>';
+}
+function userMessage(text, time, extra = "") {
+  return '<div class="user-message"><time>' + time + '</time>' +
+    (text ? '<div class="bubble">' + safe(text) + '</div>' : "") + extra + '</div>';
+}
+function agentMessage(name, time, body, symbol = "brand", style = "") {
+  return '<div class="agent-message">' + avatar(symbol, style) + '<div class="agent-copy"><div class="agent-name"><strong>' +
+    name + '</strong><time>' + time + '</time></div>' + body + '</div></div>';
+}
+const recentTime = () => new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+function digest() {
+  const approval = queue("approval");
+  const review = queue("review");
+  const items = [
+    ...approval.map((item) => [item.title, "待拍板", "查看审批", "navigate", "inbox"]),
+    ...review.map((item) => [item.title, "待验收", "查看验收", "thread", item.id]),
+  ];
+  return '<p>' + (items.length ? '按当前状态，有 ' + items.length + ' 件事需要你处理。' : '当前没有需要你拍板或验收的事项。') + '</p>' +
+    (items.length ? '<div class="brief">' + items.map(([title, label, cta, id, value]) =>
+      '<div class="brief-row"><div class="row">' + chip(label, "amber") + '<span>' + title + '</span></div>' +
+      link(id, cta, value) + '</div>').join("") + '</div>' : '');
+}
+const ai = (item) => '<div class="ai-note">' + icon("check") + '<span>AI 校验：建议通过 · ' +
+  (item.id === shipId ? "14 项单测通过" : "6 项签名样例通过") + '</span></div>';
+function receipt(item) {
+  return '<section class="receipt"><div class="card-heading"><div class="row">' + avatar("ticket", "plain") +
+    '<div class="title-stack"><h2>' + item.title + '</h2><div class="row card-meta">' +
+    projectTag(item.project) + chip(item.id) + '</div></div></div>' + status(item) + '</div>' + ai(item) +
+    '<div class="wrap card-actions">' + (item.state === "review" ? button("accept", "通过验收", "primary", item.id, "check") : '') +
+    button("drawer", "展开详情", "", item.id, "panel") + button("thread", "进入 Thread", "ghost", item.id, "right") + '</div></section>';
+}
+function planGraph(parts) {
+  return '<div class="plan-graph">' + parts.map(([project, title, caption], index) =>
+    (index ? '<span class="plan-arrow">' + icon("right") + '</span>' : '') + '<div class="plan-node">' +
+    '<span class="node-index" aria-label="步骤 ' + (index + 1) + '">' + (index + 1) + '</span>' +
+    '<div>' + projectTag(project) + '<h3>' + title + '</h3>' + (caption ? '<small>' + caption + '</small>' : '') + '</div></div>').join("") + '</div>';
+}
+function planCard() {
+  const started = upNext.state === "running";
+  return '<section class="plan"><div class="card-heading"><div class="row">' + avatar("dag", "plain") +
+    '<h2>' + planTitle + '</h2></div>' + (started ? chip("已启动 · 推进中", "blue") : status(upNext)) + '</div>' +
+    planGraph([
+      ["orders", "核查超时重试日志与补测", started ? "T-000129 · 执行中" : "核对失败重试是否记下订单号和异常原因"],
+      ["docs", "按上游结论同步更新接口说明", started ? "T-000130 · 等待步骤 1" : "接收上游只读结论，先生成修订建议"],
+    ]) +
+    (upNext.state === "draft" ? '<div class="wrap card-actions">' + button("start-plan", "确认启动计划", "primary", "", "right") +
+    button("cancel-plan", "取消草案", "ghost") + '</div>' : '') + '</section>';
+}
+function messagesFor(key) {
+  return (messages.get(key) ?? []).map(({ text, time, images, options, reply }) => {
+    const photos = images.length ? '<div class="attachments">' + images.map((image) => '<span class="attachment"><img src="' +
+      safe(image.url) + '" alt=""><span>' + safe(image.name) + '</span></span>').join("") + '</div>' : '';
+    const overrides = options.length ? '<div class="wrap message-overrides">' + options.map((item) => chip(item)).join("") + '</div>' : '';
+    return '<div class="exchange">' + userMessage(text, time, photos + overrides) +
+      agentMessage("AJinOS 总管", time, reply === "digest" ? digest() + chip("只读简报 · 未开单") : '<p>' + reply + '</p>') + '</div>';
+  }).join("");
+}
+function mainView() {
+  const snapshot = '<div class="row snapshot" aria-label="状态摘要">' +
+    [["待拍板", queue("approval").length, "inbox"], ["待验收", queue("review").length, "inbox"], ["运行中", queue("running").length, "ops"]]
+      .map(([label, count, view]) => action("navigate", label + ' <b>' + count + '</b>', "", view)).join('<span class="divider" aria-hidden="true">·</span>') + '</div>';
+  return header("AJinOS 总管", "与飞书私聊同构 · 零消耗简报", { leading: avatar("brand", "large", true), tools: snapshot, menu: "打开对话列表" }) +
+    '<div id="main-scroll" class="scroller conversation-scroll"><div class="conversation main-flow"><div class="day-divider">今天 · 演示记录</div>' +
+    '<div class="exchange">' + userMessage("今天手头哪几件事需要我管？", "10:05") +
+    agentMessage("AJinOS 总管", "10:05", digest() + '<div class="card-actions">' + chip("只读简报 · 未开单") + '</div>') + '</div>' +
+    '<div class="exchange">' + userMessage(shipRequest, "10:06") +
+    agentMessage("AJinOS 总管", "10:21", receipt(byId(shipId))) + '</div>' +
+    '<div class="exchange">' + userMessage(planRequest, "10:38") +
+    agentMessage("AJinOS 总管", "10:38", planCard()) + '</div>' + messagesFor("main") + '</div></div>' + composer("main");
+}
+
+
+function approvalForm(item, inDrawer = false) {
+  const suffix = inDrawer ? "-details" : "";
+  const selected = approvals.get(item.id);
+  return '<form data-approval="' + item.id + '"><fieldset><legend class="muted"><small>选择执行范围</small></legend>' +
+    Object.entries(approvalOptions).map(([value, label]) => '<label class="choice"><input type="radio" name="decision' + suffix +
+      '" value="' + value + '" required' + (value === selected ? " checked" : "") + '> ' + label + '</label>').join("") +
+    '</fieldset><div class="wrap queue-actions"><button type="submit" class="btn primary"' +
+    (selected ? "" : " disabled") + '>确认执行</button></div></form>';
+}
+function inboxCard(item) {
+  const approval = item.state === "approval";
+  return '<article class="queue-card' + (approval ? ' attention' : '') + '"><div class="wrap between"><div class="wrap">' +
+    '<small class="secondary">来自 ' + item.source + '</small>' + ticketId(item.id) + '</div>' +
+    (approval ? chip("askFirst · 高危审批", "amber") : status(item)) + '</div><h3>' + item.title +
+    '</h3><div class="wrap card-actions">' + projectTag(item.project) + '</div><p>' + item.summary + '</p>' +
+    (approval ? approvalForm(item) : '<div class="wrap queue-actions">' + link("thread", "进入 Thread", item.id) +
+      button("drawer", "展开详情", "", item.id, "panel") + button("accept", "通过验收", "primary", item.id, "check") + '</div>') + '</article>';
+}
+function inboxView() {
+  const sections = [["approval", "待拍板"], ["review", "待验收"]].map(([key, title]) => {
+    const items = queue(key);
+    return items.length ? '<section class="queue-section"><div class="row section-title"><h2>' + title + '</h2>' +
+      chip(String(items.length), "amber") + '</div>' + items.map(inboxCard).join("") + '</section>' : "";
+  }).join("");
+  return header("待我处理", pending() + " 项需要本人决定", { leading: avatar("inbox", "large plain"), menu: "打开对话列表" }) +
+    '<div id="main-scroll" class="scroller inbox-scroll"><div class="inbox-content">' + (sections ||
+      '<div class="empty">' + icon("check") + '<h2>都处理完了</h2><p>需要你拍板或验收的事项会出现在这里。</p></div>') + '</div></div>';
+}
+function checklist(item) {
+  return '<ul class="checklist">' + item.evidence.map(([title]) => '<li>' + icon("check") + '<span>' + title + '</span></li>').join("") + '</ul>';
+}
+function shipmentRecords(item) {
+  return userMessage(shipRequest, "10:06") +
+    agentMessage("Worker · Codex", "10:09", '<section class="record approval-record"><div class="wrap between"><div class="wrap"><strong>第 1 轮 · 发货验证审批</strong>' +
+      chip("askFirst", "amber") + '</div>' + chip("已答复", "green", "check") + '</div><p>批量入口和接口已接通。端到端验证可能触发真实发货，先提交审批卡并结束本轮。</p>' +
+      '<div class="record-foot"><strong>本人已选</strong> · 仅用测试桩模拟发货，不触发真实物流 <span class="muted">10:12</span></div></section>', "term", "plain") +
+    agentMessage("Worker · Codex", "10:20", '<section class="record"><div class="wrap between"><strong>第 2 轮 · 结构化验收依据</strong>' +
+      '<code class="chip mono">taskReportVersion: 1</code></div><p>审批答复唤醒原事项，沿用原执行会话。完成测试桩验证并提交验收报告。</p>' +
+      checklist(item) + '</section>', "term", "plain") +
+    agentMessage("AI 独立校验", "10:21", '<section class="record"><div class="wrap between"><strong>发货行为与单测报告已核对</strong>' +
+      status(item) + '</div><p>逐项核对变更、错误码及测试输出，建议本人验收。</p>' + ai(item) +
+      (item.outcome ? '<p>' + safe(item.outcome) + '</p>' : '') + '</section>', "check", "checked");
+}
+function threadView() {
+  const item = thread === planId ? upNext : byId(thread);
+  const isPlan = item === upNext;
+  const isShipment = item.id === shipId;
+  const summary = '<div class="wrap sub-row">' +
+    (isPlan ? projectTag(item.project) : chip("Thread 直通 · 跳过路由", "green", "check") + projectTag(item.project) + ticketId(item.id)) + '</div>';
+  const tools = isPlan ? "" : button("drawer", drawer ? "收起详情" : "展开详情", "ghost", item.id, "panel",
+    ' aria-expanded="' + Boolean(drawer) + '"');
+  let flow;
+  if (isPlan) {
+    flow = userMessage(planRequest, "10:38") + agentMessage("AJinOS 总管", "10:38", planCard());
+  } else if (isShipment) {
+    flow = shipmentRecords(item);
+  } else {
+    const body = item.state === "approval" ? inboxCard(item) :
+      '<div class="record"><div class="wrap between"><strong>' + (item.evidence ? "结构化验收依据" : "当前执行状态") +
+      '</strong>' + status(item) + '</div><p>' + item.summary + '</p>' +
+      (item.evidence ? checklist(item) + ai(item) : "") +
+      (item.outcome ? '<p>' + safe(item.outcome) + '</p>' : '') + '</div>';
+    flow = agentMessage("Worker", item.time, body, "term", "plain");
+  }
+  return header(item.title, summary, { leading: avatar(isPlan ? "dag" : "ticket", "large plain"), tools, menu: "打开对话列表" }) +
+    '<div id="main-scroll" class="scroller conversation-scroll"><div class="conversation thread-flow"><div class="day-divider">讨论记录 · 来自 ' +
+    (item.source ?? "主私聊") + '</div>' + flow + messagesFor(thread) + '</div></div>' + composer(thread);
+}
+function composer(key) {
+  const draft = drafts.get(key) ?? { text: "", images: [], project: "", model: "" };
+  return '<div class="composer-slot"><form class="composer" id="composer" data-key="' + key + '">' +
+    '<textarea rows="1" aria-label="消息" placeholder="' +
+    (key === "main" ? "告诉 AJinOS 要查进度、处理任务或安排跨项目协作…" : "回复这条 Thread，沿用当前事项…") + '">' +
+    safe(draft.text) + '</textarea><div id="attachments" class="attachments">' + draft.images.map((image, index) =>
+      '<span class="attachment"><img src="' + safe(image.url) + '" alt=""><span>' + safe(image.name) + '</span>' +
+      iconButton("remove-image", "移除附件", "close", "", String(index)) + '</span>').join("") + '</div>' +
+    '<div class="row between"><div class="row tools"><input type="file" id="images" accept="image/*" multiple hidden>' +
+    action("image", "", "icon-btn", "", "image", ' aria-label="添加图片" title="添加图片"') +
+    (key === "main" ? button("override", "高级覆盖（项目/模型）", "ghost", "", "down",
+      ' id="override-toggle" aria-label="' + (overrideOpen ? "收起高级覆盖" : "展开高级覆盖") + '" aria-expanded="' + overrideOpen +
+      '" aria-controls="overrides"') : chip("Thread 直通", "green")) + '</div>' +
+    '<button type="submit" class="icon-btn send" aria-label="发送消息" title="发送消息">' + icon("send") + '</button></div>' +
+    (key === "main" ? '<div id="overrides" class="override"' + (overrideOpen ? "" : " hidden") +
+      '><label>本次项目<select id="override-project" class="control">' + projectOptions("自动选择") + '</select></label>' +
+      '<label>本次模型<select id="override-model" class="control"><option value="">使用执行器默认</option><option value="codex">Codex · 常规</option>' +
+      '<option value="codex-deep">Codex · 深度</option></select></label></div>' : '') + '</form></div>';
+}
+function drawerView(item) {
+  const evidence = item.evidence ? '<section class="drawer-section"><div class="wrap between"><h3>验收标准逐项依据</h3>' +
+    chip(item.evidence.length + " / " + item.evidence.length + " 已核实", "green") + '</div><div class="evidence">' +
+    item.evidence.map(([title, detail]) => '<div class="evidence-row"><div class="wrap between"><strong>' + title + '</strong>' +
+      chip("passed", "green", "check") + '</div><p>' + detail + '</p></div>').join("") + '</div></section>' :
+    '<section class="drawer-section"><h3>当前进展</h3><p>' + item.summary + '</p>' +
+    (item.state === "approval" ? '<div class="queue-card attention card-actions">' + approvalForm(item, true) + '</div>' : '') + '</section>';
+  const ship = item.id === shipId;
+  const executor = item.state === "queued" ? "等待上游" : ship ? "Codex · 6 分 52 秒" : "Codex";
+  const rounds = '<section class="drawer-section"><h3>执行轮次与用量</h3><div class="wrap meter-summary">' +
+    chip(item.rounds + " 轮") + chip(executor) + (ship ? chip("15.0k tokens") : "") + '</div>' +
+    (ship ? '<div class="run-row"><span>第 1 轮 · 发出审批</span><span class="mono">2m 18s · 4.8k</span></div>' +
+      '<div class="run-row"><span>第 2 轮 · 续接会话</span><span class="mono">4m 34s · 10.2k</span></div>' : '') + '</section>';
+  const why = ship ? [
+    '10:06  ticket.opened        T-000128', '10:09  card.opened          askFirst', '10:12  card.answered        test-stub',
+    '10:20  run.reported         passed × 3', '10:21  ticket.status        awaiting-review', '',
+    'OrderBatchShipmentTest', 'Tests run: 14, Failures: 0, Skipped: 0',
+  ] : [item.time + '  ' + item.id + ' · ' + names[item.state][0], 'source: ' + item.source];
+  const outcome = item.outcome ? '<p>' + safe(item.outcome) + '</p>' : '';
+  return '<aside class="drawer" aria-label="工单详情"><header class="drawer-head"><div class="row between"><strong class="mono">' + item.id + '</strong>' +
+    iconButton("dismiss-drawer", "关闭详情", "close", "", "", ' title="关闭详情"') + '</div><h2>' + item.title +
+    '</h2><div class="wrap">' + projectTag(item.project) + status(item) + '</div></header><div class="scroller drawer-body">' + evidence +
+    rounds + '<section class="drawer-section"><h3><code class="mono">why</code> 事实与输出日志</h3><pre class="log">' +
+    why.map(safe).join("\n") + '</pre>' + outcome + '</section></div><footer class="wrap drawer-footer">' +
+    (item.state === "review" ? button("accept", "通过验收", "primary", item.id, "check") + button("reject", "打回修改", "", item.id) : '') +
+    (["review", "approval"].includes(item.state) ? button("close-ticket", "关闭工单", "danger", item.id) : '') +
+    (state !== "thread" ? button("thread", "进入 Thread", "ghost", item.id, "right") : "") + '</footer></aside>';
+}
+const existingPlan = "订单异常码归档与指南同步";
+function progressCard(title, complete, total, description, id = "") {
+  const percent = Math.round(complete / total * 100);
+  return '<article class="plan-progress"><div class="wrap between"><div class="wrap">' + avatar("dag", "plain") + '<h3>' +
+    title + '</h3></div>' + chip("推进中", "blue") + '</div><p class="secondary">' + description + '</p><div class="row between"><div class="progress-track" role="progressbar" aria-label="' +
+    title + '" aria-valuemin="0" aria-valuemax="' + total + '" aria-valuenow="' + complete + '"><span style="width:' + percent +
+    '%"></span></div><small class="mono muted">' + complete + '/' + total + '</small></div>' +
+    (id ? '<div>' + link("thread", "进入计划 Thread", id) + '</div>' : "") + '</article>';
+}
+function activePlans() {
+  let cards = progressCard(existingPlan, 1, 3, "已汇总现网样例 · 订单系统正在归档异常码 · 对外文档等待上游结论");
+  if (upNext.state === "running") cards += progressCard(planTitle, 0, 2, "订单系统正在核查重试日志 · 对外文档等待上游结论", planId);
+  return cards;
+}
+function board() {
+  return '<div class="board">' + [["running", "进行中", "running"], ["approval", "待拍板", "warm"],
+    ["review", "待验收", "warm"], ["closed", "最近关闭", ""]].map(([key, title, color]) => {
+    const items = queue(key).sort((a,b) => order(b).localeCompare(order(a)));
+    if (key === "running") items.push(...queue("queued"));
+    return '<section class="board-column"><header><span class="dot ' + color + '"></span><h2>' + title +
+      '</h2><span class="count">' + items.length + '</span></header>' +
+      (items.length ? items.map((item) =>
+        '<button type="button" class="board-card" data-action="drawer" data-value="' + item.id + '" aria-expanded="' + (drawer === item.id) +
+        '"><span class="row between">' + ticketId(item.id) + icon("panel") + '</span><strong>' + item.title + '</strong><span class="row">' +
+        projectTag(item.project) + (item.state === "queued" ? status(item) : "") + '</span><span class="row muted">' +
+        item.source + ' <span aria-hidden="true">·</span> ' + (item.rounds ? '第 ' + item.rounds + ' 轮' : '等待首轮') +
+        '</span></button>').join("") : '<p class="sidebar-empty">暂无工单</p>') + '</section>';
+  }).join("") + '</div><section class="ops-plans"><div class="row between section-title"><h2>活跃协作计划</h2>' +
+    link("tab", "查看计划", "plans") + '</div>' + activePlans() + '</section>';
+}
+function flowView() {
+  const nodes = [
+    ["plug", "触发器", "桌面、飞书、GitHub 与定时", "私聊经 Router · 外部来源发标准事件"],
+    ["chat", "Thread 讨论串", "消息、答复和卡片回到原话题", "已绑定事项直通原执行会话"],
+    ["ticket", "Ticket 工单", "Hub 按可信规则开单与派发", "状态来自事实日志"],
+    ["term", "Worker 会话", "在项目沙箱执行并提交回执", "需本人决定时发卡并结束本轮"],
+  ];
+  return '<div class="section-title"><h2>从触发到交付</h2></div><div class="flow-map">' + nodes.map(([symbol, title, first, second], index) =>
+    (index ? '<span class="plan-arrow">' + icon("right") + '</span>' : '') + '<div class="flow-node">' + icon(symbol) + '<strong>' +
+    title + '</strong><small>' + first + '</small><small>' + second + '</small></div>').join("") + '</div><div class="wrap">' +
+    link("navigate", "处理待办", "inbox") + link("tab", "查看工单", "board") + '</div>';
+}
+function opsView() {
+  const content = {
+    board: () => board(),
+    plans: () => '<div class="section-title"><h2>活跃协作计划</h2></div>' + activePlans() +
+      (upNext.state === "draft" ? '<section class="ops-plans"><div class="section-title"><h2>待确认计划</h2></div>' + planCard() + '</section>' : ""),
+    flow: () => flowView(),
+  }[tab]();
+  return header("运行", "Mission Control · 查看工单状态与跨项目依赖", { leading: avatar("ops", "large plain") }) +
+    '<div id="main-scroll" class="scroller ops-scroll"><div class="ops-content"><div class="ops-tabs" role="group" aria-label="运行视图">' +
+    Object.entries(tabs).map(([key, label]) => action("tab", label, "", key, "", ' aria-pressed="' + (tab === key) + '"')).join("") +
+    '</div>' + content + '</div></div>';
+}
+
+
+function capabilitiesSidebar() {
+  return '<aside id="sidebar" class="sidebar cap-sidebar' + (sideOpen ? ' is-open' : '') + '" aria-label="能力与沙箱分类">' +
+    '<h2>能力与沙箱</h2><nav class="cap-nav" aria-label="配置分类">' +
+    Object.entries(groups).map(([key, [label, symbol]]) =>
+      action("group", key === "territory" ? "项目领地（沙箱）" : label, "", key, symbol, current(group === key))).join("") + '</nav></aside>';
+}
+function territories() {
+  return Object.entries(projects).map(([id, project]) =>
+    '<article class="territory"><div class="card-heading"><div class="row">' + avatar(project.icon, id === "ajinos" ? "" : "plain") +
+    '<div class="title-stack"><h2>' + project.name + '</h2><p>' + project.description + '</p></div></div>' +
+    button("edit-profile", "更新画像 / 规则", "", id) + '</div><dl class="territory-fields"><div><dt>工作目录</dt><dd class="mono">' +
+    project.path + '</dd></div><div><dt>权限档位</dt><dd>' + chip(project.permission) +
+    '</dd></div><div><dt>并发上限</dt><dd>' + project.limit + ' 轮</dd></div><div><dt>项目画像</dt><dd>' +
+    (draftsConfig.has(id) ? chip("待应用草稿", "amber") : chip(project.profile, project.profile === "已更新" ? "green" : "amber")) +
+    '</dd></div></dl></article>').join("");
+}
+const configuration = {
+  roles: [
+    ["dag", "规划 · Router", "新意图按需调用。只选择已登记的项目和流程。"],
+    ["term", "执行 · Codex CLI", "从手动导入的配置中按可信规则选用。常规与深度配置分别指定模型和思考强度。"],
+    ["check", "校验 · 独立验证", "复核结构化回执与测试证据，给出验收建议，最终由本人签收。"],
+  ],
+  memory: [
+    ["history", "项目画像", "按项目记录目录用途、约定和交接背景。Worker 以只读资料引用相关内容。"],
+    ["doc", "保留的协作事实", "已选审批、验收依据与交付结果可以回到原事项查询。"],
+  ],
+  sources: [
+    ["chat", "飞书私聊", "与桌面共享 Router 和 Thread 绑定，答复回到原私聊。"],
+    ["inbox", "飞书群采集", "采集事件走来源插件，审批进入待我处理。"],
+    ["plug", "GitHub Issue", "Issue 变动以标准事件进入 Hub，可回到来源与对应事项。"],
+  ],
+};
+function capabilitiesView() {
+  const title = groups[group][0];
+  const content = group === "territory" ? territories() : configuration[group].map(([symbol, label, description]) =>
+    '<article class="territory"><div class="row">' + avatar(symbol, "plain") +
+    '<div class="title-stack"><h2>' + label + '</h2><p>' + description + '</p></div></div></article>').join("");
+  const descriptions = {
+    territory: "Super Agent 的受控工作目录与权限边界",
+    roles: "规划、执行与校验分别使用可信配置",
+    memory: "按项目查阅长期资料",
+    sources: "查看事件的来源与答复去向",
+  };
+  return header(title, descriptions[group], { leading: avatar(groups[group][1], "large plain"), menu: "打开配置分类" }) +
+    '<div id="main-scroll" class="scroller cap-scroll"><div class="cap-content">' + content + '</div></div>';
+}
+function announce(message) {
+  const toast = el("#toast");
+  toast.textContent = message;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 3200);
+}
+function render({ preserveScroll = true } = {}) {
+  const scroll = el("#main-scroll")?.scrollTop ?? 0;
+  const detailsScroll = el(".drawer-body")?.scrollTop ?? 0;
+  const sideScroll = el("#sidebar")?.scrollTop ?? 0;
+  renderRail();
+  const isChat = ["main", "thread", "inbox"].includes(state);
+  const hasSidebar = isChat || state === "capabilities";
+  const stage = el("#stage");
+  stage.className = "stage" + (hasSidebar ? " has-sidebar" : "") + (drawer ? " has-drawer" : "");
+  const view = { main: mainView, thread: threadView, inbox: inboxView, ops: opsView, capabilities: capabilitiesView }[state]();
+  stage.innerHTML = (hasSidebar ? isChat ? sidebar() : capabilitiesSidebar() : "") + '<main class="workspace">' + view + '</main>' +
+    (drawer ? '<button type="button" class="scrim drawer-scrim" aria-hidden="true" tabindex="-1" data-action="dismiss-drawer"></button>' +
+      drawerView(byId(drawer)) : '') +
+    (sideOpen ? '<button type="button" class="scrim sidebar-scrim" aria-hidden="true" tabindex="-1" data-action="side-menu"></button>' : '');
+  const project = el("#project-filter");
+  if (project) project.value = filters.project;
+  const form = el("#composer");
+  if (form) {
+    const draft = getDraft(form.dataset.key);
+    const projectSelect = el("#override-project");
+    if (projectSelect) {
+      projectSelect.value = draft.project;
+      el("#override-model").value = draft.model;
+    }
+    resizeInput(form.querySelector("textarea"));
+  }
+  if (preserveScroll) {
+    el("#main-scroll").scrollTop = scroll;
+    if (drawer) el(".drawer-body").scrollTop = detailsScroll;
+    if (hasSidebar) el("#sidebar").scrollTop = sideScroll;
+  }
+}
+function getDraft(key) {
+  if (!drafts.has(key)) drafts.set(key, { text: "", images: [], project: "", model: "" });
+  return drafts.get(key);
+}
+function resizeInput(input) {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 118) + "px";
+}
+function setDrawer(id) {
+  drawer = id;
+  if (state === "thread") syncLocation("replaceState");
+  render();
+  if (drawer) el(".drawer-head button").focus({ preventScroll: true });
+  else el('[data-action="drawer"]')?.focus({ preventScroll: true });
+}
+function applyTicket(id, stateAfter, outcome) {
+  const item = byId(id);
+  item.state = stateAfter;
+  item.outcome = outcome;
+  if (stateAfter === "running") item.rounds += 1;
+  render();
+  announce(outcome);
+}
+function startPlan() {
+  if (upNext.state !== "draft") return;
+  upNext.state = "running";
+  tickets.push(
+    { id: "T-000129", title: "核查超时重试日志与补测", project: "orders", time: "10:38", state: "running", source: "协作计划", rounds: 1, summary: "核对重试失败时是否保留订单号和异常原因，提交测试证据与只读结论。" },
+    { id: "T-000130", title: "按上游结论同步更新接口说明", project: "docs", time: "10:38", state: "queued", source: "协作计划", rounds: 0, summary: "等待 T-000129 的只读结论，收到后生成接口说明修订建议。" },
+  );
+  render();
+  announce("计划已启动 · 已创建 2 张工单");
+}
+function openDialog(kind, id) {
+  modal = { kind, id };
+  const dialog = el("#dialog");
+  const isProfile = kind === "profile";
+  const item = isProfile ? projects[id] : byId(id);
+  const config = draftsConfig.get(id) ?? item;
+  const verb = kind === "reject" ? "打回修改" : "关闭工单";
+  dialog.innerHTML = '<form id="dialog-form"><h2 id="dialog-title">' + (isProfile ? "更新画像 / 规则" : verb) +
+    '</h2><p>' + (isProfile ? item.name + ' · 先保存草稿，由本人应用。' : item.id + ' · ' + item.title) + '</p>' +
+    '<div class="draft-form">' + (isProfile ? '<label>项目画像<textarea class="control" name="portrait" required>' + safe(config.portrait) +
+      '</textarea></label><label>规则草稿<textarea class="control" name="rules" required>' + safe(config.rules) + '</textarea></label>' :
+      '<label>' + (kind === "reject" ? "需要修改的内容" : "关闭原因") + '<textarea class="control" name="reason" required></textarea></label>') +
+    '</div><div class="wrap queue-actions">' + button("dismiss-modal", "取消", "ghost") +
+    '<button type="submit" class="btn primary">' + (isProfile ? "保存草稿" : "确认" + verb) + '</button></div></form>';
+  dialog.setAttribute("aria-labelledby", "dialog-title");
+  dialog.showModal();
+}
+function handleClick(event) {
+  const target = event.target.closest("[data-action]");
+  if (!target || target.disabled) return;
+  const id = target.dataset.value;
+  switch (target.dataset.action) {
+    case "navigate": navigate(id); break;
+    case "thread": navigate("thread", id); break;
+    case "tab":
+      tab = id;
+      drawer = "";
+      syncLocation();
+      render({ preserveScroll: false });
+      el('[data-action="tab"][aria-pressed="true"]').focus({ preventScroll: true });
+      break;
+    case "group":
+      group = id;
+      sideOpen = false;
+      syncLocation();
+      render({ preserveScroll: false });
+      (el(".mobile-menu")?.offsetWidth ? el(".mobile-menu") : el('.cap-nav [aria-current]')).focus({ preventScroll: true });
+      break;
+    case "theme":
+      document.documentElement.dataset.theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      syncLocation("replaceState");
+      renderRail();
+      el('[data-action="theme"]').focus({ preventScroll: true });
+      break;
+    case "drawer": setDrawer(drawer === id ? "" : id); break;
+    case "dismiss-drawer": setDrawer(""); break;
+    case "side-menu":
+      sideOpen = !sideOpen;
+      render();
+      (sideOpen ? el("#sidebar button") : el(".mobile-menu"))?.focus({ preventScroll: true });
+      break;
+    case "search": {
+      filters.searching = !filters.searching;
+      const input = el("#thread-search");
+      input.hidden = !filters.searching;
+      target.setAttribute("aria-expanded", String(filters.searching));
+      if (filters.searching) input.focus();
+      else {
+        input.value = "";
+        filters.search = "";
+        el("#threads").innerHTML = threadList();
+      }
+      break;
+    }
+    case "filter":
+      filters.status = id;
+      for (const item of document.querySelectorAll("[data-action=filter]")) item.setAttribute("aria-pressed", String(item === target));
+      el("#threads").innerHTML = threadList();
+      break;
+    case "override":
+      overrideOpen = !overrideOpen;
+      el("#overrides").hidden = !overrideOpen;
+      target.setAttribute("aria-expanded", String(overrideOpen));
+      target.setAttribute("aria-label", overrideOpen ? "收起高级覆盖" : "展开高级覆盖");
+      if (overrideOpen) el("#override-project").focus();
+      break;
+    case "image": el("#images").click(); break;
+    case "remove-image": {
+      const draft = getDraft(el("#composer").dataset.key);
+      URL.revokeObjectURL(draft.images[Number(id)].url);
+      draft.images.splice(Number(id), 1);
+      render();
+      el('[data-action="image"]').focus({ preventScroll: true });
+      break;
+    }
+    case "accept":
+      if (byId(id).state === "review") applyTicket(id, "closed", "本人已通过验收并关单");
+      break;
+    case "reject": openDialog("reject", id); break;
+    case "close-ticket": openDialog("close-ticket", id); break;
+    case "edit-profile": openDialog("profile", id); break;
+    case "dismiss-modal": el("#dialog").close(); break;
+    case "start-plan": startPlan(); break;
+    case "cancel-plan":
+      if (upNext.state === "draft") {
+        upNext.state = "cancelled";
+        render();
+        announce("草案已取消");
+      }
+      break;
+  }
+}
+function sendMessage(form) {
+  const key = form.dataset.key;
+  const draft = getDraft(key);
+  const text = draft.text.trim();
+  if (!text && !draft.images.length) {
+    form.querySelector("textarea").focus();
+    return;
+  }
+  const options = [];
+  if (draft.project) options.push("本次项目 · " + projects[draft.project].name);
+  if (draft.model) options.push("本次模型 · " + (draft.model === "codex" ? "Codex 常规" : "Codex 深度"));
+  const reply = key === "main" ?
+    /进度|哪几件事|需要我管|待办/.test(text) ? "digest" : "消息已加入演示对话。可以输入「今天有哪些待办」查看只读简报。" :
+    "消息已加入当前 Thread。原事项绑定继续保留。";
+  const list = messages.get(key) ?? [];
+  list.push({ text, time: recentTime(), images: draft.images, options, reply });
+  messages.set(key, list);
+  drafts.delete(key);
+  overrideOpen = false;
+  render();
+  const scroll = el("#main-scroll");
+  scroll.scrollTop = scroll.scrollHeight;
+  el("#composer textarea").focus({ preventScroll: true });
+}
+
+document.addEventListener("click", (event) => {
+  handleClick(event);
+  if (overrideOpen && !event.target.closest("#composer")) {
+    overrideOpen = false;
+    if (el("#overrides")) {
+      el("#overrides").hidden = true;
+      el("#override-toggle").setAttribute("aria-expanded", "false");
+      el("#override-toggle").setAttribute("aria-label", "展开高级覆盖");
+    }
+  }
+});
+document.addEventListener("input", (event) => {
+  const target = event.target;
+  if (target.id === "thread-search") {
+    filters.search = target.value;
+    el("#threads").innerHTML = threadList();
+  }
+  if (target.matches("#composer textarea")) {
+    getDraft(el("#composer").dataset.key).text = target.value;
+    resizeInput(target);
+  }
+});
+document.addEventListener("change", (event) => {
+  const target = event.target;
+  const form = target.form;
+  if (target.id === "project-filter") {
+    filters.project = target.value;
+    el("#threads").innerHTML = threadList();
+  }
+  if (target.id === "override-project") getDraft("main").project = target.value;
+  if (target.id === "override-model") getDraft("main").model = target.value;
+  if (target.id === "images") {
+    getDraft(form.dataset.key).images.push(...Array.from(target.files).filter((file) => file.type.startsWith("image/"))
+      .map((file) => ({ name: file.name, url: URL.createObjectURL(file) })));
+    render();
+    el('[data-action="image"]').focus({ preventScroll: true });
+  }
+  if (form?.dataset.approval) {
+    approvals.set(form.dataset.approval, target.value);
+    for (const approval of document.querySelectorAll('form[data-approval="' + form.dataset.approval + '"]')) {
+      approval.querySelector('input[value="' + target.value + '"]').checked = true;
+      approval.querySelector('button[type="submit"]').disabled = false;
+    }
+  }
+});
+document.addEventListener("submit", (event) => {
+  const form = event.target;
+  event.preventDefault();
+  if (form.id === "composer") sendMessage(form);
+  if (form.dataset.approval) {
+    const id = form.dataset.approval;
+    const picked = approvals.get(id);
+    if (picked && byId(id).state === "approval") {
+      approvals.delete(id);
+      applyTicket(id, picked === "decline" ? "closed" : "running", "本人已拍板 · " + approvalOptions[picked]);
+    }
+  }
+  if (form.id === "dialog-form") {
+    const { kind, id } = modal;
+    const data = new FormData(form);
+    const value = (name) => String(data.get(name)).trim();
+    if (kind === "profile" && value("portrait") && value("rules")) {
+      draftsConfig.set(id, { portrait: value("portrait"), rules: value("rules") });
+      el("#dialog").close();
+      render();
+      el('[data-action="edit-profile"][data-value="' + id + '"]').focus({ preventScroll: true });
+      announce("画像草稿已保存");
+    } else if (kind !== "profile" && value("reason")) {
+      el("#dialog").close();
+      if (kind === "reject") applyTicket(id, "running", "已打回修改 · " + value("reason"));
+      else applyTicket(id, "closed", "本人已关闭工单 · " + value("reason"));
+    } else {
+      announce("请填写内容");
+    }
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.target.matches("#composer textarea")) {
+    event.preventDefault();
+    event.target.form.requestSubmit();
+  }
+  if (event.key !== "Escape" || el("#dialog").open) return;
+  if (overrideOpen) {
+    el("#override-toggle").click();
+    el("#override-toggle").focus();
+  } else if (sideOpen) {
+    el(".mobile-menu").click();
+  } else if (drawer) {
+    setDrawer("");
+  }
+});
+window.addEventListener("popstate", () => {
+  readLocation();
+  render({ preserveScroll: false });
+});
+readLocation();
+render();
+</script>
+</body>
+</html>
+

@@ -4,6 +4,14 @@ const clean = (text) =>
     .trim();
 const live = new Set(["queued", "claimed", "unknown"]);
 
+export function outputExcerpt(output) {
+  return (output.entries || []).slice(-3)
+    .map((entry) => clean(entry.text))
+    .filter(Boolean)
+    .join("\n")
+    .slice(-1400);
+}
+
 export function conversationNoteFor(rounds) {
   return `${rounds.some((r) => !r.record || r.record.note?.includes("读取失败")) ? "部分轮次或过程读取失败。" : ""}${rounds.some((r) => r.record?.archiveIncomplete) ? "有已结束的轮次没有完整存档，当前显示仍可读取的记录。" : ""}按关联轮次展示已记录的需求和公开反馈；过程输出可能已截断或过期，未记录的步骤不会补造。`;
 }
