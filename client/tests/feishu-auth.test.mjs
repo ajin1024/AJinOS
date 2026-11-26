@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import { startStudio } from "../server.mjs";
 import {
   completeFeishuQrLogin,
+  findLarkCli,
   getFeishuAuthStatus,
   startFeishuQrLogin,
 } from "../feishu-auth.mjs";
@@ -195,4 +196,14 @@ test("completeFeishuQrLogin finishes device flow and returns refreshed auth stat
 
   assert.equal(done.ok, true);
   assert.equal(done.status.openId, "ou_owner123");
+});
+
+test("findLarkCli resolves bare lark-cli executables from colon-delimited Unix PATH", () => {
+  const found = findLarkCli({
+    platform: "linux",
+    env: { PATH: "/tmp/studio-feishu:/usr/local/bin:/usr/bin" },
+    exists: (candidate) => candidate === "/tmp/studio-feishu/lark-cli",
+    homeDir: "/home/tester",
+  });
+  assert.equal(found, "/tmp/studio-feishu/lark-cli");
 });

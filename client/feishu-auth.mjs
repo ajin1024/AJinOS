@@ -42,11 +42,32 @@ function parseJson(text) {
   }
 }
 
-export function findLarkCli({ env = process.env, exists = existsSync, findPath = findOnPath, homeDir = homedir() } = {}) {
-  const onPath = process.platform === "win32" ? findPath("lark-cli", [".exe", ".cmd", ".bat"]) : findPath("lark-cli");
+function findUnixOnPath(name, env, exists) {
+  for (const entry of String(env.PATH || "").split(":")) {
+    const folder = entry.trim();
+    if (!folder) continue;
+    const candidate = path.posix.join(folder, name);
+    if (exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function findLarkCli({
+  env = process.env,
+  exists = existsSync,
+  findPath = findOnPath,
+  homeDir = homedir(),
+  platform = process.platform,
+} = {}) {
+  const onPath =
+    platform === "win32"
+      ? findPath("lark-cli", [".exe", ".cmd", ".bat"])
+      : findPath !== findOnPath
+        ? findPath("lark-cli")
+        : findUnixOnPath("lark-cli", env, exists);
   if (onPath) return onPath;
   const candidates =
-    process.platform === "win32"
+    platform === "win32"
       ? [
           env.APPDATA && path.win32.join(env.APPDATA, "npm", "node_modules", "@larksuite", "cli", "bin", "lark-cli.exe"),
           env.APPDATA && path.win32.join(env.APPDATA, "npm", "lark-cli.cmd"),
