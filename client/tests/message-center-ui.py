@@ -1,4 +1,4 @@
-# Prevent the private chat, Inbox, Thread continuation, attachments and plan actions from losing their real backend bindings.
+# Prevent the read-only record, Inbox, Thread continuation, attachments and plan actions from losing their real backend bindings.
 import base64
 import re
 
@@ -22,59 +22,26 @@ with running_studio("studio-messages-ui-") as url, sync_playwright() as playwrig
     page.get_by_role("navigation", name="主导航").get_by_role("button", name="对话").click()
     expect(page.get_by_role("heading", name="AJinOS 总管", exact=True)).to_be_visible()
     sidebar = page.get_by_role("complementary", name="对话列表")
-    composer = page.locator(".composer")
-    field = composer.get_by_role("textbox", name="任务说明")
-    send = composer.get_by_role("button", name="发送", exact=True)
-    expect(composer.get_by_label("执行器 / 模型")).to_have_count(0)
+    expect(page.locator(".composer")).to_have_count(0)
 
     before = state(page)["state"].get("tickets", [])
-    field.fill("今日简报")
-    field.press("Enter")
-    expect(page.get_by_text("只读简报 · 未开单", exact=True)).to_be_visible()
+    brief = submit(page, "今日简报")
+    assert brief["kind"] == "answer", brief
+    expect(page.get_by_text("只读简报 · 未开单", exact=True)).to_be_visible(timeout=15000)
     assert before == state(page)["state"].get("tickets", [])
     page.reload()
-    expect(page.get_by_text("只读简报 · 未开单", exact=True)).to_be_visible()
+    expect(page.get_by_text("只读简报 · 未开单", exact=True)).to_be_visible(timeout=15000)
 
-    composer.get_by_role("button", name="高级覆盖").click()
-    composer.get_by_label("项目", exact=True).select_option("orders")
-    composer.locator('input[type="file"]').set_input_files({"name": "proof.png", "mimeType": "image/png", "buffer": PNG})
-    field.evaluate("""(input, bytes) => {
-      const clipboardData = new DataTransfer();
-      clipboardData.items.add(new File([new Uint8Array(bytes)], "pasted.png", {type:"image/png"}));
-      input.dispatchEvent(new ClipboardEvent("paste", {clipboardData, bubbles:true, cancelable:true}));
-    }""", list(PNG))
-    expect(composer.locator(".attachments img")).to_have_count(2)
     title = "核对订单并直接完成"
-    field.fill(title)
-    field.press("Shift+Enter")
-    expect(field).to_have_value(title + "\n")
-
-    pending = []
-
-    def hold(route):
-        pending.append(route)
-
-    page.route("**/api/router/message", hold)
-    send.click()
-    expect(field).not_to_be_editable()
-    expect(send).to_be_disabled()
-    field.press("Enter")
-    assert len(pending) == 1
-    failed = pending.pop()
-    failed_id = failed.request.post_data_json["id"]
-    failed.fulfill(status=503, json={"error": "测试连接暂时中断"})
-    expect(composer.get_by_role("alert")).to_contain_text("测试连接暂时中断")
-    expect(field).to_have_value(title + "\n")
-    expect(composer.locator(".attachments img")).to_have_count(2)
-    page.unroute("**/api/router/message", hold)
-
-    with page.expect_response(lambda response: response.url.endswith("/api/router/message") and response.request.method == "POST") as sent:
-        send.click()
-    assert failed_id == sent.value.request.post_data_json["id"]
-    receipt = sent.value.json()
+    uploaded = page.request.post(url + "/api/attachments", headers={"x-studio-action": "1"}, data={
+        "dataBase64": base64.b64encode(PNG).decode(), "filename": "proof.png",
+    })
+    assert uploaded.ok, uploaded.text()
+    receipt = submit(page, title, project="orders", attachments=[uploaded.json()["id"]])
     assert receipt["kind"] == "task" and receipt["project"] == "orders", receipt
-    expect(page).to_have_url(url + "/#messages")
     topic = receipt["topic"]
+    page.reload()
+    expect(page).to_have_url(url + "/#messages")
     card = page.locator(".receipt").filter(has_text=title)
     expect(card.get_by_role("button", name="通过验收")).to_be_visible(timeout=30000)
     expect(card.locator("code")).to_have_text(re.compile(r"T-\d{6}"))
@@ -94,19 +61,10 @@ with running_studio("studio-messages-ui-") as url, sync_playwright() as playwrig
     page.get_by_role("button", name="proof.png", exact=True).click()
     expect(page.locator(".mc-lightbox-image")).to_have_js_property("naturalWidth", 1)
     page.keyboard.press("Escape")
-    field.fill("继续在原事项核对并直接完成")
-    with page.expect_response(lambda response: response.url.endswith("/api/router/message") and response.request.method == "POST") as continued:
-        field.press("Enter")
-    assert continued.value.json()["topic"] == topic
-    assert continued.value.request.post_data_json["conversation"] == topic
-    expect(page.get_by_text("继续在原事项核对并直接完成", exact=True)).to_be_visible(timeout=12000)
-
-    field.fill("保存在原事项的草稿")
-    sidebar.get_by_role("button", name=re.compile("AJinOS 总管")).click()
-    expect(sidebar.get_by_role("button", name=re.compile(title)).get_by_text("草稿")).to_be_visible()
-    sidebar.get_by_role("button", name=re.compile(title)).click()
-    expect(field).to_have_value("保存在原事项的草稿")
-    field.fill("")
+    continued = submit(page, "继续在原事项核对并直接完成", conversation=topic)
+    assert continued["topic"] == topic, continued
+    page.reload()
+    expect(page.get_by_text("继续在原事项核对并直接完成", exact=True)).to_be_visible(timeout=15000)
 
     approval = submit(page, "需要本人决定是否继续", project="content")
     intake = submit(page, "无法唯一判断归属的请求")
@@ -125,26 +83,28 @@ with running_studio("studio-messages-ui-") as url, sync_playwright() as playwrig
     review.get_by_role("button", name="通过验收").click()
     expect(review).to_have_count(0)
     unresolved = page.get_by_role("region", name="待澄清与失败请求")
-    unresolved.get_by_role("button", name="订单服务 · 演示").click()
-    unresolved.get_by_role("button", name="用这个项目重新提交").click()
-    expect(page.get_by_text("Thread 直通 · 跳过路由")).to_be_visible()
+    expect(unresolved.get_by_text("应用内不再接收新消息", exact=False)).to_be_visible()
+    unresolved.get_by_role("button", name="忽略").click()
+    expect(page.get_by_text("无法唯一判断归属的请求")).to_be_hidden()
 
-    sidebar.get_by_role("button", name=re.compile("AJinOS 总管")).click()
-    field.fill("/plan 跨项目先核对订单，然后整理内容")
-    send.click()
+    page.goto(url + "/#messages")
+    plan_one = submit(page, "/plan 跨项目先核对订单，然后整理内容")
+    assert plan_one["kind"] == "plan", plan_one
+    page.reload()
     plan = page.locator(".plan").filter(has_text="跨项目交接").last
     expect(plan.get_by_text("依赖步骤 1", exact=False)).to_be_visible(timeout=20000)
     plan.get_by_role("button", name="取消草案").click()
     expect(plan.get_by_text("已取消", exact=True)).to_be_visible()
-    field.fill("/plan 第二份跨项目交接")
-    send.click()
+    plan_two = submit(page, "/plan 第二份跨项目交接")
+    assert plan_two["kind"] == "plan", plan_two
+    page.reload()
     start = page.get_by_role("button", name="确认启动计划")
     expect(start).to_be_enabled(timeout=20000)
     start.click()
     expect(page.locator(".plan").filter(has_text="进行中").get_by_text("进行中", exact=True)).to_be_visible()
 
     page.set_viewport_size({"width": 390, "height": 680})
-    expect(field).to_be_in_viewport()
+    expect(page.locator(".mc-stage .view-header")).to_be_in_viewport()
     page.get_by_role("button", name="打开对话列表").click()
     expect(sidebar).to_be_visible()
     sidebar.get_by_role("button", name=re.compile("待我处理")).click()
@@ -161,4 +121,4 @@ with running_studio("studio-messages-ui-") as url, sync_playwright() as playwrig
     assert not errors, errors
     browser.close()
 
-print("Edge: private chat, Thread, Inbox, attachments, acceptance and DAG actions passed")
+print("Edge: read-only record, Thread, Inbox, attachments, acceptance and DAG actions passed")

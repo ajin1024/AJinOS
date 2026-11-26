@@ -23,7 +23,6 @@ import {
   IconBranch,
   IconLayers,
   IconMore,
-  IconPlay,
   IconRefresh,
   IconSetting,
 } from "@douyinfe/semi-icons";
@@ -623,10 +622,8 @@ export function ProjectSpace({
   onSaveProject,
   onSaveConfig,
   onAnalyzeProject,
-  onNewTask,
   onEditingChange,
   openNewSignal,
-  taskDialogOpen,
   detailId,
   onSelectProject,
   onOpenExecutors,
@@ -735,7 +732,7 @@ export function ProjectSpace({
             }
             project={selected}
             api={api}
-            overlayOpen={Boolean(flowProject || deleteTarget || taskDialogOpen)}
+            overlayOpen={Boolean(flowProject || deleteTarget)}
             onEditingChange={onEditingChange}
             onSave={onSaveProject}
             onBack={backToProjects}
@@ -744,9 +741,6 @@ export function ProjectSpace({
               selected && (
                 <div className="ps-detail-actions">
                   <ProjectStatus project={selected} />
-                  <Button theme="solid" icon={<IconPlay aria-hidden="true" />} onClick={() => onNewTask(selected.id)}>
-                    发起任务
-                  </Button>
                   <Dropdown
                     trigger="click"
                     position="bottomRight"

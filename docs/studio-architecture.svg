@@ -37,7 +37,7 @@
   <text x="68" y="186" class="h">◎ 总管统筹层（Chief of Staff）</text>
   <text x="68" y="214">零消耗全局简报 · 只读进度问答（不派后厨）</text>
   <text x="68" y="240">复合目标拆解为无环多步计划（DAG）· 确认后按依赖推进</text>
-  <text x="68" y="264" class="small">上游结论摘要以只读交接块传给下游 · 桌面端与飞书私聊统一入口</text>
+  <text x="68" y="264" class="small">上游结论摘要以只读交接块传给下游 · 飞书、Issue、定时规则统一入口</text>
 
   <rect x="612" y="156" width="540" height="122" rx="12" class="chief"/>
   <text x="632" y="186" class="h">◎ 长期记忆档案（MemoryStore）</text>
@@ -63,8 +63,8 @@
 
   <!-- Row 3: Session entry -->
   <rect x="48" y="440" width="1104" height="72" rx="12" class="existing"/>
-  <text x="68" y="469" class="h">② 消息入口：桌面端 / 飞书私聊 / 总管计划推进</text>
-  <text x="68" y="495" class="small">先检查本人拦截词（blockedTerms）；总管问答直接回复；任务消息核验已有归属或进入首次会话识别。</text>
+  <text x="68" y="469" class="h">② 消息入口：飞书私聊 / 群 · GitHub Issue · 定时规则</text>
+  <text x="68" y="495" class="small">先检查本人拦截词（blockedTerms）；任务消息核验已有归属或进入首次会话识别。</text>
   <path d="M318 278V438" class="chief-edge"/>
   <path d="M880 278V438" class="chief-edge"/>
 

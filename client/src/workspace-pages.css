@@ -976,14 +976,13 @@ body.station-view #dialog.workspace-form #dialog-header {
   margin-left: auto;
   gap: 8px;
 }
-body.station-view .studio-header #new-task,
 body.station-view .pending-submit .button.primary {
   background: var(--ui-accent);
   border-color: var(--ui-accent);
   color: var(--ui-accent-on);
 }
 
-body.station-view :is(.studio-header #new-task, .pending-submit .button.primary):hover {
+body.station-view .pending-submit .button.primary:hover {
   background: var(--ui-accent-hover);
 }
 .pending-page {
@@ -1345,8 +1344,7 @@ body.station-view .task-list-footer > .button.primary {
     padding-inline: 6px;
     font-size: 12px;
   }
-  .studio-header #nav .nav-item .icon,
-  .studio-header #new-task > span:last-child {
+  .studio-header #nav .nav-item .icon {
     display: none;
   }
   .studio-header .top-actions {

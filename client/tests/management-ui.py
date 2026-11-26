@@ -98,16 +98,10 @@ def run_test(url):
             assert dialog.evaluate("el => el.getBoundingClientRect().width <= window.innerWidth")
             dialog.get_by_role("button", name="取消", exact=True).click()
             page.set_viewport_size({"width": 1600, "height": 1000})
-            page.locator("#rail-new-task").click()
-            page.locator("#new-task-form select[name=project]").select_option("orders")
-            executors = page.locator("#new-task-form select[name=executor] option")
-            expect(executors.filter(has_text="我的 Sol 执行器")).to_have_count(1)
-            expect(executors.filter(has_text="我的 Astra 执行器")).to_have_count(1)
-            page.locator("#dialog-cancel").click()
-            expect(page.locator("#new-task-form")).to_have_count(0)
         assert not discoveries, discoveries
 
         # Verify gateway preview & save.
+        page.locator('#nav [data-view="settings"]').click()
         page.locator('[data-settings-section="agents"]').click()
         page.get_by_role("button", name="配置项目识别网关").click()
         page.locator('textarea[name="blockedTerms"]').fill("删除生产数据\nDROP TABLE")

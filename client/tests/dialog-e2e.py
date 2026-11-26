@@ -100,13 +100,11 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
                     page.reload()
                     expect(page.locator('textarea[name="blockedTerms"]')).to_have_value("禁止测试词")
 
-                    form = page.locator("#new-task-form")
-                    page.locator("#rail-new-task").click()
-                    form.locator('[name="project"]').select_option("ui-review")
-                    form.locator('[name="text"]').fill("禁止测试词")
-                    page.locator("#dialog-submit").click()
-                    expect(page.locator("#dialog-error")).to_contain_text("已拦截")
-                    expect(form).to_be_visible()
+                    blocked = page.request.post(url + "/api/messages", headers={"x-studio-action": "1"}, data={
+                        "id": "blocked-e2e", "text": "禁止测试词", "project": "ui-review",
+                    })
+                    assert blocked.status == 422, blocked.text()
+                    assert "已拦截" in blocked.text()
                     assert page.request.get(url + "/api/messages").json() == []
                     print("Real browser + HTTP: project creation, flow rename, directory isolation, persistent gateway rules and blocked submission passed.")
                 finally:

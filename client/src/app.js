@@ -18,7 +18,6 @@ import { workflowFor, savedWorkflow, taskActions } from "./task-workflow.mjs";
 import { projectDisplayRules, businessProjects } from "./gateway-config.mjs";
 import { withStudioDefaults, assignIslandStyles } from "./island-presets.mjs";
 import { agentOptionsOf, deriveProjectId, folderNameFromPath, parseHashRoute, parseList, routeToHash } from "./studio-helpers.mjs";
-import { buildHandoffRequest } from "./tasks/task-handoff.mjs";
 
 const dialogStyle = document.createElement("style");
 dialogStyle.textContent =
@@ -76,7 +75,6 @@ let messageRows = [];
 let messageLoadAt = 0;
 let messageLoading = false;
 let messageLoadTimer = null;
-let composerFocusSignal = 0;
 
 // Desktop notifications compare live snapshots; the first one only records the baseline.
 let notifySnapshot = null;
@@ -87,7 +85,6 @@ const notifiedKeys = new Set();
 let drawerRunId = null;
 let drawerObservedTask = null;
 let drawerCustomEntry = null;
-let newTaskRequest = null;
 let workflowModal = null;
 let cancelRunId = null;
 
@@ -193,7 +190,7 @@ async function importExecutor(draft) {
   profiles = result.profiles || {};
   revision = result.revision;
   render();
-  toast(`已导入「${config.rules.agents[result.agentId].name}」，可在新建任务时选择`);
+  toast(`已导入「${config.rules.agents[result.agentId].name}」，可在项目规则中选用`);
 }
 
 async function analyzeProject(id) {
@@ -296,8 +293,7 @@ async function engineControl(operation) {
 
 function hasUnsavedForm() {
   return Boolean(
-    newTaskRequest ||
-      workflowModal ||
+    workflowModal ||
       reactEditing ||
       [...pendingDrafts.values()].some((draft) => draft.text?.trim()) ||
       document.activeElement?.matches(
@@ -323,16 +319,9 @@ function navigate(target) {
   if (next.view === "messages" && previousView !== "messages") void loadMessages(true);
 }
 
-// Native shell shortcuts and the tray can ask the message composer for focus.
-function focusComposer() {
-  if (route.view === "messages") navigate({ view: "messages", topic: null });
-  composerFocusSignal += 1;
-  render();
-}
 window.studio?.onNavigate?.((target) => {
   if (typeof target === "string") navigate(target);
 });
-window.studio?.onFocusComposer?.(focusComposer);
 
 function currentConversations() {
   return buildConversations({
@@ -536,16 +525,6 @@ function buildDrawerTask(receipts) {
   return drawerObservedTask;
 }
 
-function openNewTask(project = "", topic = "", pending = null) {
-  newTaskRequest = { project, topic, pending, key: Date.now() };
-  render();
-}
-
-function openHandoffTask(task) {
-  newTaskRequest = { ...buildHandoffRequest(task, config), key: Date.now() };
-  render();
-}
-
 async function handleCardSubmit(card, { choice, text }) {
   const id = String(card.id);
   if (!snapshot.connected || pendingSubmissions.has(id)) return;
@@ -699,23 +678,6 @@ function render() {
       drawerCustomEntry = null;
       render();
     },
-    newTaskRequest,
-    onOpenNewTask: (projectId = "", topicId = "", pending = null) => openNewTask(projectId, topicId, pending),
-    onHandoffTask: (task) => openHandoffTask(task),
-    onCloseNewTask: () => {
-      newTaskRequest = null;
-      render();
-    },
-    onNewTaskSubmitted: async () => {
-      newTaskRequest = null;
-      render();
-      try {
-        snapshot = await api("/state");
-        render();
-      } catch {
-        /* The task was accepted; the live connection can refresh the page in place. */
-      }
-    },
     onIntakeDismiss: async (intakeId, { silent = false } = {}) => {
       await api(`/gateway/${encodeURIComponent(intakeId)}/dismiss`, "POST", {});
       snapshot = await api("/state");
@@ -747,16 +709,6 @@ function render() {
     messages: messageRows,
     receipts,
     inbox,
-    onMessagesRefresh: async () => {
-      await loadMessages(true);
-      try {
-        snapshot = await api("/state");
-      } catch {
-        /* The send already succeeded; the live connection will deliver the next snapshot. */
-      }
-      render();
-    },
-    composerFocusSignal,
     api,
     toast,
     onNavigate: (next) => {
@@ -839,7 +791,7 @@ try {
     if (result.revision === revision) {
       profiles = result.profiles || {};
       render();
-    } else if (!newTaskRequest && !workflowModal && !reactEditing) {
+    } else if (!workflowModal && !reactEditing) {
       config = result.value;
       profiles = result.profiles || {};
       revision = result.revision;

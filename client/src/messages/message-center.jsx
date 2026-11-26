@@ -1,7 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Modal } from "@douyinfe/semi-ui";
 import { IconInbox, IconSidebar } from "@douyinfe/semi-icons";
-import { Composer, hasComposerDraft, initialComposerDraft, originalAttachmentIds } from "./composer.jsx";
 import { DialogSidebar } from "./dialog-sidebar.jsx";
 import { AgentMessage, Avatar, DayDivider, PlanCard, ReceiptCard, UserMessage, ticketNumber } from "./dialog-parts.jsx";
 import { InboxView } from "./inbox-view.jsx";
@@ -54,7 +53,8 @@ export function MainChat({ entries, openInbox, openRuns, receiptProps, chief, on
     return (
       <div className="empty main-empty">
         <Avatar variant="large" live={connected} />
-        <h2>有什么要交给 AJinOS？</h2>
+        <h2>还没有记录</h2>
+        <p className="secondary">任务从飞书、GitHub Issue 或定时规则进来，进展和结果会记在这里。</p>
         <button type="button" className="link" onClick={() => openInbox()}>
           查看待我处理 ›
         </button>
@@ -104,7 +104,10 @@ export function mainEntries(history, plans, receipts, conversations) {
       entries.push({ key: `plan:${plan.id}`, kind: "plan", plan, at: plan.createdAt, text: plan.goal });
   }
   const topics = new Map(conversations.filter((item) => item.kind === "topic").map((item) => [item.topic, item]));
-  const recent = receipts.filter((task) => task.topic || ticketNumber(task)).slice(0, 8);
+  // Closed tickets stay in the board and thread history; keeping them in the chief feed drowns the open work.
+  const recent = receipts
+    .filter((task) => (task.topic || ticketNumber(task)) && task.workflow?.status !== "closed")
+    .slice(0, 8);
   for (const task of recent) {
     const original = topics.get(task.topic)?.items.find((item) => item.type === "user_message")?.message;
     entries.push({
@@ -129,12 +132,7 @@ export function MessageCenter({
   receipts,
   inbox,
   route,
-  api,
   toast,
-  composerDrafts,
-  changeComposerDraft,
-  composerFocusSignal,
-  appliedComposerFocus,
   drafts,
   submittingCards,
   onDraftChange,
@@ -143,7 +141,6 @@ export function MessageCenter({
   onInspectRun,
   onNavigate,
   onIntakeDismiss,
-  onMessagesRefresh,
   drawer,
   onCloseDrawer,
 }) {
@@ -151,9 +148,7 @@ export function MessageCenter({
   const [lightbox, setLightbox] = useState(null);
   const [inboxSection, setInboxSection] = useState("");
   const [newItems, setNewItems] = useState(false);
-  const textarea = useRef(null);
   const scroll = useRef(null);
-  const noticeSlot = useRef(null);
   const sidebarToggle = useRef(null);
   const sidebarClose = useRef(null);
   const follow = useRef(true);
@@ -164,7 +159,6 @@ export function MessageCenter({
   const isThread = active?.kind === "topic";
   const receipt = isThread ? receipts.find((task) => task.topic === id) : null;
   const threadRun = receipt?.runs.at(-1) || active?.latestRun;
-  const draft = composerDrafts.get(id) || initialComposerDraft(active);
   const entries = id || inInbox ? [] : mainEntries(chief.history, chief.plans, receipts, conversations);
   const last = active?.items.at(-1)?.key || entries.at(-1)?.key;
 
@@ -189,12 +183,6 @@ export function MessageCenter({
     setNewItems(false);
   }
   const pane = inInbox ? "inbox" : id;
-  useLayoutEffect(() => {
-    const notice = document.getElementById("toast");
-    if (!notice) return;
-    noticeSlot.current.append(notice);
-    return () => document.body.append(notice);
-  }, []);
   useEffect(() => {
     if (!sidebarOpen) return;
     sidebarClose.current?.focus();
@@ -213,68 +201,11 @@ export function MessageCenter({
     }
     previous.current = { pane, last };
   }, [pane, last, inInbox]);
-  useLayoutEffect(() => {
-    if (composerFocusSignal > appliedComposerFocus.current && textarea.current) {
-      if (sidebarOpen) {
-        setSidebarOpen(false);
-        return;
-      }
-      textarea.current.focus();
-      appliedComposerFocus.current = composerFocusSignal;
-    }
-  }, [composerFocusSignal, appliedComposerFocus, pane, sidebarOpen]);
   useEffect(() => {
     if (!inInbox || !inboxSection) return;
     document.querySelector(`.inbox-content [aria-label="${inboxSection}"]`)?.scrollIntoView({ block: "start" });
     setInboxSection("");
   }, [inboxSection, inInbox]);
-
-  async function submitted(result, current, keepMain = true) {
-    if (current && result.kind === "intake") openInbox("待澄清与失败请求");
-    if (current && !keepMain && result.topic) open(result.topic);
-    if (result.kind === "answer" || result.kind === "plan") await chief.reload();
-    else await onMessagesRefresh();
-  }
-
-  async function resubmit(intake, patch) {
-    const {
-      text = intake.text,
-      topic,
-      conversation,
-      task,
-      session,
-      agent,
-      project,
-      flow,
-      executor,
-      complexity,
-      requirementsConfirmed,
-      viaRouter,
-    } = intake.input || {};
-    const attachments = originalAttachmentIds(intake);
-    const same = Object.keys(patch).length === 0 && ["failed", "interrupted"].includes(intake.state);
-    const legacyRetry = same && !viaRouter;
-    const result = await api(legacyRetry ? "/messages" : "/router/message", "POST", {
-      id: same ? intake.id : crypto.randomUUID(),
-      text,
-      project,
-      flow,
-      executor,
-      complexity,
-      conversation,
-      task,
-      session,
-      agent,
-      ...(topic && topic !== "new" && { topic }),
-      ...(attachments.length && { attachments }),
-      ...(same && { requirementsConfirmed }),
-      ...(!legacyRetry && { mode: "task" }),
-      ...patch,
-    });
-    if (result.needsProject || result.needsConfirmation) result.kind = "intake";
-    if (!same) await onIntakeDismiss(intake.id, { silent: true });
-    await submitted(result, true, false);
-  }
 
   const replyProps = (card) => ({
     draft: drafts.get(String(card.id)),
@@ -284,8 +215,8 @@ export function MessageCenter({
     onSubmit: onCardSubmit,
   });
   const receiptProps = { snapshot, onInspect: onInspectRun, onThread: open, onAction: onWorkflowAction };
-  const intakeProps = { config, toast, onResubmit: resubmit, onDismiss: onIntakeDismiss };
-  const title = inInbox ? "待我处理" : id ? active?.title || draft.title : "AJinOS 总管";
+  const intakeProps = { toast, onDismiss: onIntakeDismiss };
+  const title = inInbox ? "待我处理" : id ? active?.title || "话题" : "AJinOS 总管";
 
   return (
     <div
@@ -301,7 +232,6 @@ export function MessageCenter({
         conversations={conversations}
         inbox={inbox}
         route={route}
-        drafts={composerDrafts}
         onOpen={open}
         open={sidebarOpen}
         onClose={closeSidebar}
@@ -329,7 +259,7 @@ export function MessageCenter({
               {inInbox
                 ? `${inbox.total} 项需要本人处理`
                 : !id
-                  ? "与飞书私聊同构 · 零消耗简报"
+                  ? "只读记录 · 任务进展与结果"
                   : isThread && (
                       <>
                         <span className="chip green">Thread 直通 · 跳过路由</span>
@@ -367,7 +297,6 @@ export function MessageCenter({
             </button>
           )}
         </header>
-        <div className="conversation-notice" ref={noticeSlot} />
         {inInbox ? (
           <InboxView inbox={inbox} receiptProps={receiptProps} replyProps={replyProps} intakeProps={intakeProps} />
         ) : (
@@ -416,21 +345,6 @@ export function MessageCenter({
                 查看新消息 ↓
               </button>
             )}
-            <Composer
-              key={id || "chief"}
-              conversation={active}
-              draft={draft}
-              textareaRef={textarea}
-              updateDraft={(update) =>
-                changeComposerDraft(id, (current) => update(current || initialComposerDraft(active)))
-              }
-              config={config}
-              api={api}
-              toast={toast}
-              connected={snapshot.connected}
-              intakes={snapshot.taskIntakes}
-              onResult={submitted}
-            />
           </>
         )}
       </section>

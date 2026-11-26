@@ -67,14 +67,7 @@ with studio_home("studio-theme-ui-") as temp:
                 accent = "#7aa2f7" if theme == "dark" else "#4f6ae8"
                 assert page.locator("html").evaluate("e=>getComputedStyle(e).getPropertyValue('--ui-accent').trim().toLowerCase()") == accent
                 if artifacts: page.screenshot(path=str(artifacts / f"{theme}-workbench.png"), full_page=True)
-                expected = "rgb(33, 38, 54)" if theme == "dark" else "rgb(255, 255, 255)"
 
-                page.get_by_role("button", name="和 AJinOS 总管沟通").click()
-                chat = page.get_by_role("dialog", name="AJinOS 总管沟通")
-                expect(chat).to_have_css("background-color", expected)
-                if artifacts: page.screenshot(path=str(artifacts / f"{theme}-floating-chat.png"))
-                page.keyboard.press("Escape")
-                expect(chat).to_have_count(0)
                 page.goto(url + "/#settings/gateway")
                 expect(page.get_by_role("heading", name="项目识别网关", exact=True)).to_be_visible()
                 if artifacts: page.screenshot(path=str(artifacts / f"{theme}-gateway.png"), full_page=True)
@@ -126,10 +119,10 @@ with studio_home("studio-theme-ui-") as temp:
                 assert abs(sidebar.bounding_box()["width"] - 268) <= 1
                 sidebar.get_by_role("combobox", name="按项目筛选事项").select_option("orders")
                 expect(sidebar.locator(".thread-item")).to_have_count(5)
-                expect(page.locator(".composer textarea")).to_be_in_viewport()
+                expect(page.locator(".mc-stage .view-header")).to_be_in_viewport()
                 if artifacts: page.screenshot(path=str(artifacts / f"{theme}-messages.png"))
                 page.set_viewport_size({"width": 390, "height": 844})
-                for view, content in (("messages", ".composer textarea"), ("tasks", ".kb-board"),
+                for view, content in (("messages", ".mc-stage .view-header"), ("tasks", ".kb-board"),
                                       ("overview", ".super-agent-flow .canvas"), ("settings", ".sc-main"), ("projects", ".ps-card-grid")):
                     page.goto(url + "/#" + view)
                     expect(page.locator(content).first).to_be_visible()

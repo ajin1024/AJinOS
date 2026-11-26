@@ -947,7 +947,7 @@ function EngineSettings({ config, snapshot, state, api, toast, onSaveConfig, onE
                       ))
                     ) : (
                       <span className="sc-muted" style={{ fontSize: 11.5 }}>
-                        尚未固定挂载节点（可在下方分配，或发起任务时按需选用）
+                        尚未固定挂载节点（可在下方分配）
                       </span>
                     )}
                   </div>

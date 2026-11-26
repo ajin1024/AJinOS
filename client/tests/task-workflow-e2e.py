@@ -37,15 +37,18 @@ with tempfile.TemporaryDirectory(prefix="studio-lifecycle-ui-") as temp:
                     page.on("pageerror", lambda e: errors.append(str(e)))
                     page.goto(url + "/#messages")
                     page.wait_for_selector(".mc-stage")
-                    page.locator("#rail-new-task").click()
-                    form = page.locator("#new-task-form")
-                    form.locator('[name="project"]').select_option("orders")
-                    form.locator('[name="text"]').fill("模糊任务")
-                    page.locator("#dialog-submit").click()
-                    expect(page.locator("#route-result")).to_contain_text("希望交付什么结果")
-                    form.locator('[name="text"]').fill("核对测试结果并直接完成")
-                    page.locator("#dialog-submit").click()
-                    expect(form).not_to_be_visible()
+                    vague = page.request.post(url + "/api/messages", headers={"x-studio-action": "1"}, data={
+                        "id": "lifecycle-vague", "project": "orders", "text": "模糊任务",
+                        "requirementsConfirmed": False,
+                    })
+                    assert vague.ok, vague.text()
+                    assert vague.json().get("needsConfirmation") is True, vague.text()
+                    assert "希望交付什么结果" in vague.json().get("reason", "")
+                    confirmed = page.request.post(url + "/api/messages", headers={"x-studio-action": "1"}, data={
+                        "id": "lifecycle-confirmed", "project": "orders", "text": "核对测试结果并直接完成",
+                        "requirementsConfirmed": True,
+                    })
+                    assert confirmed.ok, confirmed.text()
 
                     def wait_rounds(count):
                         page.wait_for_function("""async (count) => {

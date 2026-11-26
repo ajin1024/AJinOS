@@ -10,11 +10,6 @@ contextBridge.exposeInMainWorld("studio", {
     ipcRenderer.on("studio:navigate", listener);
     return () => ipcRenderer.removeListener("studio:navigate", listener);
   },
-  onFocusComposer: (callback) => {
-    const listener = () => callback();
-    ipcRenderer.on("studio:focus-composer", listener);
-    return () => ipcRenderer.removeListener("studio:focus-composer", listener);
-  },
   versions: (action, id) => ipcRenderer.invoke("studio:versions", action, id),
   onWindowsUpdate: (callback) => {
     const listener = (_event, value) => callback(value);

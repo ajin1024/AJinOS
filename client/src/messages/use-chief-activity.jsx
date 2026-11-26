@@ -54,7 +54,7 @@ export function PlanView({ chief, connected, onThread }) {
     <div className="studio-plan-view">
       {error && <p role="alert">{error}</p>}
       {!plans.length && !error && (
-        <p className="secondary">协作计划会在这里显示。可以在对话中用 /plan 发起一份草案。</p>
+        <p className="secondary">协作计划会在这里显示；已有的草案可以确认启动或取消。</p>
       )}
       {plans.map((plan) => (
         <PlanCard

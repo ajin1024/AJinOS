@@ -2,7 +2,7 @@ import { businessProjects } from "../gateway-config.mjs";
 import { resolveRoleCandidates } from "../../role-routing.mjs";
 
 const sourceLabels = {
-  chat: "AJinOS 主私聊",
+  chat: "本机提交",
   feishu: "飞书私聊 / 群采集",
   github: "GitHub Issue",
   timer: "定时规则",

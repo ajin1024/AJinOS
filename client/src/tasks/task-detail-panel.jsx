@@ -366,9 +366,6 @@ export function TaskDetailPanel({
   onDraftChange,
   onCardSubmit,
   onWorkflowAction,
-  onContinueTopic,
-  onHandoffTask,
-  onIntakeResolve,
   onIntakeDismiss,
   onCancelRun,
   onInspectRun,
@@ -554,10 +551,6 @@ export function TaskDetailPanel({
     : actions.slice(0, 1);
   const moreActions = actions.filter((a) => !primaryActions.includes(a));
   const canWorkflowAct = snapshot.connected && Array.isArray(snapshot.taskWorkflows);
-  const canContinueTopic =
-    !intake &&
-    task.topic &&
-    !["closed", "paused", "human_working", "awaiting_confirmation"].includes(workflow?.status);
   const notices = intake ? [] : pendingNotices(task);
   const report = latestRun?.task || task.assessment?.report;
   const summary = latestRun?.error || latestRun?.summary;
@@ -652,17 +645,6 @@ export function TaskDetailPanel({
               <p className="task-list-prose">{intakeWorkflow(intake).reason || "正在确认需求与项目归属。"}</p>
               {!["confirming", "routing", "dismissed"].includes(intake.state) && (
                 <div className="task-workflow-actions">
-                  <Button
-                    theme="solid"
-                    disabled={!snapshot.connected}
-                    onClick={() => onIntakeResolve(intake)}
-                  >
-                    {intake.state === "needsConfirmation"
-                      ? "补充需求"
-                      : intake.state === "needsProject"
-                        ? "选择项目"
-                        : "查看并继续"}
-                  </Button>
                   <Button disabled={!snapshot.connected} onClick={() => onIntakeDismiss(intake.id)}>
                     无需处理
                   </Button>
@@ -944,10 +926,10 @@ export function TaskDetailPanel({
         </div>
       )}
 
-      {!intake && (primaryActions.length > 0 || moreActions.length > 0 || canContinueTopic || (onHandoffTask && latestRun) || hasLiveRun) && (
+      {!intake && (primaryActions.length > 0 || moreActions.length > 0 || hasLiveRun) && (
         <footer className="task-list-footer">
           <span>{workflow?.stage === "acceptance" ? "等待你验收" : workflow?.stageLabel || ""}</span>
-          {(moreActions.length > 0 || canContinueTopic || (onHandoffTask && latestRun)) && (
+          {(moreActions.length > 0) && (
             <details className="task-list-more">
               <summary className="button">更多操作</summary>
               <div>
@@ -964,22 +946,6 @@ export function TaskDetailPanel({
                     {action === "reopen" && !task.topic ? "重新打开并接手" : taskActions[action]}
                   </button>
                 ))}
-                {canContinueTopic && (
-                  <button type="button" className="button" onClick={() => onContinueTopic(task.topic)}>
-                    继续此任务
-                  </button>
-                )}
-                {onHandoffTask && latestRun && (
-                  <button
-                    type="button"
-                    className="button"
-                    data-command="handoff"
-                    disabled={!snapshot.connected}
-                    onClick={() => onHandoffTask(task)}
-                  >
-                    转交新任务
-                  </button>
-                )}
               </div>
             </details>
           )}

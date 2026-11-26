@@ -3,33 +3,30 @@ import { createRoot } from "react-dom/client";
 import { ConfigProvider, Modal } from "@douyinfe/semi-ui";
 import {
   IconComment,
-  IconContrast,
-  IconInfoCircle,
+  IconDesktop,
   IconLayers,
   IconLoading,
+  IconMoon,
   IconPlay,
-  IconPlus,
   IconPulse,
   IconRefresh,
   IconSetting,
+  IconSun,
 } from "@douyinfe/semi-icons";
+import brandIcon from "../assets/icon.png";
 import semiCss from "@douyinfe/semi-ui/dist/css/semi.min.css";
 import semiThemeCss from "./semi-theme.css";
 import studioLayoutCss from "./studio-layout.css";
 import motionCss from "./studio-motion.css";
 import projectCss from "./project-space.css";
 import flowCss from "./workbench/super-agent-flow.css";
-import floatingChatCss from "./messages/floating-chat.css";
 import { ProjectSpace } from "./project-space.jsx";
 import { SettingsCenter } from "./settings/settings-center.jsx";
 import { TaskCenter } from "./tasks/task-center.jsx";
 import { MessageCenter } from "./messages/message-center.jsx";
-import { hasComposerDraft } from "./messages/composer.jsx";
 import { PlanView, useChiefActivity } from "./messages/use-chief-activity.jsx";
 import { SuperAgentFlow } from "./workbench/super-agent-flow.jsx";
-import { FloatingChat } from "./messages/floating-chat.jsx";
 import { TaskDetailPanel } from "./tasks/task-detail-panel.jsx";
-import { NewTaskModal } from "./tasks/new-task-modal.jsx";
 import { WorkflowActionModal } from "./tasks/workflow-action-modal.jsx";
 import { VersionsPanel } from "./versions-panel.jsx";
 
@@ -39,7 +36,7 @@ function installSemiStyles() {
   semiStylesInstalled = true;
   const style = document.createElement("style");
   style.id = "studio-semi-styles";
-  style.textContent = semiCss + "\n" + semiThemeCss + "\n" + projectCss + "\n" + motionCss + "\n" + studioLayoutCss + "\n" + flowCss + "\n" + floatingChatCss;
+  style.textContent = semiCss + "\n" + semiThemeCss + "\n" + projectCss + "\n" + motionCss + "\n" + studioLayoutCss + "\n" + flowCss;
   document.head.append(style);
 }
 
@@ -56,6 +53,12 @@ function applyThemeMode(mode) {
   else document.body.removeAttribute("theme-mode");
   return normalized;
 }
+
+const THEME_MODES = [
+  ["light", "白天", IconSun],
+  ["dark", "夜间", IconMoon],
+  ["system", "跟随系统", IconDesktop],
+];
 
 function StudioShell({
   route,
@@ -92,11 +95,6 @@ function StudioShell({
   onInspectRun,
   onInspectEntry,
   onCloseDrawer,
-  newTaskRequest,
-  onOpenNewTask,
-  onHandoffTask,
-  onCloseNewTask,
-  onNewTaskSubmitted,
   onIntakeDismiss,
   cancelRunId,
   onRequestCancelRun,
@@ -106,8 +104,6 @@ function StudioShell({
   messages,
   receipts,
   inbox,
-  onMessagesRefresh,
-  composerFocusSignal,
   api,
   toast,
   onNavigate,
@@ -122,40 +118,27 @@ function StudioShell({
   hasUnsavedForm,
 }) {
   const [tracked, setTracked] = useState(null);
-  const [chatOpen, setChatOpen] = useState(false);
   const chief = useChiefActivity(api, toast);
   const [themeMode, setThemeMode] = useState(() =>
     applyThemeMode(document.documentElement.dataset.themeMode || "system"),
   );
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versionLabel, setVersionLabel] = useState("");
   const [windowsUpdate, setWindowsUpdate] = useState(null);
   const [versionProgress, setVersionProgress] = useState("");
   const [engineConfirm, setEngineConfirm] = useState({ operation: "stop", visible: false });
   const [engineOperation, setEngineOperation] = useState(null);
   const engineBusy = Boolean(engineOperation);
   const [cancelBusy, setCancelBusy] = useState(false);
-  const [composerDrafts, setComposerDrafts] = useState(() => new Map());
-  const changeComposerDraft = useCallback((key, update) => {
-    setComposerDrafts((drafts) => {
-      const next = new Map(drafts);
-      const draft = update(drafts.get(key));
-      if (draft) next.set(key, draft);
-      else next.delete(key);
-      return next;
-    });
-  }, []);
 
   const themePickerRef = useRef(null);
   const messageView = route.view === "messages";
   const flowView = route.view === "tasks" && route.tasksTab === "overview";
   const boardView = route.view === "tasks" && ["list", "inbox"].includes(route.tasksTab);
-  const appliedComposerFocus = useRef(0);
   const externalDrawer = !messageView && Boolean(drawerTask);
   const drawerRef = useRef(null);
   const drawerOrigin = useRef(null);
-  const openChat = useCallback(() => setChatOpen(true), []);
-  const closeChat = useCallback(() => setChatOpen(false), []);
   const closeDrawer = () => {
     setTracked(null);
     onCloseDrawer();
@@ -173,29 +156,11 @@ function StudioShell({
   useEffect(() => {
     if (!drawerTask) setTracked(null);
   }, [drawerTask]);
-  useEffect(() => {
-    if (messageView) closeChat();
-  }, [messageView, closeChat]);
-  useEffect(() => {
-    if (messageView) return;
-    if (composerFocusSignal > appliedComposerFocus.current) {
-      appliedComposerFocus.current = composerFocusSignal;
-      openChat();
-    }
-    const openFromKey = (event) => {
-      if (event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyA") {
-        event.preventDefault();
-        openChat();
-      }
-    };
-    window.addEventListener("keydown", openFromKey);
-    return () => window.removeEventListener("keydown", openFromKey);
-  }, [messageView, composerFocusSignal, openChat]);
   const applyingRef = useRef(false);
   const windowsUpdateRef = useRef(null);
   windowsUpdateRef.current = windowsUpdate;
   const hasUnsavedRef = useRef(hasUnsavedForm);
-  hasUnsavedRef.current = () => hasUnsavedForm() || [...composerDrafts.values()].some(hasComposerDraft);
+  hasUnsavedRef.current = hasUnsavedForm;
 
   useEffect(() => {
     if (!themePickerOpen) return;
@@ -234,6 +199,29 @@ function StudioShell({
     return () => {
       media.removeEventListener("change", onMedia);
       window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  // The rail shows the running version; the versions dialog keeps the full label and update actions.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const info = window.studio?.versions
+          ? await window.studio.versions("info")
+          : await fetch("/api/version").then((response) => response.json());
+        const current = info?.current || {};
+        const label =
+          current.tag ||
+          current.commit?.slice(0, 7) ||
+          (String(current.label || "").startsWith("v") ? current.label : "本地");
+        if (active) setVersionLabel(label);
+      } catch {
+        if (active) setVersionLabel("本地");
+      }
+    })();
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -315,6 +303,8 @@ function StudioShell({
   const confirmingEngineStop = engineConfirm.operation === "stop";
   const engineConfirmLabel = confirmingEngineStop ? "停止引擎" : "重启引擎";
   const hasUpdate = Boolean(windowsUpdate?.tag && windowsUpdate.state !== "error");
+  const activeTheme = THEME_MODES.find(([mode]) => mode === themeMode) || THEME_MODES[2];
+  const ThemeModeIcon = activeTheme[2];
 
   const navItems = [
     { id: "tasks", label: "工作台", icon: <IconLayers aria-hidden="true" /> },
@@ -336,18 +326,6 @@ function StudioShell({
       onDraftChange={onDraftChange}
       onCardSubmit={onCardSubmit}
       onWorkflowAction={onWorkflowAction}
-      onContinueTopic={(topic) => {
-        onCloseDrawer();
-        onOpenNewTask("", topic);
-      }}
-      onHandoffTask={(entry) => {
-        onCloseDrawer();
-        onHandoffTask(entry);
-      }}
-      onIntakeResolve={(intake) => {
-        onCloseDrawer();
-        onOpenNewTask(intake.input?.project || "", intake.input?.topic || "", intake);
-      }}
       onIntakeDismiss={onIntakeDismiss}
       onCancelRun={onRequestCancelRun}
       onCloseDrawer={closeDrawer}
@@ -365,9 +343,7 @@ function StudioShell({
       onSaveProject={onSaveProject}
       onSaveConfig={onSaveConfig}
       onAnalyzeProject={onAnalyzeProject}
-      onNewTask={(projectId) => onOpenNewTask(projectId)}
       onEditingChange={onEditingChange}
-      taskDialogOpen={Boolean(newTaskRequest)}
       detailId={route.projectId}
       onSelectProject={(projectId) => onNavigate({ view: "settings", section: "projects", projectId })}
       onOpenExecutors={() => onNavigate({ view: "settings", section: "agents" })}
@@ -388,7 +364,7 @@ function StudioShell({
               onNavigate({ view: "tasks", tasksTab: "overview" });
             }}
           >
-            <span aria-hidden="true">∞</span>
+            <img src={brandIcon} alt="" aria-hidden="true" />
           </a>
           {!messageView && <h1 className="studio-view-title">{route.view === "tasks" ? "工作台" : "能力与沙箱"}</h1>}
           {route.view === "tasks" && (
@@ -423,18 +399,6 @@ function StudioShell({
                 </button>
               );
             })}
-            {route.view !== "tasks" && (
-              <button
-                type="button"
-                id="rail-new-task"
-                className="rail-control"
-                aria-label="新建任务"
-                title="新建任务"
-                onClick={() => onOpenNewTask()}
-              >
-                <IconPlus aria-hidden="true" />
-              </button>
-            )}
 
             <div className="rail-controls" role="group" aria-label="应用控制">
               <button
@@ -460,20 +424,16 @@ function StudioShell({
                   id="rail-theme"
                   className="rail-control"
                   aria-label="切换外观主题"
-                  title="切换外观主题"
+                  title={`切换外观主题（当前：${activeTheme[1]}）`}
                   aria-expanded={themePickerOpen}
                   aria-controls="rail-theme-picker"
                   onClick={() => setThemePickerOpen((open) => !open)}
                 >
-                  <IconContrast aria-hidden="true" />
+                  <ThemeModeIcon aria-hidden="true" />
                 </button>
                 {themePickerOpen && (
                   <div id="rail-theme-picker" className="studio-theme-pills" role="radiogroup" aria-label="外观模式">
-                    {[
-                      ["light", "白天"],
-                      ["dark", "夜间"],
-                      ["system", "跟随系统"],
-                    ].map(([mode, label]) => (
+                    {THEME_MODES.map(([mode, label, Icon]) => (
                       <button
                         key={mode}
                         type="button"
@@ -487,7 +447,8 @@ function StudioShell({
                           themePickerRef.current.querySelector("#rail-theme")?.focus();
                         }}
                       >
-                        {label}
+                        <Icon aria-hidden="true" />
+                        <span>{label}</span>
                       </button>
                     ))}
                   </div>
@@ -506,20 +467,18 @@ function StudioShell({
               <button
                 type="button"
                 id="open-versions"
-                className="rail-control"
+                className="rail-control rail-version"
                 aria-label={hasUpdate ? "版本与更新，有新版本" : "版本与更新"}
                 title={hasUpdate ? `发现新版本 ${windowsUpdate.tag}` : "版本与更新"}
                 onClick={() => setVersionsOpen(true)}
               >
-                <IconInfoCircle aria-hidden="true" />
+                <span aria-hidden="true">{versionLabel || "…"}</span>
                 {hasUpdate && <span className="studio-update-dot" aria-hidden="true" />}
               </button>
             </div>
           </nav>
 
           {!messageView && <div className="studio-header-actions">
-            {boardView && <button type="button" className="button primary" id="new-task" aria-label="新建任务"
-              onClick={() => onOpenNewTask()}><IconPlus size="small" aria-hidden="true" /><span>新建任务</span></button>}
             <button type="button" className="studio-pending-capsule"
               onClick={() => onNavigate({ view: "messages", section: "inbox" })}>待我处理 {inbox.total}</button>
             <button type="button" id="status-capsule" className="studio-engine-capsule" aria-label={engineLabel}
@@ -535,7 +494,7 @@ function StudioShell({
             <SuperAgentFlow config={config} state={state} snapshot={snapshot} allRuns={allRuns} receipts={receipts}
               messages={messages} chief={chief} tracked={tracked} loading={tasksLoading} error={taskLoadError}
               signoffsPending={signoffsPending}
-              onReload={onReloadTasks} onClear={closeDrawer} onChat={openChat} onNavigate={onNavigate}
+              onReload={onReloadTasks} onClear={closeDrawer} onNavigate={onNavigate}
               onTrack={(item) => {
                 setTracked(item.key);
                 if (item.task) onInspectEntry(item.task);
@@ -571,10 +530,7 @@ function StudioShell({
                 )
               }
               onCloseDrawer={onCloseDrawer}
-              composerDrafts={composerDrafts}
-              changeComposerDraft={changeComposerDraft}
               route={route}
-              api={api}
               toast={toast}
               drafts={drafts}
               submittingCards={submittingCards}
@@ -584,9 +540,6 @@ function StudioShell({
               onInspectRun={onInspectRun}
               onNavigate={onNavigate}
               onIntakeDismiss={onIntakeDismiss}
-              onMessagesRefresh={onMessagesRefresh}
-              composerFocusSignal={composerFocusSignal}
-              appliedComposerFocus={appliedComposerFocus}
             />
           )}
 
@@ -617,11 +570,6 @@ function StudioShell({
               onDraftChange={onDraftChange}
               onCardSubmit={onCardSubmit}
               onWorkflowAction={onWorkflowAction}
-              onContinueTopic={(topicId) => onOpenNewTask("", topicId)}
-              onHandoffTask={onHandoffTask}
-              onIntakeResolve={(intake) =>
-                onOpenNewTask(intake.input?.project || "", intake.input?.topic || "", intake)
-              }
               onIntakeDismiss={onIntakeDismiss}
               onCancelRun={onRequestCancelRun}
               onInspectRun={onInspectRun}
@@ -665,20 +613,6 @@ function StudioShell({
           {details(drawerTask)}
         </aside>
       )}
-      {!messageView && <FloatingChat open={chatOpen} onOpen={openChat} onClose={closeChat} drawerOpen={externalDrawer}
-        chief={chief} config={config} api={api} toast={toast} snapshot={snapshot} receipts={receipts}
-        conversations={conversations} pendingCount={inbox.total} draft={composerDrafts.get(null)} onDraft={changeComposerDraft}
-        onRefresh={onMessagesRefresh} onNavigate={onNavigate} onInspect={onInspectRun} onAction={onWorkflowAction} />}
-
-      <NewTaskModal
-        request={newTaskRequest}
-        config={config}
-        topics={snapshot.topics || []}
-        api={api}
-        toast={toast}
-        onClose={onCloseNewTask}
-        onSubmitted={onNewTaskSubmitted}
-      />
 
       <WorkflowActionModal modalState={workflowModal} onClose={onCloseWorkflowModal} onSubmit={onSubmitWorkflowModal} />
 

@@ -1,8 +1,6 @@
-# Prevent navigation from dropping an unsent message and reduced-motion mode from running UI transitions.
-# Prevent the mobile conversation list from crowding out the active conversation.
-# Prevent real task submission, new timeline messages, or a workbench redraw from stealing the user's place.
-# Keep the workbench navigation and its accessible region under the same short name.
-from base64 import b64decode
+# Prevent the mobile conversation list from crowding out the read-only record.
+# Prevent reduced-motion mode from running UI transitions and keep the workbench navigation under its short name.
+# Prevent new timeline messages or a workbench redraw from stealing the user's reading position.
 from studio_home import studio_home
 from datetime import datetime, timedelta, timezone
 import json
@@ -50,9 +48,6 @@ with studio_home('studio-experience-') as home:
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(channel="msedge", headless=True)
                 page = browser.new_page(viewport={"width": 1440, "height": 900})
-                page.add_init_script("""window.studio = {
-                  onFocusComposer(callback) { window.testFocusComposer = callback; }
-                };""")
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 page.goto(url)
@@ -66,35 +61,14 @@ with studio_home('studio-experience-') as home:
                 page.emulate_media(reduced_motion="reduce")
                 expect(gateway).to_be_focused()
                 navigate(page, "messages")
-                composer = page.locator(".composer textarea")
-                composer.fill("还没发出的任务说明")
-                png = b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==")
-                page.locator('.composer input[type="file"]').set_input_files(
-                    {"name": "验收图片.png", "mimeType": "image/png", "buffer": png}
-                )
-                expect(page.locator(".composer .attachments img")).to_be_visible()
-                navigate(page, "tasks")
-                navigate(page, "projects")
-                navigate(page, "settings")
-                navigate(page, "messages")
-                expect(composer).to_have_value("还没发出的任务说明")
-                expect(page.locator(".composer .attachments img")).to_be_visible()
-                page.locator("#refresh-app").click()
-                expect(page.locator("#toast")).to_contain_text("未发送的草稿")
-                page.emulate_media(reduced_motion="reduce")
-                assert page.locator("#refresh-app").evaluate(
-                    "(button) => getComputedStyle(button).transitionDuration.split(',').every(t => parseFloat(t) === 0)"
-                )
-                page.locator("#rail-new-task").click()
-                expect(page.get_by_role("dialog", name="发起新任务")).to_be_visible()
-                page.keyboard.press("Escape")
-                expect(page.get_by_role("dialog", name="发起新任务")).to_be_hidden()
+                # The message center is a read-only record: no composer anywhere.
+                expect(page.locator(".composer")).to_have_count(0)
+                expect(page.locator(".conversation-scroll")).to_be_visible()
 
                 page.set_viewport_size({"width": 390, "height": 680})
                 page.emulate_media(reduced_motion="no-preference", color_scheme="dark")
                 expect(page.get_by_role("button", name="对话列表")).to_be_visible()
                 expect(page.get_by_role("complementary", name="对话列表")).to_be_hidden()
-                expect(composer).to_be_in_viewport()
                 page.get_by_role("button", name="打开对话列表").press("Enter")
                 expect(page.get_by_role("complementary", name="对话列表")).to_be_visible()
                 sidebar = page.get_by_role("complementary", name="对话列表")
@@ -102,51 +76,23 @@ with studio_home('studio-experience-') as home:
                 page.emulate_media(reduced_motion="reduce")
                 expect(sidebar).to_have_css("animation-name", "none")
                 expect(page.get_by_role("button", name="返回对话")).to_be_focused()
-                page.evaluate("window.testFocusComposer()")
-                expect(composer).to_be_focused()
                 page.get_by_role("button", name="打开对话列表").click()
                 page.get_by_role("button", name="返回对话").click()
                 expect(page.get_by_role("button", name="对话列表")).to_be_focused()
-                expect(composer).to_have_value("还没发出的任务说明")
                 assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
 
                 page.set_viewport_size({"width": 1280, "height": 840})
-                navigate(page, "projects")
-                page.locator("#rail-new-task").click()
-                modal = page.get_by_role("dialog", name="发起新任务")
-                modal.get_by_role("textbox").fill("检查演示订单并反馈结果")
-                modal.locator('select[name="project"]').select_option("orders")
-                modal.locator("summary").click()
-                modal.get_by_role("checkbox").check()
-                modal.get_by_role("button", name="提交任务").click()
-                expect(modal).to_be_hidden()
-                expect(page.locator('#nav [aria-current="page"]')).to_have_attribute("data-view", "settings")
-                expect(page.locator("#toast")).to_contain_text("已交给")
-                navigate(page, "messages")
-                page.locator(".thread-item").filter(has_text="检查演示订单并反馈结果").click()
-                expect(composer).to_have_value("")
-                expect(composer).not_to_be_focused()
-                composer.fill("已有对话的草稿")
-                page.get_by_role("complementary", name="对话列表").get_by_role("button", name="AJinOS 总管", exact=False).click()
-                expect(composer).to_have_value("还没发出的任务说明")
-                page.locator(".thread-item").filter(has_text="检查演示订单并反馈结果").click()
-                expect(composer).to_have_value("已有对话的草稿")
-
-                intake = page.request.post(url + "/api/messages", headers={"x-studio-action": "1"}, data={
-                    "id": "experience-intake", "project": "orders", "text": "需要补充验收要求的任务",
+                # Work starts outside the app now; the record still lists what came in.
+                submitted = page.request.post(url + "/api/messages", headers={"x-studio-action": "1"}, data={
+                    "id": "experience-task", "project": "orders", "text": "检查演示订单并反馈结果",
+                    "requirementsConfirmed": True,
                 })
-                assert intake.ok and intake.json()["needsConfirmation"], intake.text()
-                page.goto(url + "/#messages/intake%3Aexperience-intake")
-                composer.fill("我还没发出的补充说明")
-                navigate(page, "tasks")
-                dismissed = page.request.post(
-                    url + "/api/gateway/experience-intake/dismiss", headers={"x-studio-action": "1"}, data={}
-                )
-                assert dismissed.ok, dismissed.text()
+                assert submitted.ok, submitted.text()
                 navigate(page, "messages")
-                page.locator(".thread-item").filter(has_text="我还没发出的补充说明").click()
-                expect(page.locator(".conversation-scroll")).to_contain_text("这段话题暂时没有记录")
-                expect(composer).to_have_value("我还没发出的补充说明")
+                thread_item = page.locator(".thread-item").filter(has_text="检查演示订单并反馈结果")
+                expect(thread_item).to_be_visible(timeout=30000)
+                thread_item.click()
+                expect(page.locator(".thread-items")).to_be_visible()
 
                 rows = []
                 base_time = datetime.now(timezone.utc)

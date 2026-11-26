@@ -20,7 +20,7 @@ Most people use command-line agents like Claude Code or Codex by babysitting a t
 
 **AJinOS** pairs a zero-dependency deterministic scheduling kernel with a local visual desktop & web workspace:
 
-- **AJinOS Studio (`client/`)**: a local desktop and web workspace featuring a live flow canvas, unified message center (text + image attachments and inline card approvals), 3-role routing (Plan / Execute / Verify with cooldown fallback and economy mode), project gateway, long-term memory, and Chief-of-Staff DAG planning.
+- **AJinOS Studio (`client/`)**: a local desktop and web workspace featuring a live flow canvas, a read-only message record with inline card approvals, 3-role routing (Plan / Execute / Verify with cooldown fallback and economy mode), project gateway, long-term memory, and Chief-of-Staff DAG planning.
 - **Deterministic event-sourced kernel (`kernel/`)**: zero runtime dependencies, no outbound requests, and all state derived from an append-only SQLite fact log.
 - **Pluggable & ticket-driven**: swap event sources, agents, channels, and CI/CD delivery freely; every piece of work carries a stable ticket number (e.g. `T-000123`) that only you can close.
 
@@ -30,7 +30,7 @@ One machine is enough — no cloud server and no inbound ports required.
 
 - **Zero-cost wait**: while waiting for your decision, the agent process exits and state lives locally. Reply three days later and it resumes the original session with zero processes running and zero tokens spent in between.
 - **3-role routing & automatic fallback**: bind installed Claude Code, Codex, or Antigravity (ACP) executors across Plan, Execute, and Verify roles with automatic cooldown fallback and economy mode. Models default to your CLI's own default unless you override them.
-- **Built-in message center & workspace**: send tasks with screenshots, answer approval cards inline, inspect real-time progress, and accept or request rework right inside AJinOS Studio — no Feishu or external chat bot required.
+- **Built-in result center & workspace**: answer approval cards inline, inspect real-time progress, and accept or request rework right inside AJinOS Studio. New work enters through channels (Feishu, GitHub issues, schedules); the app itself has no chat box or new-task form.
 - **Connect an agent in one line**: no SDK and no agent source changes. Any CLI tool that accepts a prompt and prints a final reply can connect.
 - **One ticket per matter**: required flow steps (`flow`) gate acceptance, and only you can close a ticket.
 - **Strict security boundaries**: external text goes only into local data files and never into prompts; rules alone decide which agent runs, where, and with what access.
@@ -100,7 +100,7 @@ These screenshots show an isolated local Studio with demo projects and tasks.
 | --- | --- |
 | ![Workbench Light](docs/screenshots/workbench-light.png) | ![Workbench Dark](docs/screenshots/workbench-dark.png) |
 | **Message Center & Project Conversations** | **Task Center Board & Acceptance** |
-| ![Message Center](docs/screenshots/messages.png) | ![Task Center](docs/screenshots/tasks.png) |
+| ![Message Record](docs/screenshots/messages.png) | ![Task Center](docs/screenshots/tasks.png) |
 
 <details>
 <summary>View Project Space & Studio Architecture Diagram</summary>
@@ -112,7 +112,7 @@ These screenshots show an isolated local Studio with demo projects and tasks.
 </details>
 
 - **Live Workbench**: visualize projects, routing gateway, executors, queue reasons, and live task flow with light/dark/system themes.
-- **Message Center & Approvals**: text + image attachments, inline card approvals, per-topic drafts, system tray alerts, and quick hotkey (`Alt + Shift + A`).
+- **Message Record & Approvals**: view text and image records, answer inline cards, and get system tray alerts. The app has no chat box, drafts, or chat hotkey; new work arrives through channels.
 - **3-Role Routing & Configurable Models**: configure Claude Code, Codex, or Antigravity (ACP) across Plan / Execute / Verify roles; leaving model blank inherits your CLI's default.
 - **Task Center & Chief of Staff**: unified inbox for pending items, board/list views, zero-token global briefs, Q&A, multi-ticket DAG plans, and owner acceptance synced to native Hub tickets.
 - **Project Space & Long-Term Memory**: repository profiling, isolated project flows, and owner-approved memory archives.

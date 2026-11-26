@@ -68,9 +68,6 @@ export function TaskCenter({
   onDraftChange,
   onCardSubmit,
   onWorkflowAction,
-  onContinueTopic,
-  onHandoffTask,
-  onIntakeResolve,
   onIntakeDismiss,
   onCancelRun,
   onInspectRun,
@@ -460,9 +457,6 @@ export function TaskCenter({
               onDraftChange={onDraftChange}
               onCardSubmit={onCardSubmit}
               onWorkflowAction={onWorkflowAction}
-              onContinueTopic={onContinueTopic}
-              onHandoffTask={onHandoffTask}
-              onIntakeResolve={onIntakeResolve}
               onIntakeDismiss={onIntakeDismiss}
               onCancelRun={onCancelRun}
               onInspectRun={onInspectRun}

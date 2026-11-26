@@ -101,8 +101,7 @@ function sendToWindow(channel, value) {
 
 function trayMenu(count) {
   return Menu.buildFromTemplate([
-    { label: "打开消息中心", click: () => sendToWindow("studio:navigate", "messages") },
-    { label: "发起新消息", click: () => sendToWindow("studio:focus-composer") },
+    { label: "打开事项记录", click: () => sendToWindow("studio:navigate", "messages") },
     ...(count > 0
       ? [{ label: `待处理消息（${count}）`, click: () => sendToWindow("studio:navigate", "messages") }]
       : []),
@@ -242,11 +241,6 @@ else {
         if (data.ready && !win) {
           base = data.url;
           openWindow();
-          try {
-            globalShortcut.register("Alt+Shift+A", () => sendToWindow("studio:focus-composer"));
-          } catch {
-            /* Another app may already own the shortcut; startup must still continue. */
-          }
         }
       }
     });

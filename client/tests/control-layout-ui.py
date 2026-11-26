@@ -1,5 +1,5 @@
 # Prevent the approved Studio layouts from overlapping, overflowing or hiding legacy views in either theme.
-# Prevent the chat overlay from covering acceptance controls and verify that cold start and Router actions use live services.
+# Verify that cold start and Router actions use live services without any in-app chat overlay.
 import os
 from pathlib import Path
 import re
@@ -13,7 +13,7 @@ def check_viewport(page):
     problems = page.evaluate("""() => {
       const root = document.documentElement;
       const controls = [...document.querySelectorAll(
-        '#nav .nav-item, #nav .rail-control, .mc-stage .view-header, .mc-stage .composer, .mc-stage .thread-drawer, .studio-operation-tabs'
+        '#nav .nav-item, #nav .rail-control, .mc-stage .view-header, .mc-stage .thread-drawer, .studio-operation-tabs'
       )].filter(el => el.checkVisibility());
       return [
         ...(root.scrollWidth > innerWidth ? ['horizontal page overflow'] : []),
@@ -65,15 +65,6 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
     expect(engine).to_have_accessible_name("启动引擎", timeout=30000)
     page.goto(url + "/#projects")
     expect(page.get_by_text("中台暂未连接", exact=False)).to_have_count(1)
-    page.get_by_role("button", name="和 AJinOS 总管沟通").click()
-    chat = page.get_by_role("dialog", name="AJinOS 总管沟通")
-    expect(chat.get_by_text("引擎离线，启动引擎后即可发送。")).to_be_visible()
-    chat.get_by_role("textbox", name="任务说明").fill("离线时的草稿")
-    expect(chat.get_by_role("button", name="发送", exact=True)).to_be_disabled()
-    capture(page, target, "light-offline-chat")
-    chat.get_by_role("textbox", name="任务说明").fill("")
-    page.keyboard.press("Escape")
-    expect(chat).to_have_count(0)
     page.locator("#status-capsule").click()
     expect(engine).to_have_attribute("data-engine-state", "online", timeout=30000)
     controls.get_by_role("button", name="版本与更新").click()
@@ -98,11 +89,10 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
             rail.get_by_role("radio", name="夜间").click()
         expect(page.locator("html")).to_have_attribute("data-theme", theme)
         page.goto(url + "/#messages")
-        expect(page.locator(".composer")).to_be_visible()
-        expect(page.locator(".floating-chat-fab")).to_have_count(0)
+        expect(page.locator(".mc-stage .view-header")).to_be_visible()
         expect(page.locator(".plan")).to_be_visible()
         assert round(page.locator(".mc-stage .dialog-sidebar").bounding_box()["width"]) == 268
-        capture(page, target, f"{theme}-chat")
+        capture(page, target, f"{theme}-messages")
 
         page.goto(url + "/#messages/" + review["topic"])
         expect(page.get_by_text("Thread 直通 · 跳过路由")).to_be_visible()
@@ -141,7 +131,6 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
         flow = page.get_by_role("region", name="任务流转画布")
         expect(flow.locator(".lane-head h3")).to_have_text(["入口触发", "总管路由", "项目领地与执行器", "结果与本人介入"])
         expect(flow.locator(".wires path").first).to_be_visible()
-        expect(page.locator(".composer")).to_have_count(0)
         pending = flow.get_by_role("region", name="待验收").get_by_role("button", name=re.compile(title))
         expect(pending).to_be_visible(timeout=30000)
         capture(page, target, f"{theme}-flow")
@@ -155,17 +144,8 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
         expect(flow.locator(".wire-group.hot").first).to_be_visible()
         expect(flow.locator('[data-node="chat"]')).to_have_attribute("data-on-path", "true")
         expect(flow.locator('[data-node="github"]')).to_have_attribute("data-on-path", "false")
-        fab = page.get_by_role("button", name="和 AJinOS 总管沟通")
-        assert fab.bounding_box()["x"] + fab.bounding_box()["width"] < drawer.bounding_box()["x"]
-        fab.click()
-        expect(chat).to_be_visible()
-        assert chat.bounding_box()["x"] + chat.bounding_box()["width"] < drawer.bounding_box()["x"]
-        assert round(chat.bounding_box()["width"]) == 400
-        assert round(chat.bounding_box()["height"]) == 540
         expect(drawer.get_by_role("button", name="通过验收")).to_be_in_viewport()
-        capture(page, target, f"{theme}-flow-trace-chat")
-        page.keyboard.press("Escape")
-        expect(chat).to_have_count(0)
+        capture(page, target, f"{theme}-flow-trace")
         expect(drawer).to_be_visible()
         drawer.get_by_role("button", name="关闭详情").click()
         page.get_by_role("button", name="跟踪任务", exact=True).click()
@@ -203,41 +183,10 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
         toggle.click()
         page.set_viewport_size({"width": 1440, "height": 900})
 
-        page.goto(url + "/#messages")
-        field = page.get_by_role("textbox", name="任务说明")
-        field.fill("验证刷新保护")
-        page.locator("#refresh-app").click()
-        toast = page.locator("#toast")
-        expect(toast).to_contain_text("未发送的草稿")
-        expect(field).to_have_value("验证刷新保护")
-        for width in (1440, 390):
-            page.set_viewport_size({"width": width, "height": 900})
-            assert toast.bounding_box()["y"] + toast.bounding_box()["height"] <= field.bounding_box()["y"]
-        page.set_viewport_size({"width": 1440, "height": 900})
-        field.fill("")
-        expect(toast).to_be_hidden(timeout=7000)
-
     page.set_viewport_size({"width": 1280, "height": 720})
     page.goto(url + "/")
     expect(page.get_by_role("heading", name="任务流转")).to_be_visible()
     capture(page, target, "1280-flow")
-    page.keyboard.press("Alt+Shift+A")
-    expect(chat).to_be_visible()
-    field = chat.get_by_role("textbox", name="任务说明")
-    expect(field).to_be_focused()
-    before = state(page)["state"].get("tickets", [])
-    field.fill("/ask 今天有哪些待处理")
-    with page.expect_response(lambda response: response.url.endswith("/api/router/message") and response.request.method == "POST") as reply:
-        field.press("Enter")
-    assert reply.value.ok and reply.value.json()["kind"] == "answer"
-    expect(chat.get_by_text("只读简报 · 未开单")).to_have_count(2)
-    assert before == state(page)["state"].get("tickets", [])
-    expect(page.get_by_text(re.compile("零消耗简报 / 问答 2"))).to_be_visible()
-    capture(page, target, "1280-chat")
-    chat.get_by_role("button", name="打开完整对话").click()
-    expect(page).to_have_url(url + "/#messages")
-    expect(page.locator(".floating-chat-fab")).to_have_count(0)
-    capture(page, target, "1280-messages")
     for hash_value, selector in (("#tasks", ".kb-board"), ("#tasks/plans", ".studio-plan-view .plan"), ("#projects", ".sc-main")):
         page.goto(url + "/" + hash_value)
         expect(page.locator(selector).first).to_be_visible()
@@ -249,19 +198,20 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
     expect(flow.locator('[data-node="signed"] .count')).to_have_text("1")
     closed = next(ticket for ticket in state(page)["state"]["tickets"] if ticket["state"] == "closed")
     assert page.request.get(f"/api/tickets/{closed['id']}").json()["outcome"] == "completed"
-    page.get_by_role("button", name="和 AJinOS 总管沟通").click()
-    field.fill("/plan 核查订单后再同步内容")
-    field.press("Enter")
-    start = chat.get_by_role("button", name="确认启动计划").last
+    plan = submit(page, "/plan 核查订单后再同步内容")
+    assert plan["kind"] == "plan", plan
+    page.goto(url + "/#messages")
+    page.reload()
+    start = page.get_by_role("button", name="确认启动计划").last
     expect(start).to_be_enabled(timeout=20000)
     with page.expect_response(lambda response: response.url.endswith("/start") and response.request.method == "POST") as started:
         start.click()
     assert started.value.ok and started.value.json()["plan"]["status"] == "running"
+    page.goto(url + "/#overview")
     expect(flow.get_by_role("button", name=re.compile("跨项目协作.*跨项目交接"))).to_be_visible()
-    page.keyboard.press("Escape")
     page.locator(".studio-pending-capsule").click()
     expect(page).to_have_url(url + "/#inbox")
     assert not errors, errors
     browser.close()
 
-print("Edge 1440x900 light/dark and 1280x720: live flow, tracing, drawer, floating Router chat and navigation passed")
+print("Edge 1440x900 light/dark and 1280x720: live flow, tracing, drawer, read-only record and navigation passed")

@@ -62,9 +62,6 @@ def run_test(url):
 
         box = card.bounding_box()
         card.click(position={"x": box["width"] - 12, "y": box["height"] - 12})
-        detail.get_by_role("button", name="发起任务", exact=True).click()
-        expect(page.locator('#new-task-form [name="project"]')).to_have_value(first_project["id"])
-        page.locator("#dialog-cancel").click()
 
         expect(detail).to_be_visible()
         expect(page.locator('input[name="name"]')).to_have_value(first_project["name"])

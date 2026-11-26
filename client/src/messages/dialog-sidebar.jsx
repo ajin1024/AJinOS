@@ -16,7 +16,6 @@ export function DialogSidebar({
   conversations,
   inbox,
   route,
-  drafts,
   onOpen,
   open,
   onClose,
@@ -54,10 +53,6 @@ export function DialogSidebar({
     { filter, search, project },
   );
   const ordered = [...rows.filter((item) => pinned.has(item.id)), ...rows.filter((item) => !pinned.has(item.id))];
-  const detached = [...drafts].filter(
-    ([id, draft]) =>
-      id && (draft.text.trim() || draft.attachments.length) && !conversations.some((item) => item.id === id),
-  );
   const mainActive = !route.topic && !route.section;
 
   return (
@@ -126,11 +121,8 @@ export function DialogSidebar({
         <Avatar live={connected} />
         <span className="grow">
           <strong>AJinOS 总管</strong>
-          <small className="secondary">统一入口 · 问答 / 派单 / 跨项目计划</small>
+          <small className="secondary">任务进展与结果 · 只读</small>
         </span>
-        {drafts.has(null) && (drafts.get(null).text.trim() || drafts.get(null).attachments.length > 0) && (
-          <span className="chip">草稿</span>
-        )}
       </button>
       <button
         type="button"
@@ -162,7 +154,7 @@ export function DialogSidebar({
             </button>
           ))}
         </div>
-        {!ordered.length && !detached.length && <p className="sidebar-empty">没有符合条件的事项</p>}
+        {!ordered.length && <p className="sidebar-empty">没有符合条件的事项</p>}
         {ordered.map((item) => (
           <div className="thread-row" key={item.id}>
             <button
@@ -175,7 +167,6 @@ export function DialogSidebar({
               <MessageTime value={item.updatedAt} recent />
               <span className="row thread-tags">
                 <span className="chip">{item.project ? item.projectName : "跨项目"}</span>
-                {drafts.get(item.id) && <span className="chip amber">草稿</span>}
               </span>
               <span className={`chip thread-status ${statusTone[item.status] || "neutral"}`}>
                 {item.status === "needs_decision" ? "待拍板" : item.statusLabel}
@@ -191,18 +182,6 @@ export function DialogSidebar({
               ◆
             </button>
           </div>
-        ))}
-        {detached.map(([id, draft]) => (
-          <button
-            type="button"
-            className="thread-item"
-            key={id}
-            aria-current={route.topic === id ? "page" : undefined}
-            onClick={() => onOpen(id)}
-          >
-            <strong>{draft.text.trim().split("\n")[0] || draft.title}</strong>
-            <span className="chip amber">草稿</span>
-          </button>
         ))}
       </section>
     </aside>

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1420" height="1672" viewBox="0 0 1420 1672" role="img" aria-labelledby="title description" xml:lang="zh-CN">
   <title id="title">AJinOS Super Agent 系统设计</title>
-  <desc id="description">目标架构。触发器进入讨论串，需要执行的事项由 Hub 原生工单承接，再由隔离的 Worker 会话处理。Studio 总管路由统一桌面和飞书私聊，以快路径续接原事项，以慢路径处理新意图，沿用现有 HTTP 与 SSE 协议。</desc>
+  <desc id="description">目标架构。触发器进入讨论串，需要执行的事项由 Hub 原生工单承接，再由隔离的 Worker 会话处理。Studio 总管路由服务飞书私聊等外部通道，以快路径续接原事项，以慢路径处理新意图，沿用现有 HTTP 与 SSE 协议。</desc>
   <defs>
     <style>
       text { font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif; fill: #1e2940; }
@@ -57,7 +57,7 @@
       <rect x="52" y="182" width="302" height="98" rx="15" class="panel"/>
       <text x="76" y="217" class="section">Trigger</text>
       <text x="330" y="217" text-anchor="end" class="small muted">触发器</text>
-      <text x="76" y="244" class="body muted">桌面私聊、飞书、GitHub、定时</text>
+      <text x="76" y="244" class="body muted">飞书私聊、飞书群、GitHub、定时</text>
       <text x="76" y="265" class="small muted">私聊经 Router，外部来源走标准事件</text>
     </g>
     <g>
@@ -86,17 +86,17 @@
     <rect x="52" y="307" width="1316" height="787" rx="22" fill="#eceff8" stroke="#ccd4e7"/>
     <text x="76" y="346" class="section indigo">Studio 客户端层</text>
     <text x="291" y="345" class="small indigo">顶层导航 5 → 3</text>
-    <text x="1344" y="345" text-anchor="end" class="small muted">位于内核之外 · 桌面端与飞书私聊同构</text>
+    <text x="1344" y="345" text-anchor="end" class="small muted">位于内核之外 · 桌面只读记录，消息来自外部通道</text>
 
     <g aria-label="对话默认入口">
       <rect x="76" y="368" width="850" height="257" rx="16" class="panel"/>
-      <text x="100" y="400" class="section indigo">① 对话</text>
-      <text x="902" y="399" text-anchor="end" class="small muted">默认主入口 · 消息和人工处理合在同一条对话流</text>
+      <text x="100" y="400" class="section indigo">① 记录</text>
+      <text x="902" y="399" text-anchor="end" class="small muted">只读记录 · 消息和人工处理合在同一条时间流</text>
       <path d="M77 418H925 M338 418V624" fill="none" stroke="#dde3f0"/>
 
       <rect x="96" y="432" width="222" height="35" rx="8" fill="#eff1ff"/>
       <circle cx="113" cy="450" r="4" fill="#4d60bb"/>
-      <text x="125" y="455" class="small strong indigo">置顶 AJinOS 主私聊</text>
+      <text x="125" y="455" class="small strong indigo">置顶 AJinOS 记录</text>
 
       <rect x="96" y="478" width="222" height="62" rx="8" fill="#fff2dd"/>
       <text x="120" y="503" class="small strong amber">待我处理 Inbox</text>
@@ -106,7 +106,7 @@
       <text x="100" y="589" class="small muted">按活跃时间排序</text>
       <text x="100" y="610" class="small muted">项目仅作标签与筛选</text>
 
-      <text x="362" y="450" class="body strong">主私聊 / 所选话题</text>
+      <text x="362" y="450" class="body strong">记录 / 所选话题</text>
       <text x="362" y="475" class="small muted">本人消息与 Router / Worker 回复</text>
       <rect x="362" y="489" width="294" height="37" rx="8" fill="#eef2fa"/>
       <text x="386" y="513" class="small">状态卡 · 进度与验收依据</text>
@@ -161,16 +161,16 @@
         <text x="148" y="974" class="small muted">固定全局简报 → 直接读取状态快照</text>
       </g>
 
-      <g aria-label="Slow Path 主私聊新意图分流">
+      <g aria-label="Slow Path 新消息意图分流">
         <rect x="502" y="735" width="818" height="270" rx="13" fill="#eef0fd" stroke="#d0d7f0"/>
         <text x="526" y="772" class="section indigo">Slow Path</text>
-        <text x="526" y="797" class="small muted">主私聊新意图 · 按需调用规划角色 · 仅选择已登记项目与流程</text>
+        <text x="526" y="797" class="small muted">新消息意图 · 按需调用规划角色 · 仅选择已登记项目与流程</text>
 
         <g>
           <rect x="522" y="815" width="246" height="171" rx="9" fill="#fff"/>
           <text x="546" y="847" class="lead indigo">A · 全局进度问答</text>
           <text x="546" y="876" class="small">Router 只读状态快照</text>
-          <text x="546" y="899" class="small">在主私聊原地答复</text>
+          <text x="546" y="899" class="small">在消息通道原地答复</text>
           <rect x="546" y="939" width="96" height="29" rx="7" fill="#eff1ff"/>
           <text x="594" y="959" text-anchor="middle" class="small indigo strong">0 工单</text>
         </g>
@@ -264,8 +264,8 @@
     </g>
     <g>
       <rect x="722" y="1566" width="646" height="70" rx="11" fill="#fffaf1" stroke="#e8d9c2"/>
-      <text x="746" y="1593" class="body amber strong">桌面与飞书同一入口模型</text>
-      <text x="746" y="1618" class="small">两端共享同一 Router 与 Thread 模型，回复和卡片沿用原绑定。</text>
+      <text x="746" y="1593" class="body amber strong">通道到工单的同一模型</text>
+      <text x="746" y="1618" class="small">飞书与外部来源共享同一 Router 与 Thread 模型，回复和卡片沿用原绑定。</text>
     </g>
   </g>
 </svg>

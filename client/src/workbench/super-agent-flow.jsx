@@ -193,7 +193,6 @@ export function SuperAgentFlow({
   onTrack,
   onClear,
   onNavigate,
-  onChat,
   loading,
   error,
   onReload,
@@ -316,14 +315,14 @@ export function SuperAgentFlow({
             <div className="lane router-lane">
               <LaneTitle index={1} mobile />
               <section className="card router-card" {...node("router")}>
-                <button type="button" className="router-head node-action" onClick={onChat}>
+                <div className="router-head">
                   <Avatar icon="brand" />
                   <span className="node-copy">
                     <strong>AJinOS Router</strong>
                     <small>总管路由大脑</small>
                   </span>
                   <span className={`dot${model.connected ? " live" : ""}`} />
-                </button>
+                </div>
                 <div className="router-inner">
                   <div className="route fast" {...node("fast")}>
                     <span className="row">
