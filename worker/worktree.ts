@@ -2,7 +2,7 @@
 // collide in the main checkout and session resumes stay pinned to one directory from turn 1 onward.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import path from "node:path";
 import { HOME } from "../host/home.ts";
 
@@ -34,56 +34,6 @@ function runGit(cwd: string, args: string[]) {
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
-}
-
-function isIgnored(repoRoot: string, relPath: string) {
-  try {
-    execFileSync("git", ["-C", repoRoot, "check-ignore", "-q", relPath], {
-      timeout: GIT_TIMEOUT,
-      env: GIT_ENV(),
-      windowsHide: true,
-      stdio: "ignore",
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function entryExists(file: string) {
-  try {
-    lstatSync(file);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Shares gitignored node_modules with the main checkout so typecheck/tests work without duplicating dependencies. */
-function linkNodeModules(repoRoot: string, wtRoot: string) {
-  const candidates = ["node_modules"];
-  try {
-    for (const entry of readdirSync(repoRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name === ".git" || entry.name === "node_modules") continue;
-      candidates.push(path.join(entry.name, "node_modules"));
-    }
-  } catch {
-    // Best-effort scan only.
-  }
-  const kind = process.platform === "win32" ? "junction" : "dir";
-  for (const rel of candidates) {
-    const source = path.join(repoRoot, rel);
-    const target = path.join(wtRoot, rel);
-    if (!existsSync(source) || entryExists(target)) continue;
-    const parent = path.dirname(target);
-    if (!existsSync(parent)) continue;
-    if (!isIgnored(repoRoot, rel.replaceAll("\\", "/"))) continue;
-    try {
-      symlinkSync(source, target, kind);
-    } catch {
-      // Linking dependencies is an optimization; a worktree remains usable without it.
-    }
-  }
 }
 
 function branchExists(repoRoot: string, branch: string) {
@@ -176,7 +126,6 @@ export function prepareWorktree({
     }
   }
 
-  linkNodeModules(repoRoot, wtRoot);
   const wtCwd = rel ? path.join(wtRoot, rel) : wtRoot;
   if (!existsSync(wtCwd)) throw new Error(`worktree 目录里找不到子目录 ${rel}`);
   return { root: wtRoot, cwd: wtCwd, branch, mainDir: repoRoot };

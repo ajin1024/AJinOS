@@ -30,7 +30,7 @@ function describeEvent({ sourceName, type, subject, link }: Job["context"]["even
 export function promptFor(job: Job, contextFile: string, worktree?: PreparedWorktree) {
   const { rule, context, askFirst, session, ticket } = job;
   const worktreeLine = worktree
-    ? `这一轮在独立 Git worktree 中运行：目录 ${worktree.cwd}，分支 ${worktree.branch}（主目录 ${worktree.mainDir} 的源码不会被改动；已忽略的 node_modules 可能链接自该目录，不要在链接上直接跑 npm install/ci）。` +
+    ? `这一轮在独立 Git worktree 中运行：目录 ${worktree.cwd}，分支 ${worktree.branch}（主目录 ${worktree.mainDir} 不会被改动）。` +
       "同一工单的后续轮次会复用这个 worktree；完成改动后留在当前分支即可，不要切回主目录，也不要自行推送。"
     : "";
   const flow = rule.flow ?? [];

@@ -118,7 +118,7 @@ Studio 的主题、界面刷新、可信 Git 发布检查与程序回滚均为�
 
 `cwd` 由接单电脑解释，可用 Unix 绝对路径、Windows 盘符或 UNC 路径、`~/` 或 `~\` 开头的家目录路径；中台与接单电脑可以用不同操作系统。接受 Windows 路径是兼容的能力扩展，原有 `/v1`、规则与插件用法不变。
 
-规则可选写 `workspace: "worktree"`（省略或 `"shared"` 保持直接在 `cwd` 运行）。开启后，接单程序在启动 Agent 前从 `cwd` 所在 Git 仓库的当前 `HEAD` 为每张工单建独立 worktree 目录（放在仓库同级的 `.autoloop-worktrees/` 下）和 `autoloop/<工单号>` 分支，并将该目录作为本轮的 `cwd`，同时提供 `AGENT_AUTOLOOP_WORKTREE` 与 `AGENT_AUTOLOOP_WORKTREE_BRANCH` 环境变量；同一工单的后续轮次自动复用同一个 worktree，开启 `resume: true` 时也只在同一张工单内续接会话，不把旧工单或切换模式前的会话带入新 worktree。主工作目录的未提交源码改动不会被带入也不会被改写；已忽略的 `node_modules` 会按需链接以直接运行检查，改动依赖前需先移除该链接。`cwd` 不是 Git 仓库时本轮直接报错，不退回原地修改。这是向后兼容的扩展：老规则、老插件照旧运行，老接单程序忽略该字段时按原 `cwd` 执行。
+规则可选写 `workspace: "worktree"`（省略或 `"shared"` 保持直接在 `cwd` 运行）。开启后，接单程序在启动 Agent 前从 `cwd` 所在 Git 仓库的当前 `HEAD` 为每张工单建独立 worktree 目录（放在仓库同级的 `.autoloop-worktrees/` 下）和 `autoloop/<工单号>` 分支，并将该目录作为本轮的 `cwd`，同时提供 `AGENT_AUTOLOOP_WORKTREE` 与 `AGENT_AUTOLOOP_WORKTREE_BRANCH` 环境变量；同一工单的后续轮次自动复用同一个 worktree，开启 `resume: true` 时也只在同一张工单内续接会话，不把旧工单或切换模式前的会话带入新 worktree。主工作目录的未提交改动与依赖目录不会被带入也不会被改写。`cwd` 不是 Git 仓库时本轮直接报错，不退回原地修改。这是向后兼容的扩展：老规则、老插件照旧运行，老接单程序忽略该字段时按原 `cwd` 执行。
 
 `elsewhere` 是在别处定时跑的任务：中台不启动它们，只在 `agent-autoloop status` 里列出来，它们要找你时用 `POST /v1/tell`。写了 `cwd`（还要写 `skill` 或 `prompt`）的也能问你：卡片带选项，你答了，中台像规则的一轮那样叫醒 `to`，在 `cwd` 照 `skill`、`prompt` 接着做，这一轮的组就是任务名，一次一轮，不接定时任务自己的会话。规则写错了，文件改动不生效，旧规则继续跑，并推一张卡片告诉你错在哪。
 

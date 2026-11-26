@@ -105,17 +105,14 @@ test("prepareWorktree isolates each ticket from dirty main, reuses across rounds
   assert.equal(readFileSync(join(repo, "README.md"), "utf8"), "dirty main\n");
 });
 
-test("prepareWorktree preserves subdirectory cwd and links gitignored node_modules cleanly", () => {
+test("prepareWorktree preserves subdirectory cwd and does not link main checkout node_modules", () => {
   const repo = makeRepo("repo-sub");
   mkdirSync(join(repo, "node_modules", "pkg"), { recursive: true });
   writeFileSync(join(repo, "node_modules", "pkg", "index.js"), "export const ok = 1;\n");
-  mkdirSync(join(repo, "client", "node_modules", "ui"), { recursive: true });
-  writeFileSync(join(repo, "client", "node_modules", "ui", "index.js"), "export const ui = 1;\n");
 
   const prepared = prepareWorktree({ cwd: join(repo, "client"), key: "T-000201" });
   assert.equal(readFileSync(join(prepared.cwd, "app.txt"), "utf8"), "base\n");
-  assert.equal(existsSync(join(prepared.root, "node_modules", "pkg", "index.js")), true);
-  assert.equal(existsSync(join(prepared.cwd, "node_modules", "ui", "index.js")), true);
+  assert.equal(existsSync(join(prepared.root, "node_modules")), false);
   assert.equal(git(prepared.root, "status", "--short"), "");
 });
 
