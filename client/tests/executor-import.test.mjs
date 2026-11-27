@@ -91,6 +91,15 @@ console.log(JSON.stringify({ type: "turn.completed" }));
     const updated = validateWorkspace(withDefault);
     assert.deepEqual(updated.agentRoutes.orders[ids[0]], saved.value.agentRoutes.orders[ids[0]]);
     assert.equal(updated.executionRoutes["orders/default"], undefined);
+    const dispatchRules = ids.slice(0, 2).map((id) => saved.value.agentRoutes.orders[id].rule);
+    // The Hub picks up saved rules on its next tick.
+    const rulesDeadline = Date.now() + 12000;
+    for (;;) {
+      const lines = (await request("/state")).data.state?.lines ?? [];
+      if (dispatchRules.every((rule) => lines.some((line) => line.name === rule))) break;
+      assert.ok(Date.now() < rulesDeadline, "Hub did not load the imported executor rules");
+      await delay(150);
+    }
     for (const [index, id] of ids.entries()) {
       const profile = profiles[index];
       assert.deepEqual(saved.value.rules.agents[id], {
