@@ -8,6 +8,7 @@ const {
   nativeImage,
   Notification,
   globalShortcut,
+  shell,
 } = require("electron");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
@@ -305,6 +306,12 @@ else {
       if (!Number.isInteger(count) || count < 0) throw new Error("无效的待处理数量");
       setTrayBadge(count);
       return count;
+    });
+    ipcMain.handle("studio:github", async (event, target, tag) => {
+      if (!validSender(event)) throw new Error("无效的客户端");
+      const { githubLink } = await import("./github-links.mjs");
+      await shell.openExternal(githubLink(target, { repo: windowsUpdates?.repo, tag }));
+      return true;
     });
     ipcMain.handle("studio:versions", async (event, action, id) => {
       if (!validSender(event)) throw new Error("无效的客户端");

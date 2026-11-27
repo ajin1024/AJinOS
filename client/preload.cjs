@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("studio", {
     return () => ipcRenderer.removeListener("studio:navigate", listener);
   },
   versions: (action, id) => ipcRenderer.invoke("studio:versions", action, id),
+  openGitHub: (target, tag) => ipcRenderer.invoke("studio:github", target, tag),
   onWindowsUpdate: (callback) => {
     const listener = (_event, value) => callback(value);
     ipcRenderer.on("studio:windows-update", listener);
