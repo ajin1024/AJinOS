@@ -52,6 +52,11 @@ export const closeTicket = (id: number, by: string, given: { outcome: string; re
   execute("closeTicket", [id, by, given], now);
 export const reopenTicket = (id: number, by: string, given: { reason?: string } = {}, now = Date.now()) =>
   execute("reopenTicket", [id, by, given], now);
+export const closeTicketFromCard = (
+  id: number,
+  given: { channel?: string; by?: string; ref?: string; outcome?: string; reason?: string },
+  now = Date.now(),
+) => execute("closeTicketFromCard", [id, given], now);
 
 /** Empties a table to reset a fixture: no fact says so, which nothing that runs for real may do. */
 export function fixtureClear(table: Table) {

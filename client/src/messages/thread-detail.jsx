@@ -150,6 +150,13 @@ export function ThreadDetail({
       </div>
       {latest && (
         <footer className="wrap drawer-footer">
+          {task.workflow?.status === "closed" ? (
+            <span className="drawer-status">
+              {task.topic ? "已关闭 · 回复此任务可重新激活" : "已关闭 · 可点击重新打开并接手"}
+            </span>
+          ) : task.workflow?.stage === "acceptance" ? (
+            <span className="drawer-status">任务已完成，确认无误即可关闭</span>
+          ) : null}
           {task.topic && onOpenThread && <button type="button" className="btn" onClick={() => onOpenThread(task.topic)}>进入原 Thread</button>}
           {ordered.map((action) => (
             <button

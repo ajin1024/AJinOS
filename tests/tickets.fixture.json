@@ -2,7 +2,7 @@
   "timezone": "Asia/Shanghai",
   "sources": { "app": { "name": "应用" } },
   "agents": { "a1": { "name": "甲", "worker": "w1", "use": "claude", "model": "m1" } },
-  "channels": { "chat": { "name": "聊天", "answerers": ["me"] } },
+  "channels": { "chat": { "name": "聊天", "answerers": ["me"] }, "plain": { "name": "文字", "links": true } },
   "rules": [
     {
       "name": "普通",

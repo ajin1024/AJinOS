@@ -1,5 +1,7 @@
 // Prevent a matter's rounds drifting apart without a number, a finished run closing business work by itself, a receipt
-// without passed flow steps reaching acceptance, and a new task joining a closed ticket.
+// without passed flow steps reaching acceptance, and a new task joining a closed ticket. Also: a close button offered on
+// an unfinished or already superseded result card, a channel closing someone else's message, and a sent card left
+// showing a stale button after the ticket closes, reopens or moves on.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -146,6 +148,206 @@ test("each scheduled run is its own ticket", () => {
   assert.notEqual(second.ticket?.number, first.ticket?.number);
   const open = hub.stateOf(at(14)).tickets.filter((ticket: { rule: string }) => ticket.rule === "巡检");
   assert.equal(open.length, 2);
+});
+
+/** The result-card tests each start from no cards, so one test's pending delivery can't stand in for another's. */
+const reset = () => {
+  for (const table of ["run_events", "runs", "events", "cards", "deliveries", "timers", "tickets"] as const)
+    hub.fixtureClear(table);
+};
+
+test("only the latest run's last fyi result card is closeable, and only when the work is ready for acceptance", () => {
+  reset();
+  const job = take("normal.new", "#closeable", "closeable-1");
+  hub.finish(
+    job.run,
+    job.token,
+    {
+      outcome: "done",
+      task: complete(),
+      notice: [
+        { title: "结果一", text: "a", fyi: true },
+        { title: "结果二", text: "b", fyi: true },
+      ],
+    },
+    at(3),
+  );
+  const first = hub.nextCard("chat", at(3))!;
+  const second = hub.nextCard("chat", at(3))!;
+  assert.deepEqual(
+    [first.title, first.ticketState, second.title, second.ticketState?.closeable],
+    ["结果一", undefined, "结果二", true],
+    "only the last fyi card of the round carries the ticket state",
+  );
+  assert.deepEqual(
+    [second.ticketState?.number, second.ticketState?.status, second.ticketState?.resolution],
+    [job.ticket!.number, "ready_for_acceptance", "completed"],
+  );
+});
+
+test("a result card isn't closeable while a question is open or the report has no acceptance", () => {
+  reset();
+  const asked = take("normal.new", "#closeable-wait", "closeable-2");
+  hub.finish(
+    asked.run,
+    asked.token,
+    {
+      outcome: "done",
+      ask: [{ title: "要现在关吗", text: "x", options: ["是", "否"] }],
+      notice: [{ title: "顺带结果", text: "y", fyi: true }],
+    },
+    at(3),
+  );
+  const ask = hub.nextCard("chat", at(3))!;
+  const fyi = hub.nextCard("chat", at(3))!;
+  assert.deepEqual(
+    [ask.kind, ask.ticketState, fyi.kind, fyi.ticketState?.closeable],
+    ["ask", undefined, "notice", false],
+  );
+  const unproven = take("normal.new", "#closeable-review", "closeable-3");
+  hub.finish(
+    unproven.run,
+    unproven.token,
+    { outcome: "done", notice: [{ title: "没有验收", text: "z", fyi: true }] },
+    at(3),
+  );
+  assert.equal(hub.nextCard("chat", at(3))!.ticketState?.closeable, false);
+});
+
+test("closing from a result card checks the channel and the message, then refreshes the sent card", () => {
+  reset();
+  const job = take("normal.new", "#close-card", "close-card-1");
+  hub.finish(
+    job.run,
+    job.token,
+    { outcome: "done", task: complete(), notice: [{ title: "结果", text: "做完了", fyi: true }] },
+    at(3),
+  );
+  const card = hub.nextCard("chat", at(3))!;
+  assert.equal(card.ticketState?.closeable, true);
+  hub.delivered("chat", card.id, card.version, "om_close", at(3));
+  assert.throws(
+    () => hub.closeTicketFromCard(card.id, { channel: "chat", by: "stranger", ref: "om_close" }, at(4)),
+    /不能关闭/,
+  );
+  assert.throws(
+    () => hub.closeTicketFromCard(card.id, { channel: "chat", by: "me", ref: "om_other" }, at(4)),
+    /不是发出去/,
+  );
+  const closed = hub.closeTicketFromCard(card.id, { channel: "chat", by: "me", ref: "om_close" }, at(4));
+  assert.equal(closed.changed, true);
+  assert.deepEqual([closed.ticket.state, closed.ticket.outcome, closed.ticket.closedBy], ["closed", "completed", "me"]);
+  const update = hub.nextCard("chat", at(4))!;
+  assert.deepEqual(
+    [update.id, update.version, update.ticketState?.state, update.ticketState?.outcome],
+    [card.id, 2, "closed", "completed"],
+  );
+  assert.equal(hub.closeTicketFromCard(card.id, { channel: "chat", by: "me", ref: "om_close" }, at(5)).changed, false);
+});
+
+test("closing from a card checks the request and the card before saying a closed ticket is already closed", () => {
+  reset();
+  const job = take("normal.new", "#close-order", "close-order-1");
+  hub.finish(
+    job.run,
+    job.token,
+    {
+      outcome: "done",
+      task: complete(),
+      notice: [
+        { title: "结果一", text: "a", fyi: true },
+        { title: "结果二", text: "b", fyi: true },
+      ],
+    },
+    at(3),
+  );
+  const first = hub.nextCard("chat", at(3))!;
+  const second = hub.nextCard("chat", at(3))!;
+  hub.delivered("chat", first.id, first.version, "om_first", at(3));
+  hub.delivered("chat", second.id, second.version, "om_second", at(3));
+  hub.closeTicket(job.ticket!.id, "me", { outcome: "completed" }, at(4));
+  // A closed ticket is only reported as closed after the request and the card have passed every check.
+  assert.throws(() => hub.closeTicketFromCard(second.id, { by: "me", outcome: "cancelled" }, at(5)), /outcome 只能是/);
+  assert.throws(
+    () => hub.closeTicketFromCard(second.id, { by: "me", reason: "这".repeat(1001) }, at(5)),
+    /关闭说明最多/,
+  );
+  assert.throws(
+    () => hub.closeTicketFromCard(first.id, { by: "me" }, at(5)),
+    /不是最新一轮/,
+    "an earlier piece of a split result can't close the ticket",
+  );
+  assert.deepEqual(hub.closeTicketFromCard(second.id, { by: "me" }, at(5)).changed, false);
+});
+
+test("a question card can't close a ticket even when it is on the latest round", () => {
+  reset();
+  const job = take("normal.new", "#close-ask", "close-ask-1");
+  hub.finish(
+    job.run,
+    job.token,
+    {
+      outcome: "done",
+      ask: [{ title: "要现在关吗", text: "x", options: ["是", "否"] }],
+      notice: [{ title: "顺带结果", text: "y", fyi: true }],
+    },
+    at(3),
+  );
+  const ask = hub.nextCard("chat", at(3))!;
+  assert.equal(ask.kind, "ask");
+  assert.throws(() => hub.closeTicketFromCard(ask.id, { by: "me" }, at(4)), /不是最新一轮/);
+});
+
+test("a result card no channel has received keeps its version when the ticket changes", () => {
+  reset();
+  const job = take("normal.new", "#close-unsent", "close-unsent-1");
+  hub.finish(
+    job.run,
+    job.token,
+    { outcome: "done", task: complete(), notice: [{ title: "未投递", text: "x", fyi: true }] },
+    at(3),
+  );
+  const card = hub.nextCard("chat", at(3))!;
+  hub.closeTicket(job.ticket!.id, "me", { outcome: "completed" }, at(4));
+  assert.equal(hub.getView().get("cards", card.id)!.version, 1, "no fact about an update nobody saw");
+});
+
+test("a new round retires the sent result card, and the old card can no longer close the ticket", () => {
+  reset();
+  const job = take("normal.new", "#close-next", "close-next-1");
+  hub.finish(
+    job.run,
+    job.token,
+    { outcome: "done", task: complete(), notice: [{ title: "第一轮", text: "done", fyi: true }] },
+    at(3),
+  );
+  const card = hub.nextCard("chat", at(3))!;
+  hub.delivered("chat", card.id, card.version, "om_next", at(3));
+  hub.ingest("app", { id: "close-next-2", type: "normal.new", subject: "#close-next" }, at(4));
+  assert.equal(hub.getView().get("cards", card.id)!.version, 2, "the stale close button is withdrawn in place");
+  assert.throws(
+    () => hub.closeTicketFromCard(card.id, { channel: "chat", by: "me", ref: "om_next" }, at(5)),
+    /最新一轮/,
+  );
+  const update = hub.nextCard("chat", at(5))!;
+  assert.deepEqual([update.id, update.version, update.ticketState?.closeable], [card.id, 2, false]);
+});
+
+test("reopening a closed ticket refreshes the card that announced its closure", () => {
+  reset();
+  const job = take("normal.new", "#close-reopen", "close-reopen-1");
+  hub.finish(
+    job.run,
+    job.token,
+    { outcome: "done", task: complete(), notice: [{ title: "结果", text: "done", fyi: true }] },
+    at(3),
+  );
+  const card = hub.nextCard("chat", at(3))!;
+  hub.delivered("chat", card.id, card.version, "om_reopen", at(3));
+  hub.closeTicket(job.ticket!.id, "me", { outcome: "completed" }, at(4));
+  assert.equal(hub.getView().get("cards", card.id)!.version, 2);
+  hub.reopenTicket(job.ticket!.id, "me", { reason: "还有后续" }, at(5));
+  assert.equal(hub.getView().get("cards", card.id)!.version, 3, "the reopened card is drawn again");
 });
 
 test("flow steps are normalized from short names and checked", () => {

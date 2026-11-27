@@ -832,58 +832,12 @@ body.station-view #dialog.workspace-form #dialog-header {
   margin: 0;
 }
 
-#versions-dialog .versions-header {
-  padding-block: 15px;
-}
-#versions-dialog .versions-header h2 {
-  margin: 0;
-  font-size: 17px;
-}
-#versions-dialog .versions-header .dialog-kicker {
-  display: none;
-}
-#versions-body:has(.version-layout) {
-  background: var(--ui-bg);
-}
-#versions-body .version-current {
-  background: var(--ui-panel);
-  border-color: var(--ui-line);
-  border-inline-start: 3px solid var(--ui-accent-line);
-}
-.version-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
-  margin-top: 12px;
-}
-#versions-body .version-layout > .version-section {
-  min-width: 0;
-  padding: 12px;
-  background: var(--ui-panel);
-  border: 1px solid var(--ui-line);
-  border-radius: 10px;
-}
-.version-updates {
-  grid-column: 1 / -1;
-}
-.version-layout .version-section h3 {
-  font-size: 14px;
-}
-.version-layout .release-notes {
-  margin-top: 8px;
-}
-.version-layout .version-empty {
-  padding-top: 8px;
-}
-
 @media (max-width: 640px) {
   body.station-view #dialog.workspace-form #dialog-header,
   .workspace-form #dialog-body {
     padding-inline: 12px;
   }
-  .gateway-workspace,
-  .version-layout {
+  .gateway-workspace {
     grid-template-columns: 1fr;
   }
 }

@@ -928,7 +928,15 @@ export function TaskDetailPanel({
 
       {!intake && (primaryActions.length > 0 || moreActions.length > 0 || hasLiveRun) && (
         <footer className="task-list-footer">
-          <span>{workflow?.stage === "acceptance" ? "等待你验收" : workflow?.stageLabel || ""}</span>
+          <span>
+            {workflow?.status === "closed"
+              ? task.topic
+                ? "已关闭 · 回复此任务可重新激活"
+                : "已关闭 · 可点击重新打开并接手"
+              : workflow?.stage === "acceptance"
+                ? "任务已完成，确认无误即可关闭"
+                : workflow?.stageLabel || ""}
+          </span>
           {(moreActions.length > 0) && (
             <details className="task-list-more">
               <summary className="button">更多操作</summary>

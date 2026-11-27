@@ -1,4 +1,4 @@
-import { businessProjects, flowsFor } from "./src/gateway-config.mjs";
+import { businessProjects, flowsFor, newTaskTiers } from "./src/gateway-config.mjs";
 
 const plain = (content) => ({ tag: "plain_text", content });
 const div = (content) => ({ tag: "div", text: plain(content) });
@@ -12,7 +12,7 @@ const parse = (value) => {
 const recoveryText = (error) =>
   new Map([
     ["项目配置已变化，请回复原消息重新选择。", "项目配置已变化，请回复这张卡片补充说明，重新确认归属。"],
-    ["项目没有可用流程，请在 Studio 配置流程。", "项目没有可用流程，请先在 Studio 配置流程，再回复这张卡片。"],
+    ["项目规则暂不可用，请在 Studio 检查。", "项目规则暂不可用，请在 Studio 检查后回复这张卡片。"],
     [
       "所选处理方式尚未确定，请在 Studio 检查项目配置。",
       "处理方式尚未确定，请在 Studio 检查项目配置，再回复这张卡片。",
@@ -59,7 +59,7 @@ export function projectPickerCard(state) {
     : state.result
       ? state.result.routed?.length
         ? "原消息和图片已交给所选项目处理。"
-        : "原消息已记录，但规则未接单，请在 Studio 检查流程。"
+        : "原消息已记录，但规则未接单，请在 Studio 检查项目规则。"
       : state.error
         ? state.error
         : state.stage === "route"
@@ -94,7 +94,7 @@ export function projectPickerCard(state) {
       elements.push({
         tag: "select_static",
         width: "fill",
-        placeholder: plain(state.stage === "route" ? "选择流程与任务等级" : "选择项目"),
+        placeholder: plain(state.stage === "route" ? "选择任务等级" : "选择项目"),
         options: choices,
         behaviors: [{ type: "callback", value: { studioProjectPicker: state.id, stage: state.stage } }],
       });
@@ -176,19 +176,14 @@ export class ProjectPicker {
           if (!project || state.projects.find((p) => p.id === projectId)?.identity !== identity(config, project))
             throw Error("项目配置已变化，请回复原消息重新选择。");
           if (state.stage === "project") {
-            const routes = flowsFor(project)
-              .filter((flow) => config.rules.rules.some((rule) => rule.name === flow.rule))
-              .flatMap((flow) =>
-                config.executionRoutes?.[`${project.id}/${flow.id}`]
-                  ? ["simple", "complex"].map((complexity) => ({
-                      flow: flow.id,
-                      complexity,
-                      label: `${flow.name} · ${complexity === "simple" ? "简单任务" : "复杂任务"}`,
-                    }))
-                  : [{ flow: flow.id, label: flow.name }],
-              );
-            if (!routes.length) throw Error("项目没有可用流程，请在 Studio 配置流程。");
-            state = await this.submit(state, project.id, routes.length === 1 ? routes[0] : null, choice, routes);
+            if (!config.rules.rules.some((rule) => rule.name === project.rule))
+              throw Error("项目规则暂不可用，请在 Studio 检查。");
+            const tiers = newTaskTiers(config, project);
+            const routes = [
+              ...(tiers?.simple ? [{ flow: "default", complexity: "simple", label: "简单任务" }] : []),
+              ...(tiers?.complex ? [{ flow: "default", complexity: "complex", label: "复杂任务" }] : []),
+            ];
+            state = await this.submit(state, project.id, routes.length ? null : { flow: "default" }, choice, routes);
           } else state = await this.submit(state, project.id, state.routes[Number(choice)], choice);
         }
         await this.update(state.ref, projectPickerCard(state));

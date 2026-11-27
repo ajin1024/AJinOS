@@ -347,7 +347,6 @@ function StudioShell({
       onEditingChange={onEditingChange}
       detailId={route.projectId}
       onSelectProject={(projectId) => onNavigate({ view: "settings", section: "projects", projectId })}
-      onOpenExecutors={() => onNavigate({ view: "settings", section: "agents" })}
       api={api}
     />
   );
@@ -645,7 +644,8 @@ function StudioShell({
         visible={versionsOpen}
         onCancel={() => setVersionsOpen(false)}
         footer={null}
-        width={680}
+        centered
+        width="min(704px, calc(100vw - 24px))"
         className="studio-versions-modal"
       >
         <div id="versions-body">

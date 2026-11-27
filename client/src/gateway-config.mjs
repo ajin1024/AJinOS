@@ -1,4 +1,7 @@
 import { isImportedExecutor } from "./executor-presets.mjs";
+import { normalizeRoleRouting } from "../role-routing.mjs";
+import { acceptsFlowExecutor, flowsFor } from "./flow-executors.mjs";
+export { flowsFor } from "./flow-executors.mjs";
 
 export const EXECUTION_MODELS = { simple: "", complex: "" };
 export const OPEN_SOURCE_POLL_MINUTES = [1, 5, 10, 15, 30, 60];
@@ -41,18 +44,38 @@ export const businessProjects = (config) =>
   (config.projects || [])
     .filter((p) => p.role !== "integration")
     .sort((a, b) => Number(b.id === config.defaultProject) - Number(a.id === config.defaultProject));
-export const flowsFor = (p) => [
-  { id: "default", name: "默认流程", description: p.description || "", rule: p.rule },
-  ...(p.flows || []),
-];
+
+export function projectTags(project, generated = []) {
+  const key = (tag) => tag.trim().toLocaleLowerCase();
+  const seen = new Set((project.tagEdits?.removed || []).map(key));
+  return [...(project.aliases || []), ...(project.tagEdits?.added || []), ...generated]
+    .map((tag) => tag.trim())
+    .filter((tag) => {
+      const normalized = key(tag);
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+}
+
 export const flowType = (p, flow) =>
   flow.id === "default" ? `project.${p.id}.task` : `project.${p.id}.flow.${flow.id}`;
+
+export function newTaskTiers(config, project, flowId = "default") {
+  if (flowsFor(project).find((flow) => flow.id === flowId)?.modelNodes?.execute) return null;
+  const { primary, fallback } = normalizeRoleRouting(config).roles.execute;
+  if (flowId === "default" && project.service !== "autoloop" && (primary || fallback) && !config.executionTiers)
+    return null;
+  return config.executionRoutes?.[`${project.id}/${flowId}`];
+}
 export function projectRuleNames(config, project) {
   const issueRoute = config.issueRoutes?.[project.id];
   return [
+    ...(project.eventRules || []),
     ...flowsFor(project).flatMap((flow) => [
       flow.rule,
       ...Object.values(config.executionRoutes?.[`${project.id}/${flow.id}`] || {}).map((r) => r.rule),
+      ...Object.values(config.flowAgentRoutes?.[`${project.id}/${flow.id}`] || {}).map((r) => r.rule),
     ]),
     ...Object.values(config.agentRoutes?.[project.id] || {})
       .filter((r) => r.auto)
@@ -80,17 +103,43 @@ export function buildExecutionRoutes(config, identity = (value) => value) {
     .flatMap((routes) => Object.values(routes))
     .filter((r) => r.auto)
     .map((r) => r.rule);
-  const previousRules = new Set([...old.map((r) => r.rule), ...oldAgentRules]),
+  const oldFlowRules = Object.values(config.flowAgentRoutes || {}).flatMap((routes) => Object.values(routes).map((r) => r.rule));
+  const previousRules = new Set([...old.map((r) => r.rule), ...oldAgentRules, ...oldFlowRules]),
     previousAgents = new Set(old.map((r) => r.agent));
   config.rules.rules = config.rules.rules.filter((r) => !previousRules.has(r.name));
   // Tier executors we generated are ours to remove; a tier may also point at a registered executor we must keep.
   for (const id of previousAgents) if (id.startsWith("studio-")) delete config.rules.agents[id];
   config.executionRoutes = {};
   config.agentRoutes = {};
+  delete config.flowAgentRoutes;
   for (const p of config.projects)
     for (const flow of flowsFor(p)) {
       const base = config.rules.rules.find((r) => r.name === flow.rule);
       if (!base) continue;
+      if (p.role !== "integration") base.resume = true;
+      if (p.role !== "integration" && typeof flow.modelNodes?.execute === "string") {
+        const routes = {};
+        for (const [id, agent] of Object.entries(config.rules.agents)) {
+          if (!acceptsFlowExecutor(p, "execute", id, agent)) continue;
+          // A topic keeps its agent-specific rule when this node is reassigned.
+          const hash = identity(JSON.stringify([p.id, flow.id, base.name, base.cwd, id]));
+          const name = `studio-node:${hash}`;
+          const type = `project.${p.id}.n.${hash.slice(0, 12)}`;
+          const access = base.access || config.rules.agents[base.to]?.access || "edit";
+          const agentAccess = agent.access || "edit";
+          const { model: _model, effort: _effort, speed: _speed, ...rule } = base;
+          config.rules.rules.push({
+            ...rule,
+            name,
+            to: id,
+            group: base.group || base.name,
+            access: ACCESS_LEVELS.indexOf(access) <= ACCESS_LEVELS.indexOf(agentAccess) ? access : agentAccess,
+            when: { source: "local", types: [type] },
+          });
+          routes[id] = { agent: id, rule: name, type };
+        }
+        (config.flowAgentRoutes ||= {})[`${p.id}/${flow.id}`] = routes;
+      }
       if (config.executionTiers) {
         const direct = {};
         for (const [tier, agentId] of Object.entries(config.executionTiers)) {
@@ -165,18 +214,12 @@ export function buildExecutionRoutes(config, identity = (value) => value) {
           const r = config.rules.rules.find((item) => item.name === f.rule);
           return r?.to === agentId;
         });
-      if (existingFlow) {
-        routes[agentId] = {
-          agent: agentId,
-          rule: existingFlow.rule,
-          type: flowType(p, existingFlow),
-          flow: existingFlow.id,
-          inherited: true,
-        };
+      const type = `project.${p.id}.agent.${agentId}`;
+      const legacy = existingFlow && { rule: existingFlow.rule, type: flowType(p, existingFlow) };
+      if (type.length > 64) {
+        if (legacy) routes[agentId] = { agent: agentId, ...legacy, inherited: true };
         continue;
       }
-      const type = `project.${p.id}.agent.${agentId}`;
-      if (type.length > 64) continue;
       const rule = `studio-agent:${p.id}:${agentId}:${identity(JSON.stringify([base.name, base.cwd, agentId]))}`;
       if (config.rules.rules.some((r) => r.name === rule)) continue;
       const routeRule = {
@@ -184,6 +227,7 @@ export function buildExecutionRoutes(config, identity = (value) => value) {
         name: rule,
         to: agentId,
         group: base.group || base.name,
+        access: base.access || config.rules.agents[base.to]?.access || "edit",
         when: { source: "local", types: [type] },
       };
       if (imported) {
@@ -192,7 +236,13 @@ export function buildExecutionRoutes(config, identity = (value) => value) {
         if (expandsAccess(routeRule)) delete routeRule.access;
       }
       config.rules.rules.push(routeRule);
-      routes[agentId] = { agent: agentId, rule, type, auto: true };
+      routes[agentId] = {
+        agent: agentId,
+        rule,
+        type,
+        auto: true,
+        ...(legacy && { legacy }),
+      };
     }
     if (Object.keys(routes).length) config.agentRoutes[p.id] = routes;
   }
@@ -252,6 +302,7 @@ export function syncOpenSourceIssueRoutes(config, { node = "node", watcherScript
 
   const fallbackWorker =
     Object.values(config.rules.agents || {}).find((a) => a?.worker)?.worker || "studio-local";
+  const execute = normalizeRoleRouting(config).roles.execute;
   let needsGithubSource = false;
 
   for (const p of config.projects || []) {
@@ -301,7 +352,8 @@ export function syncOpenSourceIssueRoutes(config, { node = "node", watcherScript
 
     const base = config.rules.rules.find((r) => r.name === p.rule);
     if (!base) continue;
-    const baseAgent = config.rules.agents[base.to];
+    const to = execute.primary || execute.fallback || config.executionTiers?.simple || config.executionTiers?.complex || base.to;
+    const baseAgent = config.rules.agents[to];
     const worker = baseAgent?.worker || fallbackWorker;
     const eventType = `issues.opened.${p.id}`;
     const approvedEventType = `issues.approved.${p.id}`;
@@ -338,13 +390,13 @@ export function syncOpenSourceIssueRoutes(config, { node = "node", watcherScript
       group: "GitHub 巡检",
       emits: { source: "github", types: [eventType] },
     });
-    const baseAccess = base.access || baseAgent?.access || "edit";
+    const baseAccess = base.access || config.rules.agents[base.to]?.access || "edit";
     const isTriage = issueMode === "triage";
     if (isTriage) {
       config.rules.rules.push({
         name: triageRule,
         when: { source: "github", types: [eventType] },
-        to: base.to,
+        to,
         cwd: p.cwd,
         access: "read",
         parallel: Math.max(1, Number(base.parallel) || 1),
@@ -358,10 +410,10 @@ export function syncOpenSourceIssueRoutes(config, { node = "node", watcherScript
     config.rules.rules.push({
       name: handleRule,
       when: { source: "github", types: [isTriage ? approvedEventType : eventType] },
-      to: base.to,
+      to,
       cwd: p.cwd,
       ...(base.workspace ? { workspace: base.workspace } : {}),
-      access: baseAccess === "read" ? "read" : "edit",
+      access: baseAccess === "read" || baseAgent?.access === "read" ? "read" : "edit",
       parallel: base.parallel,
       priority: -10,
       tell: "always",

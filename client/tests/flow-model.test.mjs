@@ -43,7 +43,7 @@ test("counts configured sources, open questions, work in flight and local worker
       { kind: "answer", at: "2026-11-25T14:00:00Z" },
     ],
   });
-  assert.equal(model.sources.filter((source) => source.enabled).length, 2);
+  assert.equal(model.sources.filter((source) => source.enabled).length, 1);
   assert.equal(model.sources.find((source) => source.id === "github").active, 1);
   assert.equal(model.running, 1);
   assert.equal(model.queued, 1);
@@ -114,4 +114,129 @@ test("uses the Studio timezone and ticket outcomes for signoff, and follows actu
   );
   assert.equal(trace.nodes.has("router"), false);
   assert.equal(traceFlow(model, model.reviews[0]).nodes.has("github"), false);
+});
+
+test("lists only the three standard entries and never turns the internal local source into a card", () => {
+  const model = buildFlowModel({
+    config,
+    allRuns: [run(11, "local", "claimed"), { ...run(12, "local", "done"), agent: "remote" }],
+  });
+  assert.deepEqual(
+    model.sources.map((source) => source.id),
+    ["feishu", "github", "timer"],
+  );
+  assert.equal(
+    model.sources.some((source) => source.id === "chat"),
+    false,
+  );
+  assert.equal(model.sources.find((source) => source.id === "feishu").enabled, false);
+});
+
+test("merges feishu-chat and routed local feishu topics into one entry with the right route", () => {
+  const feishuConfig = {
+    ...config,
+    rules: {
+      ...config.rules,
+      sources: { local: {}, "feishu-chat": {} },
+    },
+  };
+  const direct = { id: 10, state: "done", agent: "one", events: [{ source: "feishu-chat" }] };
+  const routed = {
+    id: 13,
+    state: "done",
+    agent: "one",
+    events: [{ source: "local", subject: "shop:feishu:oc_chat", id: "studio:feishu:om_1" }],
+  };
+  const model = buildFlowModel({ config: feishuConfig, allRuns: [direct, routed] });
+  assert.deepEqual(
+    model.sources.map((source) => source.id),
+    ["feishu", "github", "timer"],
+  );
+  assert.equal(model.sources.find((source) => source.id === "feishu").enabled, true);
+
+  const directTrace = traceFlow(model, { task: { key: "d", project: "shop", runs: [direct] } });
+  assert.deepEqual(
+    directTrace.edges.slice(0, 1).map(({ from, to, tone }) => [from, to, tone]),
+    [["feishu", "hub", "direct"]],
+  );
+  assert.equal(directTrace.nodes.has("router"), false);
+
+  const routedTrace = traceFlow(model, { task: { key: "r", project: "shop", runs: [routed] } });
+  assert.deepEqual(
+    routedTrace.edges.slice(0, 2).map(({ from, to, tone }) => [from, to, tone]),
+    [
+      ["feishu", "router", "router"],
+      ["router", "hub", "router"],
+    ],
+  );
+  assert.equal(routedTrace.nodes.has("fast") || routedTrace.nodes.has("slow"), true);
+});
+
+test("starts a routed local task at the router when it has no source card", () => {
+  const local = { id: 14, state: "done", agent: "one", events: [{ source: "local" }] };
+  const model = buildFlowModel({ config, allRuns: [local] });
+  const trace = traceFlow(model, { task: { key: "l", project: "shop", runs: [local] } });
+  assert.deepEqual(
+    trace.edges.slice(0, 1).map(({ from, to }) => [from, to]),
+    [["router", "hub"]],
+  );
+  assert.equal(trace.nodes.has("feishu"), false);
+});
+
+test("routes GitHub poll rules to GitHub and keeps business cron rules on the timer entry", () => {
+  const pollRule = { name: "poll-issues", when: { cron: "0 * * * *" }, to: "one", emits: { source: "github" } };
+  const timerRule = { name: "daily-report", when: { cron: "0 9 * * *" }, to: "one" };
+  const pollConfig = {
+    ...config,
+    rules: {
+      ...config.rules,
+      sources: { local: {} },
+      rules: [pollRule, timerRule],
+    },
+  };
+  const poll = { id: 15, state: "done", agent: "one", rule: "poll-issues", events: [{ source: "schedule" }] };
+  const daily = { id: 16, state: "done", agent: "one", rule: "daily-report", events: [{ source: "schedule" }] };
+  const model = buildFlowModel({ config: pollConfig, allRuns: [poll, daily] });
+  assert.deepEqual(Object.fromEntries(model.sources.map((source) => [source.id, source.enabled])), {
+    feishu: false,
+    github: true,
+    timer: true,
+  });
+  assert.deepEqual(traceFlow(model, { task: { key: "p", project: "shop", runs: [poll] } }).edges[0], {
+    from: "github",
+    to: "hub",
+    tone: "direct",
+  });
+  assert.deepEqual(traceFlow(model, { task: { key: "t", project: "shop", runs: [daily] } }).edges[0], {
+    from: "timer",
+    to: "hub",
+    tone: "direct",
+  });
+
+  const pollOnly = buildFlowModel({
+    config: { ...pollConfig, rules: { ...pollConfig.rules, rules: [pollRule] } },
+    allRuns: [poll],
+  });
+  assert.equal(pollOnly.sources.find((source) => source.id === "github").enabled, true);
+  assert.equal(pollOnly.sources.find((source) => source.id === "timer").enabled, false);
+});
+
+test("keeps custom external webhook sources as dynamic entries", () => {
+  const sourceConfig = {
+    ...config,
+    rules: { ...config.rules, sources: { local: {}, gitlab: { name: "GitLab" } } },
+  };
+  const event = run(17, "gitlab", "done");
+  const model = buildFlowModel({ config: sourceConfig, allRuns: [event] });
+  assert.deepEqual(
+    model.sources.find((source) => source.id === "source:gitlab"),
+    {
+      id: "source:gitlab",
+      title: "GitLab",
+      enabled: true,
+      active: 0,
+    },
+  );
+  const trace = traceFlow(model, { task: { key: "g", project: "shop", runs: [event] } });
+  assert.deepEqual(trace.edges[0], { from: "source:gitlab", to: "hub", tone: "direct" });
 });

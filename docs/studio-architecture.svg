@@ -27,7 +27,7 @@
   <text x="928" y="49" class="small">识别网关</text>
   <rect x="1020" y="35" width="20" height="16" rx="4" class="existing"/>
   <text x="1048" y="49" class="small">内核与执行</text>
-  <text x="760" y="80" class="small">大脑层可配置 Claude Code / Codex 模型与思考强度</text>
+  <text x="760" y="80" class="small">执行器 = 软件 + 模型 + 思考强度 + 速度</text>
 
   <rect x="24" y="108" width="1152" height="862" rx="18" fill="#fff" stroke="#cbd8df"/>
   <text x="45" y="138" class="label">STUDIO 客户端层 · 在调度内核之外（桌面端 / 网页 / 飞书私聊共用）</text>
@@ -52,8 +52,8 @@
   <text x="68" y="386" class="small">保留资料指纹与版本，不扫描敏感文件</text>
 
   <rect x="402" y="302" width="366" height="106" rx="12" class="box"/>
-  <text x="422" y="332" class="h">可信项目与流程目录</text>
-  <text x="422" y="360">项目 / 流程 → 既有规则与独立执行器</text>
+  <text x="422" y="332" class="h">项目流程绑定执行器</text>
+  <text x="422" y="360">需求确认、执行任务、结果复核各选一套</text>
   <text x="422" y="386" class="small">目录、Agent、Skill 与权限只由本机规则决定</text>
 
   <rect x="792" y="302" width="360" height="106" rx="12" class="plan"/>
@@ -82,7 +82,7 @@
 
   <rect x="580" y="560" width="572" height="132" rx="12" class="plan"/>
   <text x="600" y="590" class="h">③ 需求确认与智能分诊</text>
-  <text x="600" y="618">目标不清先追问；清晰后在登记范围内选项目、流程与等级</text>
+  <text x="600" y="618">归属明确后选择登记项目及任务等级</text>
   <text x="600" y="646">首次派发自动附带全局 + 项目生效记忆（只读资料块）</text>
   <text x="600" y="672" class="small">不明确返回候选卡片结束本轮，零进程等待</text>
 

@@ -8,7 +8,6 @@ const unix = new Set([
   "adapters",
   "browser-handoff",
   "business-recipes",
-  "channels",
   "ci-scope",
   "claude-app",
   "desktop",

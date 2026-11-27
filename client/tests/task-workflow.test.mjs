@@ -1,7 +1,15 @@
-// Prevent completed AI rounds from closing tasks, stale acceptance from hiding new work, and rework losing its history.
+// Prevent completed AI rounds from closing tasks, stale acceptance from hiding new work, old closed tickets from being
+// accepted again, and rework losing its history.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { workflowFor, decideTaskAction, intakeWorkflow, shouldAutoAccept } from "../src/task-workflow.mjs";
+import {
+  workflowFor,
+  decideTaskAction,
+  intakeWorkflow,
+  shouldAutoAccept,
+  taskEvidence,
+} from "../src/task-workflow.mjs";
+import { TaskWorkflow } from "../task-workflow.mjs";
 
 const task = (state = "done", extra = {}) => ({
   key: '["topic","orders","one"]',
@@ -159,4 +167,353 @@ test("shouldAutoAccept only closes overdue awaiting_acceptance tasks without ope
   assert.equal(shouldAutoAccept(needsReview, null, 30, after), false);
   const withCard = task("done", { updatedAt: "2026-11-11T00:00:00Z", cards: [{ id: 9, kind: "ask", state: "open" }] });
   assert.equal(shouldAutoAccept(withCard, null, 30, after), false);
+});
+
+test("replying to a ticket closed outside Studio reopens the same ticket and records the reply", async () => {
+  const config = {
+    projects: [{ id: "orders", name: "订单", cwd: "/work/orders", rule: "订单问题处理", description: "" }],
+    rules: { agents: {}, rules: [{ name: "订单问题处理" }] },
+  };
+  const closed = {
+    id: 7,
+    number: "T-000007",
+    state: "closed",
+    outcome: "completed",
+    closedAt: "2026-11-25T02:34:56.853Z",
+    closedBy: "owner",
+    closedNote: "飞书里关闭",
+  };
+  const run = {
+    id: 106,
+    state: "done",
+    attempts: 0,
+    rule: "订单问题处理",
+    lane: "",
+    ticket: 7,
+    createdAt: "2026-11-23T07:00:00.000Z",
+    finishedAt: "2026-11-23T07:22:14.225Z",
+    summary: "已完成核对",
+    events: [{ source: "local", subject: "orders:one" }],
+    task: {
+      state: "completed",
+      goal: "核对",
+      checks: [{ criterion: "结果正确", verdict: "passed", evidence: "已核对" }],
+      remaining: [],
+    },
+  };
+  const calls = [];
+  let recorded = null;
+  const workflow = new TaskWorkflow({
+    gateway: {
+      db: { prepare: () => ({ all: () => [] }) },
+      record: (key, value) => {
+        recorded = { key, value };
+      },
+    },
+    call: async (method, path, body) => {
+      calls.push([method, path, body]);
+      if (method === "GET" && path === "/v1/state")
+        return { runs: [run], tickets: [closed], cards: [], timers: [], hasMore: false };
+      if (path === "/v1/runs/106/why") return [];
+      if (method === "POST" && path === "/v1/tickets/7/reopen")
+        return {
+          changed: true,
+          ticket: { ...closed, state: "open", outcome: null, closedAt: null, closedNote: "本人回复重新激活" },
+        };
+      throw new Error("unexpected " + method + " " + path);
+    },
+    config: () => config,
+    topics: () => [],
+    submit: async () => {},
+    refresh: async () => {},
+  });
+  const result = await workflow.prepareTopicForReply("one", { text: "继续核对，直接完成" });
+  assert.deepEqual(result, { reactivated: true, ticketNumber: "T-000007" });
+  assert.deepEqual(calls.find((entry) => entry[0] === "POST"), [
+    "POST",
+    "/v1/tickets/7/reopen",
+    { reason: "本人回复重新激活" },
+  ]);
+  assert.equal(recorded.key, 'workflow:["matter","订单问题处理",""]');
+  assert.equal(recorded.value.mode, "");
+  assert.equal(recorded.value.topic, null);
+  assert.deepEqual(recorded.value.history.at(-1), {
+    action: "reopen",
+    label: "回复激活",
+    text: "继续核对，直接完成",
+    at: recorded.value.at,
+    by: "本人",
+    stage: "ended",
+    outcome: null,
+  });
+});
+
+test("a brand-new topic costs the Hub nothing, and an active continuation doesn't read the whole history", async () => {
+  const config = {
+    projects: [{ id: "orders", name: "订单", cwd: "/work/orders", rule: "订单问题处理", description: "" }],
+    rules: { agents: {}, rules: [{ name: "订单问题处理" }] },
+  };
+  const calls = [];
+  const fresh = new TaskWorkflow({
+    gateway: { db: { prepare: () => ({ all: () => [] }) }, binding: () => null },
+    call: async (...args) => {
+      calls.push(args);
+      throw new Error("a new topic must not call the Hub");
+    },
+    config: () => config,
+    topics: () => [],
+    submit: async () => {},
+    refresh: async () => {},
+  });
+  assert.deepEqual(await fresh.inspectTopicReply("brand-new", { hubState: { runs: [], tickets: [] } }), {
+    needsReopen: false,
+  });
+  assert.deepEqual(calls, []);
+
+  const record = {
+    key: '["topic","orders","one"]',
+    runIds: [106],
+    topic: "one",
+    mode: "",
+    evidence: "unchanged",
+    history: [],
+  };
+  const run = {
+    id: 106,
+    state: "done",
+    attempts: 0,
+    rule: "订单问题处理",
+    lane: "",
+    ticket: 7,
+    createdAt: "2026-11-23T07:00:00.000Z",
+    finishedAt: "2026-11-23T07:22:14.225Z",
+    events: [{ source: "local", subject: "orders:one" }],
+    task: {
+      state: "completed",
+      goal: "核对",
+      checks: [{ criterion: "结果正确", verdict: "passed", evidence: "已核对" }],
+      remaining: [],
+    },
+  };
+  const activeCalls = [];
+  const active = new TaskWorkflow({
+    gateway: {
+      db: { prepare: () => ({ all: () => [{ seq: 1, data: JSON.stringify(record) }] }) },
+      binding: () => ({ project: "orders" }),
+    },
+    call: async (...args) => {
+      activeCalls.push(args);
+      throw new Error("an active topic must not page or read why");
+    },
+    config: () => config,
+    topics: () => [{ id: "one", project: "orders", title: "订单" }],
+    submit: async () => {},
+    refresh: async () => {},
+  });
+  const hubState = {
+    runs: [run],
+    tickets: [{ ...closedTicket(7), state: "open", outcome: null, closedAt: null }],
+    cards: [],
+    timers: [],
+  };
+  assert.deepEqual(await active.inspectTopicReply("one", { hubState }), { needsReopen: false });
+  assert.deepEqual(activeCalls, [], "no /why storm while the work is still active");
+});
+
+test("auto-accept checks a closed ticket older than the Hub's recent list instead of acting on it", async () => {
+  const config = {
+    projects: [{ id: "orders", name: "订单", cwd: "/work/orders", rule: "订单问题处理", description: "" }],
+    rules: { agents: {}, rules: [{ name: "订单问题处理" }] },
+    runtime: { autoAcceptMinutes: 30 },
+  };
+  const run = {
+    id: 106,
+    state: "done",
+    attempts: 0,
+    rule: "订单问题处理",
+    lane: "",
+    ticket: 7,
+    createdAt: "2026-11-23T07:00:00.000Z",
+    finishedAt: "2026-11-23T07:22:14.225Z",
+    events: [{ source: "local", subject: "orders:one" }],
+    task: {
+      state: "completed",
+      goal: "核对",
+      checks: [{ criterion: "结果正确", verdict: "passed", evidence: "已核对" }],
+      remaining: [],
+    },
+  };
+  const calls = [];
+  const workflow = new TaskWorkflow({
+    gateway: { db: { prepare: () => ({ all: () => [] }) } },
+    call: async (method, path) => {
+      calls.push([method, path]);
+      if (path === "/v1/state") return { runs: [run], tickets: [], cards: [], timers: [], hasMore: false };
+      if (path === "/v1/tickets/7") return closedTicket(7, "cancelled");
+      throw new Error("auto-accept must not act on a closed ticket: " + path);
+    },
+    config: () => config,
+    topics: () => [],
+    submit: async () => {},
+    refresh: async () => {},
+  });
+  const closed = await workflow.sweepAutoAccept(Date.parse("2026-11-27T00:00:00.000Z"));
+  assert.deepEqual(closed, []);
+  assert.deepEqual(calls, [
+    ["GET", "/v1/state"],
+    ["GET", "/v1/tickets/7"],
+  ]);
+  assert.equal(
+    calls.some(([, path]) => path.startsWith("/v1/runs/")),
+    false,
+    "no full /why read and no act()",
+  );
+});
+
+function closedTicket(id, outcome = "completed") {
+  return {
+    id,
+    number: `T-${String(id).padStart(6, "0")}`,
+    state: "closed",
+    outcome,
+    closedAt: "2026-11-25T02:34:56.853Z",
+    closedBy: "owner",
+    closedNote: "外部关闭",
+  };
+}
+
+test("a closed topic whose last round is on an older page still reopens without reading every /why", async () => {
+  const config = {
+    projects: [{ id: "orders", name: "订单", cwd: "/work/orders", rule: "订单问题处理", description: "" }],
+    rules: { agents: {}, rules: [{ name: "订单问题处理" }] },
+  };
+  const closed = closedTicket(7);
+  const run = {
+    id: 106,
+    state: "done",
+    attempts: 0,
+    rule: "订单问题处理",
+    lane: "",
+    ticket: 7,
+    createdAt: "2026-11-23T07:00:00.000Z",
+    finishedAt: "2026-11-23T07:22:14.225Z",
+    events: [{ source: "local", subject: "orders:one" }],
+    task: {
+      state: "completed",
+      goal: "核对",
+      checks: [{ criterion: "结果正确", verdict: "passed", evidence: "已核对" }],
+      remaining: [],
+    },
+  };
+  const record = {
+    key: '["matter","订单问题处理",""]',
+    runIds: [106],
+    topic: "one",
+    mode: "closed",
+    evidence: "old",
+    history: [],
+  };
+  const calls = [];
+  let recorded = null;
+  const workflow = new TaskWorkflow({
+    gateway: {
+      db: { prepare: () => ({ all: () => [{ seq: 1, data: JSON.stringify(record) }] }) },
+      binding: () => ({ project: "orders" }),
+      record: (key, value) => {
+        recorded = { key, value };
+      },
+    },
+    call: async (method, path) => {
+      calls.push([method, path]);
+      if (path === "/v1/state") return { runs: [], tickets: [], cards: [], timers: [], hasMore: false };
+      if (path === "/v1/state?before=107")
+        return {
+          runs: [run],
+          tickets: [],
+          cards: [],
+          timers: [],
+          hasMore: false,
+        };
+      if (path === "/v1/tickets/7") return closed;
+      if (method === "POST" && path === "/v1/tickets/7/reopen")
+        return { changed: true, ticket: { ...closed, state: "open", outcome: null, closedAt: null } };
+      throw new Error("unexpected " + method + " " + path);
+    },
+    config: () => config,
+    topics: () => [],
+    submit: async () => {},
+    refresh: async () => {},
+  });
+  const result = await workflow.prepareTopicForReply("one", { text: "继续核对" });
+  assert.deepEqual(result, { reactivated: true, ticketNumber: "T-000007" });
+  assert.deepEqual(calls, [
+    ["GET", "/v1/state"],
+    ["GET", "/v1/state?before=107"],
+    ["GET", "/v1/tickets/7"],
+    ["POST", "/v1/tickets/7/reopen"],
+  ]);
+  assert.equal(recorded.value.history.at(-1).action, "reopen");
+  assert.equal(
+    calls.some(([, path]) => path.startsWith("/v1/runs/")),
+    false,
+    "no /why read, even for an older closed round",
+  );
+});
+
+test("a closed ticket outside the recent list keeps its state so auto-accept does not repeat", async () => {
+  const config = {
+    projects: [{ id: "orders", name: "订单", cwd: "/work/orders", rule: "订单问题处理", description: "" }],
+    rules: { agents: {}, rules: [{ name: "订单问题处理" }] },
+  };
+  const closed = {
+    id: 7,
+    number: "T-000007",
+    state: "closed",
+    outcome: "cancelled",
+    closedAt: "2026-11-25T02:34:56.853Z",
+    closedBy: "owner",
+    closedNote: "本人确认无需处理",
+  };
+  const run = {
+    id: 106,
+    state: "done",
+    attempts: 0,
+    rule: "订单问题处理",
+    lane: "",
+    ticket: 7,
+    createdAt: "2026-11-23T07:00:00.000Z",
+    finishedAt: "2026-11-23T07:22:14.225Z",
+    summary: "已完成核对",
+    events: [],
+    task: {
+      state: "completed",
+      goal: "核对",
+      checks: [{ criterion: "结果正确", verdict: "passed", evidence: "已核对" }],
+      remaining: [],
+    },
+  };
+  const workflow = new TaskWorkflow({
+    gateway: { db: { prepare: () => ({ all: () => [] }) } },
+    call: async (method, path) => {
+      if (path === "/v1/state") return { runs: [run], tickets: [], cards: [], timers: [], hasMore: false };
+      if (path === "/v1/runs/106/why") return [];
+      if (path === "/v1/tickets/7") return closed;
+      throw new Error("unexpected " + path);
+    },
+    config: () => config,
+    topics: () => [],
+    submit: async () => {},
+    refresh: async () => {},
+  });
+  const current = await workflow.task(106);
+  assert.equal(current.ticket?.state, "closed");
+  const saved = {
+    key: current.key,
+    runIds: [106],
+    evidence: taskEvidence({ ...current, ticket: closed }),
+    mode: "closed",
+    outcome: "cancelled",
+    at: closed.closedAt,
+  };
+  assert.equal(shouldAutoAccept(current, saved, 30, Date.parse("2026-11-27T00:00:00.000Z")), false);
 });

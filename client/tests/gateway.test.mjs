@@ -106,6 +106,35 @@ test("an unbound first conversation selects a registered project and flow from p
   assert.deepEqual(calls, ["profile", "route"]);
 });
 
+test("edited profile tags control recognition and survive new analysis", async (t) => {
+  let tags = ["售后专员", "结算"];
+  const { config, gateway } = fixture(t, async (kind, { projects } = {}) => {
+    if (kind === "profile") return { summary: "售后结算", tags, tasks: [] };
+    const orders = projects.find((p) => p.id === "orders");
+    assert.deepEqual(orders.profile.tags, ["账款", "配送", "补差"]);
+    assert.deepEqual(orders.aliases, orders.profile.tags);
+    return { project: null, flow: null, certain: false, candidates: [], reason: "没有匹配" };
+  });
+  const p = config.projects[0];
+  p.aliases = ["账款"];
+  await gateway.analyze(config, p.id);
+  assert.equal((await gateway.choose(config, { text: "核查售后专员" })).project?.id, p.id);
+  p.tagEdits = { added: ["配送"], removed: ["售后专员", "结算"] };
+  assert.deepEqual(gateway.profile(p).tags, ["账款", "配送"]);
+  assert.equal((await gateway.choose(config, { text: "核查配送" })).project?.id, p.id);
+  tags = ["售后专员", "补差"];
+  assert.deepEqual((await gateway.analyze(config, p.id)).tags, ["账款", "配送", "补差"]);
+  assert.equal((await gateway.choose(config, { text: "核查售后专员" })).project, null);
+});
+
+test("project rules always resume a topic, including generated executor rules", (t) => {
+  const { config } = fixture(t, async () => ({}));
+  config.rules.rules[0].resume = false;
+  const validated = validateWorkspace(config);
+  const ruleNames = [config.projects[0].rule, validated.agentRoutes.orders.codex.rule];
+  for (const name of ruleNames) assert.equal(validated.rules.rules.find((r) => r.name === name).resume, true);
+});
+
 test("bound topics bypass the model and reject explicit conflicting identifiers", async (t) => {
   const { config, gateway } = fixture(t, async () => {
     throw new Error("must not classify");
@@ -170,13 +199,13 @@ test("a complete recommendation for the only matching project dispatches even wh
   assert.equal(chosen.complexity, "simple");
 });
 
-test("a project-only selection lets the gateway choose among that project's flows and grade the task", async (t) => {
+test("a project-only selection uses the default flow and preserves explicit legacy flow requests", async (t) => {
   const { config, gateway } = fixture(t, async (_, { projects }) => {
     assert.deepEqual(
       projects.map((p) => [p.id, p.flows.map((f) => f.id)]),
-      [["orders", ["default", "repair"]]],
+      [["orders", ["default"]]],
     );
-    return { project: "orders", flow: "repair", complexity: "complex", certain: true, reason: "跨服务修复" };
+    return { project: "orders", flow: "default", complexity: "complex", certain: true, reason: "跨服务修复" };
   });
   config.rules.rules[0].to = "codex";
   config.projects[0].flows = [{ id: "repair", name: "修复", description: "排查并修复", rule: "订单修复" }];
@@ -185,9 +214,36 @@ test("a project-only selection lets the gateway choose among that project's flow
     name: "订单修复",
     when: { source: "local", types: ["project.orders.flow.repair"] },
   });
-  const chosen = await gateway.choose(validateWorkspace(config), { project: "orders", text: "修复跨服务退款" });
-  assert.equal(chosen.flow?.id, "repair");
+  const validated = validateWorkspace(config);
+  const chosen = await gateway.choose(validated, { project: "orders", text: "修复跨服务退款" });
+  assert.equal(chosen.flow?.id, "default");
   assert.equal(chosen.complexity, "complex");
+  const legacy = await gateway.choose(validated, { project: "orders", flow: "repair", complexity: "complex", text: "继续" });
+  assert.equal(legacy.flow?.id, "repair");
+});
+
+test("global execution uses the default project rule while a legacy executor binding keeps its event type", async (t) => {
+  const { config, gateway } = fixture(t, async () => ({}));
+  const p = config.projects[0];
+  config.roleRouting = { roles: { execute: { primary: "codex" } } };
+  p.flows = [{ id: "repair", name: "修复", description: "", rule: "订单修复" }];
+  config.rules.rules.push({
+    ...config.rules.rules[0],
+    name: "订单修复",
+    to: "codex",
+    when: { source: "local", types: ["project.orders.flow.repair"] },
+  });
+  const validated = validateWorkspace(config);
+  gateway.bind("legacy", { project: p.id, flow: "default", executor: "codex", rule: "订单修复" });
+  const continued = await gateway.choose(validated, { topic: "legacy", text: "继续" });
+  const fresh = await gateway.choose(validated, { project: p.id, text: "修复退款" });
+  assert.equal(fresh.executor, "codex");
+  assert.notEqual(fresh.rule, continued.rule);
+  const message = { id: "m", topic: "legacy", text: "继续" };
+  assert.equal(eventFor(validated, p, message, continued.flow, null, continued.executor, continued.rule).type,
+    "project.orders.flow.repair");
+  assert.equal(eventFor(validated, p, message, fresh.flow, null, fresh.executor, fresh.rule).type,
+    "project.orders.agent.codex");
 });
 
 test("complexity selects trusted simple or complex rules while existing topics retain their tier", async (t) => {

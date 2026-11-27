@@ -48,7 +48,7 @@ def run_test(url):
         detail = page.get_by_role("region", name=first_project["name"], exact=True)
         expect(detail).not_to_be_visible()
 
-        search = page.get_by_placeholder("搜索项目名称、目录或别名")
+        search = page.get_by_role("textbox", name="搜索项目")
         search.fill(first_project["id"])
         expect(cards).to_have_count(1)
         card = cards.first
@@ -75,7 +75,7 @@ def run_test(url):
         page.get_by_role("button", name="保存项目", exact=True).click()
         expect(page.get_by_role("region", name="Semi 界面测试", exact=True)).to_be_visible()
         page.get_by_role("button", name="返回项目", exact=True).click()
-        expect(page.get_by_placeholder("搜索项目名称、目录或别名")).to_have_value(first_project["id"])
+        expect(search).to_have_value(first_project["id"])
         assert writes and "Semi 界面测试" == next(x for x in writes[-1]["value"]["projects"] if x["id"] == first_project["id"])["name"]
         saved = writes[-1]["value"]
         for project in original["projects"]:
@@ -128,14 +128,14 @@ def run_test(url):
             assert page.locator("#main").evaluate("el => el.scrollWidth <= el.clientWidth + 1")
             cards.first.click()
             workspace = page.locator(".ps-editor")
-            expect(workspace.get_by_role("button", name="发起任务", exact=True)).to_be_in_viewport()
+            expect(workspace.get_by_role("button", name="保存项目", exact=True)).to_be_in_viewport()
             bounds = workspace.bounding_box()
             assert 0 <= bounds["x"] and bounds["x"] + bounds["width"] <= width
             page.keyboard.press("Escape")
             expect(workspace).not_to_be_visible()
         assert not errors, errors
         browser.close()
-        print("Semi project space: first-level page, progressive disclosure, filtering, editing, theme and responsive checks passed.")
+        print("Project management: filtering, editing, theme and responsive checks passed.")
 
 if target_url:
     run_test(target_url)

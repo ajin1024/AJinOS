@@ -58,5 +58,16 @@ export function cardPage(card: ReturnType<typeof cardView>) {
   const chosen = card.kind === "ask" ? (card.choice !== null ? card.options[card.choice] : card.answer) : null;
   const outcome = [chosen ? `你选了「${chosen}」` : "", card.result ?? ""].filter(Boolean).join("。");
   const settled = card.kind === "notice" && card.answer ? `<p>处理说明：${escaped(card.answer)}</p>` : "";
-  return shell(card.title, `${words}${outcome ? `<p>${escaped(outcome)}</p>` : ""}${settled}`);
+  // A result card can close its ticket with this one press; after that the same page says how to pick it up again.
+  const ticket = card.ticketState;
+  const closeForm =
+    ticket?.closeable === true
+      ? `<form method="post"><input type="hidden" name="action" value="close_ticket">` +
+        `<button class="best">一键关闭任务</button></form>`
+      : "";
+  const closed =
+    ticket?.state === "closed"
+      ? `<p>${escaped(`任务已关闭（${ticket.number}）· 如需继续，请回复原任务消息重新激活`)}</p>`
+      : "";
+  return shell(card.title, `${words}${outcome ? `<p>${escaped(outcome)}</p>` : ""}${settled}${closeForm}${closed}`);
 }

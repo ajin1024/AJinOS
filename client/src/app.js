@@ -186,11 +186,8 @@ async function save(next, { profileProject } = {}) {
 
 async function importExecutor(draft) {
   const result = await api("/agents/import", "POST", draft);
-  config = result.value;
-  profiles = result.profiles || {};
-  revision = result.revision;
-  render();
-  toast(`已导入「${config.rules.agents[result.agentId].name}」，可在项目规则中选用`);
+  applySavedConfiguration(result);
+  toast(`已新建「${config.rules.agents[result.agentId].name}」，可在流程节点中选择`);
 }
 
 async function analyzeProject(id) {
@@ -247,20 +244,21 @@ async function saveProjectValues(id, v) {
     }
   }
   if (p) {
-    project.aliases = parseList(v.aliases?.replaceAll("、", "，"));
+    if (v.tagEdits) project.tagEdits = v.tagEdits;
     const index = next.rules.rules.findIndex((rule) => rule.name === p.rule);
     const previous = next.rules.rules[index];
     const rule = { ...previous, name: project.rule, cwd };
     if (moved) {
       updateProjectBinding(next, p.rule, rule);
-      if (p.flows) project.flows = next.projects.find((item) => item.id === id).flows;
+      const updated = next.projects.find((item) => item.id === id);
+      if (p.flows) project.flows = updated.flows;
+      if (p.eventRules) project.eventRules = updated.eventRules;
     }
     const baseAccess = next.rules.agents[rule.to]?.access || "edit";
     if (p.service !== "autoloop" && v.projectAccess && v.projectAccess !== (rule.access || baseAccess)) {
       if (v.projectAccess === baseAccess) delete rule.access;
       else rule.access = v.projectAccess;
     }
-    if (v.resume !== Boolean(rule.resume)) rule.resume = v.resume;
     if (v.parallel !== rule.parallel) {
       rule.parallel = v.parallel;
       const ownFlows = new Set((project.flows || []).map((flow) => flow.rule));
@@ -430,9 +428,11 @@ async function loadTaskData(force = false) {
       historyCursor = data.nextBefore;
       if (route.view === "tasks") render();
     }
-    // Hub snapshots contain all open tickets and at most 20 closed tickets.
+    // Hub snapshots contain all open tickets and at most 20 closed tickets. A closed topic listed in Messages needs its
+    // missing ticket too, or it reappears as awaiting acceptance; only the tickets already referenced by known runs load.
     const missingTickets = unreadTickets();
-    for (let i = 0; i < missingTickets.length && route.view === "tasks"; i += 4) {
+    const canFillTickets = () => route.view === "tasks" || route.view === "messages";
+    for (let i = 0; i < missingTickets.length && canFillTickets(); i += 4) {
       await Promise.all(missingTickets.slice(i, i + 4).map(async (id) => {
         const ticket = await api(`/tickets/${id}`);
         historyTickets.set(id, ticket);
@@ -452,7 +452,7 @@ async function loadTaskData(force = false) {
     taskLoadError = error.message;
   } finally {
     tasksLoading = false;
-    if (route.view === "tasks") render();
+    if (route.view === "tasks" || route.view === "messages") render();
   }
 }
 
@@ -761,7 +761,7 @@ function render() {
     hasUnsavedForm,
   });
 
-  if (route.view === "tasks") void loadTaskData();
+  if (route.view === "tasks" || (route.view === "messages" && unreadTickets().length > 0)) void loadTaskData();
 }
 
 window.addEventListener("hashchange", () => {

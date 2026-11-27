@@ -1,6 +1,16 @@
-import React, { useEffect, useState } from "react";
-import { Banner, Button, Collapse, Tag } from "@douyinfe/semi-ui";
-import { IconRefresh } from "@douyinfe/semi-icons";
+import React, { useEffect, useRef, useState } from "react";
+import { Banner, Button } from "@douyinfe/semi-ui";
+import {
+  IconAlertTriangle,
+  IconBox,
+  IconChevronDown,
+  IconExternalOpen,
+  IconGithubLogo,
+  IconHistory,
+  IconInfoCircle,
+  IconRefresh,
+  IconTickCircle,
+} from "@douyinfe/semi-icons";
 import { formatDate } from "./studio-helpers.mjs";
 import { githubLink } from "../github-links.mjs";
 
@@ -29,12 +39,9 @@ function GithubAction({ target, tag, repo, className, title, children, onError }
   );
 }
 
-function ReleaseNotes({ text }) {
-  const lines = String(text || "此版本没有提供更新说明")
-    .split("\n")
-    .filter(Boolean);
+function NotesList({ lines }) {
   return (
-    <ul className="sc-version-notes">
+    <ul className="sc-version-notes" role="list">
       {lines.map((line, i) => (
         <li key={i}>{line}</li>
       ))}
@@ -42,16 +49,47 @@ function ReleaseNotes({ text }) {
   );
 }
 
+function ReleaseNotes({ text, preview = false }) {
+  const lines = String(text || "此版本没有提供更新说明")
+    .split("\n")
+    .map((line) => line.trim().replace(/^[-*]\s+/, ""))
+    .filter(Boolean);
+  if (!preview || lines.length <= 4) return <NotesList lines={lines} />;
+  return (
+    <>
+      <NotesList lines={lines.slice(0, 4)} />
+      <details className="sc-version-details">
+        <summary>
+          <IconChevronDown aria-hidden="true" />
+          <span className="sc-version-show-more">显示其余 {lines.length - 4} 条</span>
+          <span className="sc-version-show-less">收起提交记录</span>
+        </summary>
+        <NotesList lines={lines.slice(4)} />
+      </details>
+    </>
+  );
+}
+
 export function VersionsPanel({ windowsUpdate, progress, toast }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(null);
+  const [feedback, setFeedback] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
+  const confirmRef = useRef(null);
+  const statusRef = useRef(null);
+  const desktop = Boolean(window.studio);
 
   useEffect(() => {
-    if (progress) setStatus(progress);
+    if (progress) setFeedback({ text: progress });
   }, [progress]);
+
+  useEffect(() => {
+    if (confirmation) {
+      confirmRef.current?.focus({ preventScroll: true });
+      confirmRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [confirmation]);
 
   useEffect(() => {
     let active = true;
@@ -67,7 +105,7 @@ export function VersionsPanel({ windowsUpdate, progress, toast }) {
             });
         if (active) setData(result);
       } catch (error) {
-        if (active) setStatus(error.message);
+        if (active) setFeedback({ text: error.message, error: true });
       } finally {
         if (active) setLoading(false);
       }
@@ -77,250 +115,220 @@ export function VersionsPanel({ windowsUpdate, progress, toast }) {
     };
   }, []);
 
-  async function runAction(action, id) {
+  function showError(text) {
+    setFeedback({ text, error: true });
+    statusRef.current?.scrollIntoView({ block: "nearest" });
+  }
+
+  async function runAction(action) {
     if (busy) return;
-    setBusy(true);
-    setStatus(action === "check" ? "正在检查更新…" : "正在准备版本切换…");
+    setBusy(action);
+    setFeedback({ text: action === "check" ? "正在检查更新…" : "正在准备版本切换…" });
     try {
       if (action === "check") {
-        const next = await window.studio.versions("check");
-        setData(next);
-        if (next.packageUpdate) setStatus("");
-        else setStatus(next.available?.length ? "发现可更新版本" : "已检查，没有可用的新发布版");
-      } else if (action === "confirm" && confirmation) {
+        setData(await window.studio.versions("check"));
+        setFeedback(null);
+      } else if (confirmation) {
+        statusRef.current?.scrollIntoView({ block: "nearest" });
         await window.studio.versions(confirmation.action, confirmation.id);
-        setStatus("正在重启桌面端…");
-        return;
+        setFeedback({ text: "正在重启桌面端…" });
       }
     } catch (error) {
-      setStatus(String(error.message || error).replace(/^Error invoking remote method '[^']+': Error: /, ""));
+      showError(String(error.message || error).replace(/^Error invoking remote method '[^']+': Error: /, ""));
       toast?.("版本操作未完成", true);
     } finally {
-      setBusy(false);
+      setBusy(null);
       setConfirmation(null);
     }
   }
 
-  if (loading) return <p className="sc-muted">正在读取当前版本…</p>;
-  if (!data) return <Banner type="danger" description={status || "无法读取版本信息"} closeIcon={null} />;
-
-  const current = data.current;
-  if (data.installed) {
-    const update = windowsUpdate || data.packageUpdate;
-    const releaseTag = stableTag.test(current.label) ? current.label : null;
+  if (loading)
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <section className="sc-card version-current">
-          <div className="sc-card-head">
+      <p className="sc-muted" role="status">
+        正在读取当前版本…
+      </p>
+    );
+  if (!data) return <Banner type="danger" description={feedback?.text || "无法读取版本信息"} closeIcon={null} />;
+
+  const { current, installed, canSwitch, checkedAt } = data;
+  const update = installed ? windowsUpdate || data.packageUpdate : null;
+  const history = (data.history || []).filter((v) => v.root !== current.root);
+  const latest = data.available?.[0];
+  const runningTag = installed ? current.label : current.tag;
+  const releaseTag = stableTag.test(runningTag || "") ? runningTag : undefined;
+  const nextLabel = installed ? update?.tag : latest?.label;
+  const canInstall = Boolean(!installed && latest && canSwitch);
+  const canCheck = desktop && (!installed || (update && ["idle", "current", "error"].includes(update.state)));
+  let status = "尚未检查更新";
+  if (installed) {
+    status = update ? update.message || "启动后自动检查更新" : "运行新版安装包即可更新";
+  } else if (!desktop) {
+    status = "当前在浏览器中查看，请在桌面端安装更新或回滚";
+  } else if (checkedAt) {
+    status = latest ? "检查完成" : "没有可用的新发布版";
+  }
+  const hasError = feedback?.error || update?.state === "error";
+  const upToDate = !feedback && (installed ? update?.state === "current" : desktop && checkedAt && !latest);
+  const StateIcon = hasError ? IconAlertTriangle : upToDate ? IconTickCircle : IconInfoCircle;
+
+  const switchPrompt = confirmation && (
+    <div className="sc-version-confirm" ref={confirmRef} tabIndex={-1} role="group" aria-label="确认版本切换">
+      <strong>{confirmation.action === "update" ? "更新并重启桌面端？" : "回滚并重启桌面端？"}</strong>
+      <p>
+        将切换到 {confirmation.label}。项目、规则与任务记录继续使用当前数据。
+        有任务运行或排队时，需要等任务空闲后再切换。
+      </p>
+      <div className="sc-version-confirm-actions">
+        <Button disabled={Boolean(busy)} onClick={() => setConfirmation(null)}>
+          暂不切换
+        </Button>
+        <Button
+          theme="solid"
+          loading={busy === "confirm"}
+          disabled={busy === "check"}
+          onClick={() => runAction("confirm")}
+        >
+          确认切换
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="sc-versions">
+      <section className="version-current">
+        <div className="sc-version-summary">
+          <span className="sc-version-symbol">
+            <IconBox aria-hidden="true" />
+          </span>
+          <div className="sc-version-identity">
+            <p className="sc-version-label">当前版本{installed && " · Windows 安装版"}</p>
             <h3>
               <GithubAction
                 target={releaseTag ? "release" : "releases"}
-                tag={releaseTag || undefined}
+                tag={releaseTag}
                 repo={update?.repo}
                 className="sc-version-link"
                 title={releaseTag ? "在 GitHub 查看此版本的发布页" : "在 GitHub 查看发布列表"}
-                onError={setStatus}
+                onError={showError}
               >
                 {current.label}
-              </GithubAction>
-            </h3>
-            <Tag color="cyan">Windows 安装版</Tag>
-          </div>
-          <p className="sc-version-github">
-            <GithubAction target="repo" repo={update?.repo} className="sc-github-link" onError={setStatus}>
-              在 GitHub 查看项目
-            </GithubAction>
-          </p>
-        </section>
-        {update ? (
-          <section className="sc-card">
-            <div className="sc-card-head">
-              <div>
-                <h3>{update.tag ? `发现新版本 ${update.tag}` : "自动更新"}</h3>
-                <p className="sc-muted">{update.message || "启动后检查新版"}</p>
-              </div>
-              {["idle", "current", "error"].includes(update.state) && window.studio && (
-                <Button icon={<IconRefresh aria-hidden="true" />} loading={busy} onClick={() => runAction("check")}>
-                  检查更新
-                </Button>
-              )}
-            </div>
-            {update.tag && <ReleaseNotes text={update.notes} />}
-            {update.repo && (
-              <p className="sc-muted" style={{ fontSize: 12 }}>
-                <GithubAction target="repo" repo={update?.repo} className="sc-github-link" onError={setStatus}>
-                  {update.repo}
-                </GithubAction>
-              </p>
-            )}
-          </section>
-        ) : (
-          <p className="sc-note">运行新版安装包即可更新。</p>
-        )}
-        {status && (
-          <div role="status" aria-live="polite" className="sc-muted">
-            {status}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  const history = (data.history || []).filter((v) => v.root !== current.root);
-  const latest = data.available?.[0];
-  const releaseTag = stableTag.test(current.tag || "") ? current.tag : null;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <section className="sc-card version-current">
-        <div className="sc-card-head">
-          <div>
-            <span className="sc-muted" style={{ fontSize: 12 }}>
-              当前正在使用
-            </span>
-            <h3 style={{ marginTop: 2 }}>
-              <GithubAction
-                target={releaseTag ? "release" : "releases"}
-                tag={releaseTag || undefined}
-                className="sc-version-link"
-                title={releaseTag ? "在 GitHub 查看此版本的发布页" : "在 GitHub 查看发布列表"}
-                onError={setStatus}
-              >
-                {current.label}
+                <IconExternalOpen aria-hidden="true" />
               </GithubAction>
             </h3>
           </div>
-          {window.studio && (
-            <Button icon={<IconRefresh aria-hidden="true" />} loading={busy} onClick={() => runAction("check")}>
+          {canCheck && (
+            <Button
+              theme={canInstall ? "light" : "solid"}
+              icon={<IconRefresh aria-hidden="true" />}
+              loading={busy === "check"}
+              disabled={busy === "confirm"}
+              onClick={() => runAction("check")}
+            >
               检查更新
             </Button>
           )}
         </div>
-        <p className="sc-muted" style={{ fontSize: 12 }}>
-          {current.commit?.slice(0, 12) || "无提交记录"}
-          {current.dirty ? " · 含本地修改，更新会保留原目录" : " · 工作目录干净"}
-          {data.checkedAt ? ` · 上次检查 ${formatDate(data.checkedAt)}` : ""}
-        </p>
-        <p className="sc-version-github">
-          <GithubAction target="repo" className="sc-github-link" onError={setStatus}>
-            在 GitHub 查看项目
-          </GithubAction>
-        </p>
+        <div className="sc-version-state">
+          <p ref={statusRef} role="status" data-tone={hasError ? "error" : upToDate ? "success" : undefined}>
+            <StateIcon aria-hidden="true" />
+            <span>{feedback?.text || status}</span>
+          </p>
+          {desktop && checkedAt && <time dateTime={checkedAt}>上次检查 {formatDate(checkedAt)}</time>}
+        </div>
       </section>
 
       {data.notice && <Banner type="info" description={data.notice} closeIcon={null} />}
-      {!window.studio && (
-        <p className="sc-note">当前在浏览器中查看。版本安装与回滚在桌面端完成。</p>
-      )}
-      {window.studio && !data.canSwitch && (
-        <p className="sc-note">请通过 client/launch.ps1 或 npm run desktop 启动，启用完整版本切换。</p>
+      {desktop && !installed && !canSwitch && (
+        <p className="sc-version-hint">请通过 client/launch.ps1 或 npm run desktop 打开，以启用版本切换。</p>
       )}
 
-      <div className="sc-version-grid">
-        <section className="sc-card">
-          <div className="sc-card-head">
-            <h3>检查更新</h3>
-            {latest && <Tag color="green">可更新</Tag>}
+      {nextLabel && (
+        <section className="sc-version-next">
+          <div className="sc-version-section-head">
+            <h3>
+              发现新版本 <span>{nextLabel}</span>
+            </h3>
+            {canInstall && (
+              <Button
+                theme="solid"
+                disabled={Boolean(busy)}
+                onClick={() => setConfirmation({ action: "update", id: latest.id, label: latest.label })}
+              >
+                更新并重启
+              </Button>
+            )}
           </div>
-          {latest ? (
-            <>
-              <div className="sc-card-head">
-                <strong>{latest.label}</strong>
-                {data.canSwitch && (
-                  <Button
-                    theme="solid"
-                    size="small"
-                    disabled={busy}
-                    onClick={() => setConfirmation({ action: "update", id: latest.id, label: latest.label })}
-                  >
-                    更新并重启
-                  </Button>
-                )}
-              </div>
-              <ReleaseNotes text={latest.notes} />
-            </>
-          ) : (
-            <p className="sc-muted">
-              {data.checkedAt ? "更新源中没有可用的新 Studio 发布版。" : "检查已发布的 Studio 版本，查看更新内容。"}
-            </p>
-          )}
-          {data.source && (
-            <p className="sc-muted" style={{ fontSize: 12 }}>
-              更新源：{data.source}
-            </p>
-          )}
+          {confirmation?.action === "update" && switchPrompt}
+          <ReleaseNotes text={installed ? update.notes : latest.notes} />
         </section>
+      )}
 
-        <section className="sc-card">
-          <h3>{current.tag ? "当前版本的更新内容" : "最近提交 · 开发版本"}</h3>
-          {current.dirty && <p className="sc-muted">本地未提交的改动尚未进入发布说明。</p>}
-          <ReleaseNotes text={current.notes} />
-        </section>
-      </div>
+      {!installed && (
+        <>
+          <section className="sc-version-changelog">
+            <div className="sc-version-section-head">
+              <h3>{current.tag ? "当前版本的更新内容" : "最近提交"}</h3>
+              {current.dirty && <p className="sc-version-hint">有本地修改，更新会保留原目录</p>}
+            </div>
+            <ReleaseNotes text={current.notes} preview={!current.tag} />
+          </section>
 
-      <section className="sc-card">
-        <div className="sc-card-head">
-          <h3>
-            可回滚版本 <span className="sc-count">{history.length}</span>
-          </h3>
-        </div>
-        {history.length ? (
-          history
-            .slice()
-            .reverse()
-            .map((v) => (
-              <div className="sc-version-history" key={v.id}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <strong>{v.label}</strong>
-                  <p className="sc-muted" style={{ fontSize: 12 }}>
-                    {formatDate(v.installedAt)}
-                    {v.dirty ? " · 原工作目录" : ""}
-                  </p>
-                  <Collapse keepDOM={false} style={{ marginTop: 6 }}>
-                    <Collapse.Panel header="查看更新内容" itemKey="notes">
-                      <ReleaseNotes text={v.notes} />
-                    </Collapse.Panel>
-                  </Collapse>
+          <section className="sc-version-rollbacks">
+            <div className="sc-version-section-head">
+              <h3>
+                <IconHistory aria-hidden="true" /> 可回滚版本
+              </h3>
+              {!history.length && <p className="sc-version-hint">首次更新后，会在这里保留旧版本</p>}
+            </div>
+            {history
+              .slice()
+              .reverse()
+              .map((v) => (
+                <div className="sc-version-history" key={v.id}>
+                  <div className="sc-version-section-head">
+                    <div>
+                      <strong>{v.label}</strong>
+                      <p className="sc-version-hint">
+                        {formatDate(v.installedAt)}
+                        {v.dirty ? " · 原工作目录" : ""}
+                      </p>
+                    </div>
+                    {canSwitch && (
+                      <Button
+                        size="small"
+                        disabled={Boolean(busy)}
+                        onClick={() => setConfirmation({ action: "rollback", id: v.id, label: v.label })}
+                      >
+                        回滚到此版本
+                      </Button>
+                    )}
+                  </div>
+                  {confirmation?.action === "rollback" && confirmation.id === v.id && switchPrompt}
+                  <details className="sc-version-details">
+                    <summary>
+                      <IconChevronDown aria-hidden="true" /> 查看更新内容
+                    </summary>
+                    <ReleaseNotes text={v.notes} />
+                  </details>
                 </div>
-                {data.canSwitch && (
-                  <Button
-                    size="small"
-                    disabled={busy}
-                    onClick={() => setConfirmation({ action: "rollback", id: v.id, label: v.label })}
-                  >
-                    回滚到此版本
-                  </Button>
-                )}
-              </div>
-            ))
-        ) : (
-          <p className="sc-muted">首次更新后，这里会保留之前的版本。</p>
-        )}
-      </section>
+              ))}
+          </section>
+        </>
+      )}
 
-      {confirmation && (
-        <section className="sc-card" role="alert" style={{ borderColor: "var(--ui-warn)" }}>
-          <h3>{confirmation.action === "update" ? "更新并重启桌面端？" : "回滚并重启桌面端？"}</h3>
-          <p className="sc-muted">
-            将切换到 {confirmation.label}。项目、规则与任务记录继续使用当前数据；有任务运行或排队时不会切换。
-            {confirmation.action === "rollback" ? "回滚只切换程序，不撤销新版本期间产生的业务记录。" : ""}
+      <div className="sc-version-footer">
+        {(update?.repo || data.source) && (
+          <p className="sc-version-hint">
+            更新源 <span>{update?.repo || data.source}</span>
           </p>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <Button disabled={busy} onClick={() => setConfirmation(null)}>
-              暂不切换
-            </Button>
-            <Button theme="solid" loading={busy} onClick={() => runAction("confirm", confirmation.id)}>
-              确认切换
-            </Button>
-          </div>
-        </section>
-      )}
-
-      {status && (
-        <div role="status" aria-live="polite" className="sc-muted">
-          {status}
-        </div>
-      )}
+        )}
+        <GithubAction target="repo" repo={update?.repo} className="sc-version-link" onError={showError}>
+          <IconGithubLogo aria-hidden="true" />
+          GitHub 项目
+          <IconExternalOpen aria-hidden="true" />
+        </GithubAction>
+      </div>
     </div>
   );
 }

@@ -22,10 +22,11 @@ import { LogsPanel } from "./logs-panel.jsx";
 import { AdvancedPanel } from "./advanced-panel.jsx";
 
 const PANELS = [
-  { id: "projects", label: "项目领地（沙箱）", icon: IconFolder },
-  { id: "agents", label: "执行器与三角色", icon: IconServer },
+  { id: "projects", label: "项目管理", icon: IconFolder },
+  { id: "agents", label: "执行器", icon: IconServer },
   { id: "memory", label: "长期记忆档案", icon: IconList },
   { id: "rules", label: "规则与定时", icon: IconList },
+  { id: "gateway", label: "项目识别网关", icon: IconConnectionPoint1 },
   { id: "connections", label: "来源与通知", icon: IconConnectionPoint1 },
   { id: "feishu", label: "飞书群聊采集", icon: IconComment },
   { id: "runtime", label: "运行环境与引擎", icon: IconSetting },
@@ -56,7 +57,7 @@ export function SettingsCenter({
 }) {
   const [showNav, setShowNav] = React.useState(false);
   const active = section || "projects";
-  const navActive = active === "gateway" ? "agents" : active;
+  const navActive = active;
 
   return (
     <div className={`sc-shell admin-settings ${active === "feishu" ? "sc-channel-shell" : ""}`} data-nav-open={showNav}>
@@ -132,19 +133,14 @@ export function SettingsCenter({
           />
         )}
         {active === "agents" && (
-          <>
-          <div className="sc-router-link"><button type="button" className="button" onClick={() => onSelectSection("gateway")}>配置项目识别网关</button></div>
           <AgentsPanel
             config={config}
-            snapshot={snapshot}
-            state={state}
             api={api}
-            toast={toast}
+            onSavedConfig={onSavedConfig}
             onSaveConfig={onSaveConfig}
             onImportExecutor={onImportExecutor}
             onEditingChange={onEditingChange}
           />
-          </>
         )}
         {active === "logs" && <LogsPanel api={api} />}
         {active === "advanced" && (

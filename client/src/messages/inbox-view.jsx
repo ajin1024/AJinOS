@@ -9,11 +9,13 @@ function approvalSource(card, receipt, conversation) {
   const original = events.find((event) => !["card.answered", "timer.due"].includes(event.type));
   const source = original?.source || card.source || "";
   const type = original?.type || "";
+  const subject = original?.subject || "";
   if (/feishu\.inbox|feishu.*group|group.*feishu|飞书群/i.test([source, type, original?.sourceName].join(" ")))
     return "飞书群采集";
   if (/github/i.test([source, type].join(" "))) return "GitHub";
+  if (source === "feishu" || source === "feishu-chat" || /feishu:/.test(subject)) return "飞书私聊";
   if (conversation?.items?.some((item) => item.message?.id?.startsWith("feishu:"))) return "飞书私聊";
-  if (source === "local" || conversation?.topic) return "主私聊";
+  if (source === "local" || conversation?.topic) return "总管路由";
   return original?.sourceName || source || "规则触发";
 }
 

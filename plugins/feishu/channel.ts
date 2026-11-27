@@ -7,6 +7,7 @@ import { execFile, spawn } from "node:child_process";
 import type { Card, ChannelContext } from "../../host/channels.ts";
 import { eachLine } from "../../host/lines.ts";
 import { commandLine } from "../../host/command.ts";
+import { ticketOutcomeNames } from "../../protocol/ticket.ts";
 
 /** Feishu sends these values as JSON in a string, which may be empty. */
 function safeJson(text: unknown): any {
@@ -74,17 +75,65 @@ export function render(card: Card) {
           },
         ]
       : [];
+  // The result card of a ticket is the one place to close it, or to see that it was closed or picked up again. Ordinary
+  // notices keep their plain grey card, with no line, no button and no callback.
+  const ticket =
+    card.kind === "notice" && card.state === "closed" && card.result == null ? card.ticketState : undefined;
+  const closing = ticket?.closeable === true;
+  const template = closing
+    ? "turquoise"
+    : ticket?.state === "closed"
+      ? ticket.outcome === "completed"
+        ? "green"
+        : "grey"
+      : ticket?.state === "open" && !ticket.closeable && card.version > 1
+        ? "grey"
+        : card.state === "open"
+          ? "blue"
+          : card.state === "closed"
+            ? "grey"
+            : "green";
+  const footer: any[] = [];
+  if (closing) {
+    const guide =
+      ticket.resolution === "unnecessary"
+        ? "已核实无需处理，确认后点击下方按钮关闭；如有补充，直接回复此消息即可继续。"
+        : "任务已完成，确认无误后点下方按钮一键关闭；如需修改，直接回复此消息即可继续。";
+    footer.push(
+      { tag: "hr" },
+      { tag: "div", text: { tag: "plain_text", content: guide } },
+      {
+        tag: "button",
+        type: "primary",
+        width: "fill",
+        text: { tag: "plain_text", content: "一键关闭任务" },
+        behaviors: [{ type: "callback", value: { card: card.id, action: "close_ticket" } }],
+      },
+    );
+  } else if (ticket?.state === "closed") {
+    const how = ticket.outcome ? ticketOutcomeNames[ticket.outcome] : "已关闭";
+    footer.push(
+      { tag: "hr" },
+      {
+        tag: "markdown",
+        content: `✅ 任务已关闭（${ticket.number} · ${how}）· 如需继续，直接回复此消息即可重新激活`,
+      },
+    );
+  } else if (ticket?.state === "open" && !ticket.closeable && card.version > 1) {
+    footer.push({ tag: "hr" }, { tag: "markdown", content: `🔄 任务已继续处理（${ticket.number}）` });
+  }
   return {
     schema: "2.0",
     config: { update_multi: true, enable_forward: false },
     header: {
       title: { tag: "plain_text", content: card.ticket ? `${card.ticket} · ${card.title}` : card.title },
-      template: card.state === "open" ? "blue" : card.state === "closed" ? "grey" : "green",
+      template,
     },
     body: {
       elements: [
         ...(card.text ? [{ tag: "markdown", content: card.text }] : []),
         ...(card.state === "open" ? [...noteForm, ...card.options.map(option)] : [...afterwards, ...noteSaid]),
+        ...footer,
       ],
     },
   };
@@ -142,7 +191,8 @@ export default async function feishu({ hub, options, log, signal }: ChannelConte
           } catch (error) {
             // The bot may not be the sender of the message it is told to change, and Feishu refuses that outright. An open
             // card stays as it is: the hub only counts answers on the message it first heard of, whose buttons still work.
-            if (card.state === "open") throw error;
+            // A closeable result card is the same: a fresh one would carry a button hub never registered for that message.
+            if (card.state === "open" || card.ticketState?.closeable) throw error;
             // A settled one has no buttons: a second card is worse than one, a card frozen at the version before the answer
             // is worse than both. The key has the version so that a retry of this one makes no third.
             log(`card ${card.id}: couldn't update ${ref} (${error}); sending it again`);
@@ -163,6 +213,15 @@ export default async function feishu({ hub, options, log, signal }: ChannelConte
     const event = JSON.parse(line);
     const form = safeJson(event.form_value);
     const value = safeJson(event.action_value);
+    // A result card's close button: the hub checks the clicker and the message, and refreshes the card in place.
+    if (value?.action === "close_ticket" && Number.isInteger(value?.card)) {
+      const closed = await hub.closeTicketFromCard(value.card, {
+        by: event.operator_id,
+        ref: event.message_id,
+      });
+      log(`card ${value.card}: ticket close by ${event.operator_id}, ${closed.changed ? "closed" : "already closed"}`);
+      return;
+    }
     // A form's submit button can't carry a value, so its name holds the card's number.
     const named = /^handling_note_submit_(\d+)$/.exec(String(event.action_name ?? ""));
     const cardId = Number.isInteger(value?.card) ? value.card : named ? Number(named[1]) : null;

@@ -1,4 +1,4 @@
-import { buildAgentEntry, discoverProviders, probeProvider } from "./agent-discovery.mjs";
+import { buildAgentEntry, discoverProviders, probeProvider, providerById } from "./agent-discovery.mjs";
 import { createServer } from "node:http";
 import { createServer as createProbe } from "node:net";
 import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
@@ -29,6 +29,7 @@ import { discoveryName, ownerProof } from "./studio-mcp.mjs";
 
 import { withStudioDefaults } from "./src/island-presets.mjs";
 import { EXECUTOR_PRESETS, IMPORTED_EXECUTOR_PREFIX } from "./src/executor-presets.mjs";
+import { executorReferences, modelExecutorFor } from "./src/flow-executors.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -276,6 +277,7 @@ export async function startStudio({
   });
   const router = new MessageRouter({
     db, chief, config: workspace, brief: globalBrief, planContext,
+    tagsFor: (project) => gateway.projectTags(project),
     submit: (body, routing) => submitMessage(body, false, { ...routing, viaRouter: true }),
   });
   const verifier = new TaskVerifier(db, {
@@ -397,13 +399,25 @@ export async function startStudio({
     }
     return null;
   }
+  function verificationExecutorFor(cfg, binding) {
+    return binding && modelExecutorFor(cfg, binding.project, binding.flow, "verify");
+  }
+  function bindingForRun(run, topic) {
+    const binding = topic && gateway.binding(topic);
+    return binding && run.events?.some((event) => event.source === "local" && event.subject === `${binding.project}:${topic}`)
+      ? binding
+      : null;
+  }
   async function runVerificationForRun(runId, mode = "manual") {
     const task = await workflow.task(Number(runId));
     const latestRun = task.runs.find((r) => r.id === Number(runId)) || task.runs.at(-1);
     if (!latestRun) throw statusError(404, "找不到对应任务轮次");
     const out = outputs(latestRun.id);
     const tailText = [out?.stdout || "", out?.stderr || ""].filter(Boolean).join("\n").slice(-4000);
-    const report = await verifier.verifyRun(workspace(), {
+    const cfg = workspace();
+    const topic = topicOfRun(latestRun);
+    const executorId = verificationExecutorFor(cfg, bindingForRun(latestRun, topic));
+    const report = await verifier.verifyRun(cfg, {
       runId: latestRun.id,
       project: task.project || "",
       title: task.title || "",
@@ -414,7 +428,7 @@ export async function startStudio({
       nextStep: latestRun.task?.nextStep || "",
       outputTail: tailText,
       mode,
-    });
+    }, { executorId });
     broadcast("snapshot", view());
     return report;
   }
@@ -438,16 +452,19 @@ export async function startStudio({
     const hasVerifyRole = Boolean(
       cfg.roleRouting?.roles?.verify?.primary || cfg.roleRouting?.roles?.verify?.fallback,
     );
-    if (!hasVerifyRole) return;
+    if (!hasVerifyRole && !cfg.projects.some((project) => flowsFor(project).some((flow) => flow.modelNodes?.verify))) return;
     const planTopics = planTopicSet();
     const ticketsById = new Map((state.tickets || []).map((t) => [t.id, t]));
     for (const run of state.runs || []) {
       if (run.state !== "done") continue;
       const ticket = run.ticketId ? ticketsById.get(run.ticketId) : null;
       const topic = topicOfRun(run);
-      const binding = topic ? gateway.binding(topic) : null;
+      const binding = bindingForRun(run, topic);
+      const executorId = verificationExecutorFor(cfg, binding);
+      if (!hasVerifyRole && !executorId) continue;
+      if (executorId && ticket?.lastRun !== run.id) continue;
       const isPlanStep = Boolean(topic && planTopics.has(topic));
-      if (!verifier.shouldAutoVerify({ run, ticket, binding, isPlanStep })) continue;
+      if (!verifier.shouldAutoVerify({ run, ticket, binding, isPlanStep, executorId })) continue;
       void runVerificationForRun(run.id, "auto").catch(() => {});
     }
   }
@@ -639,9 +656,10 @@ export async function startStudio({
     const analysis = nextTurn()
       .then(async () => {
         if (!isCurrent()) throw statusError(409, "项目资料已更新，本次分析已跳过");
-        const profile = await gateway.analyze(config, project.id, { isCurrent });
-        broadcast("configuration", configuration());
-        return profile;
+        await gateway.analyze(config, project.id, { isCurrent });
+        const current = configuration();
+        broadcast("configuration", current);
+        return current.profiles[project.id] ?? null;
       })
       .finally(() => pendingProfiles.delete(identity));
     pendingProfiles.set(identity, analysis);
@@ -886,10 +904,19 @@ export async function startStudio({
       requestStarted = true;
       activity.record(body.id, { state: "confirming", stage: "confirmation", input: requestInput, text: body.text });
       scheduleRefresh();
-      if (!prior && !body.conversation && !body.task && !body.session && !(body.topic && gateway.binding(body.topic))) {
+      const newIntake = !prior && !body.conversation && !body.task && !body.session && !(body.topic && gateway.binding(body.topic));
+      // A flow-specific confirmation model can only be selected once the flow is known.
+      const identifyFirst = newIntake && !body.project && !routing.confirm && (!body.requirementsConfirmed || routing.confirmedByDefault) &&
+        cfg.projects.some((project) => project.role !== "integration" && flowsFor(project).some((flow) => flow.modelNodes?.confirm));
+      const identified = identifyFirst ? await gateway.choose(cfg, body, routing) : null;
+      if (newIntake && (!identified || identified.project)) {
+        const project = identified?.project.id || body.project;
+        const flow = identified?.flow.id || body.flow;
+        const useConfirmationNode = routing.confirmedByDefault && modelExecutorFor(cfg, project, flow, "confirm");
+        const confirmationBody = { ...body, project, flow, requirementsConfirmed: !useConfirmationNode && body.requirementsConfirmed };
         const confirmation = routing.confirm && !body.requirementsConfirmed
           ? { confirmed: false, reason: "你选择了先确认需求。请核对目标和预期结果，再派发。" }
-          : await gateway.confirmRequirements(cfg, body);
+          : await gateway.confirmRequirements(cfg, confirmationBody);
         if (!confirmation.confirmed) {
           activity.record(body.id, {
             state: "needsConfirmation",
@@ -917,7 +944,7 @@ export async function startStudio({
         });
         scheduleRefresh();
       }
-      const chosen = await gateway.choose(cfg, prior ? { ...body, topic: prior.topic, project: prior.project } : body, routing);
+      const chosen = identified || await gateway.choose(cfg, prior ? { ...body, topic: prior.topic, project: prior.project } : body, routing);
       if (!chosen.project) {
         activity.record(body.id, {
           state: chosen.needsConfirmation ? "needsConfirmation" : "needsProject",
@@ -939,7 +966,6 @@ export async function startStudio({
       if (closed) throw statusError(503, "客户端正在关闭");
       if (digest(cfg) !== digest(workspace())) throw statusError(409, "项目配置已更新，请重新提交");
       const topic = chosen.topic || body.topic || "topic-" + randomUUID();
-      await workflow.guardTopic(topic, workflowAction);
       activity.record(body.id, {
         state: "routing",
         stage: "assignment",
@@ -955,6 +981,8 @@ export async function startStudio({
       const baseLine = hubState.lines.find((line) => line.name === chosen.flow.rule);
       if (!targetLine || !baseLine) throw statusError(409, "新规则正在载入，请稍后重新提交");
       if (targetLine.paused || baseLine.paused) throw statusError(409, "这个流程已暂停，请先恢复再提交");
+      // Whether a reply continues a closed topic is decided without side effects; the reopen waits until the round is ready.
+      const prepared = await workflow.inspectTopicReply(topic, { internal: workflowAction, hubState });
       const isNewTopic = !gateway.binding(topic);
       const activeMemories = !prior && isNewTopic ? memories.selectForProject(project.id) : [];
       let messageForEvent =
@@ -971,7 +999,7 @@ export async function startStudio({
       }
       const event = prior
         ? JSON.parse(prior.event)
-        : eventFor(cfg, project, messageForEvent, chosen.flow, chosen.complexity, chosen.executor);
+        : eventFor(cfg, project, messageForEvent, chosen.flow, chosen.complexity, chosen.executor, chosen.rule);
       if (!prior) {
         const at = new Date().toISOString();
         db.exec("BEGIN IMMEDIATE");
@@ -1018,19 +1046,37 @@ export async function startStudio({
           throw error;
         }
       }
-      const answer = await call("POST", "/v1/events", event, true);
-      const result = {
-        ...answer,
-        project: project.id,
-        topic,
-        flow: chosen.flow.id,
-        complexity: chosen.complexity || null,
-        reason: chosen.reason,
-      };
-      db.prepare("UPDATE messages SET result=? WHERE id=?").run(JSON.stringify(result), body.id);
-      activity.record(body.id, { state: "routed", project: project.id, topic, reason: chosen.reason });
-      scheduleRefresh();
-      return result;
+      // The reopen, the round and the record stay together: nothing is left reopened for a round that never arrived.
+      let busyKey = null;
+      try {
+        if (prepared.needsReopen) {
+          if (workflow.busy.size) throw statusError(409, "另一个任务操作正在提交，请稍后重试。");
+          busyKey = `reactivate:${body.id}`;
+          workflow.busy.add(busyKey);
+          await workflow.reopenTopic(prepared);
+        }
+        const answer = await call("POST", "/v1/events", event, true);
+        const reactivation = prepared.needsReopen
+          ? prepared.alreadyOpen
+            ? { reactivated: true, ticketNumber: prepared.task.ticket?.number || null }
+            : workflow.recordTopicReactivation(prepared, body.text)
+          : { reactivated: false };
+        const result = {
+          ...answer,
+          project: project.id,
+          topic,
+          flow: chosen.flow.id,
+          complexity: chosen.complexity || null,
+          reason: chosen.reason,
+          ...(reactivation.reactivated ? { reactivated: true, ticketNumber: reactivation.ticketNumber } : {}),
+        };
+        db.prepare("UPDATE messages SET result=? WHERE id=?").run(JSON.stringify(result), body.id);
+        activity.record(body.id, { state: "routed", project: project.id, topic, reason: chosen.reason });
+        scheduleRefresh();
+        return result;
+      } finally {
+        if (busyKey) workflow.busy.delete(busyKey);
+      }
     })().catch((error) => {
       if (requestStarted) {
         activity.record(body.id, { state: "failed", input: requestInput, text: body.text, reason: error.message });
@@ -1190,10 +1236,12 @@ export async function startStudio({
         const body = await readBody(req);
         const preset = EXECUTOR_PRESETS.find((item) => item.id === body?.providerId);
         if (!preset) throw statusError(400, "请选择执行器类型");
-        const { name, model = "", effort = "", program = "", access = "edit" } = body;
+        const { name, model = "", effort = "", speed = "", program = "", access = "edit" } = body;
         if (typeof name !== "string" || !name.trim()) throw statusError(400, "请填写执行器名称");
         if (typeof model !== "string") throw statusError(400, "模型 ID 需要是文字");
         if (effort !== "" && !preset.efforts.includes(effort)) throw statusError(400, "请选择该执行器支持的思考强度");
+        if (speed !== "" && !providerById(preset.id)?.capabilities.speeds.includes(speed))
+          throw statusError(400, "请选择该执行器支持的速度档位");
         if (typeof program !== "string" || (program.trim() && !path.isAbsolute(program.trim())))
           throw statusError(400, "CLI 程序需要填写绝对路径");
         if (preset.use === "acp" && !program.trim()) throw statusError(400, "请填写 Antigravity CLI 的绝对路径");
@@ -1216,6 +1264,7 @@ export async function startStudio({
           access,
           ...(model.trim() && { model: model.trim() }),
           ...(effort && { effort }),
+          ...(speed === "fast" && { speed }),
           ...(preset.use === "acp"
             ? { command: [program.trim(), "acp"] }
             : program.trim() && { program: program.trim() }),
@@ -1228,31 +1277,7 @@ export async function startStudio({
         const current = workspace();
         if (!current.rules.agents?.[agentId]) throw statusError(404, `执行器不存在：${agentId}`);
         if (agentId.startsWith("studio-")) throw statusError(400, "系统派生的执行器不能直接删除");
-        const refs = [];
-        const autoRules = new Set([
-          ...Object.values(current.executionRoutes || {})
-            .flatMap((tiers) => Object.values(tiers))
-            .map((r) => r.rule),
-          ...Object.values(current.agentRoutes || {})
-            .flatMap((routes) => Object.values(routes))
-            .filter((r) => r.auto)
-            .map((r) => r.rule),
-        ]);
-        for (const rule of current.rules.rules || []) {
-          if (rule.to === agentId && !autoRules.has(rule.name)) refs.push(`规则「${rule.name}」`);
-        }
-        if (current.gateway?.agent === agentId) refs.push("项目识别网关");
-        for (const [nodeKey, boundId] of Object.entries(current.nodeExecutors || {})) {
-          if (boundId === agentId) refs.push(`节点「${nodeKey}」`);
-        }
-        for (const [tier, boundId] of Object.entries(current.executionTiers || {})) {
-          if (boundId === agentId) refs.push(`任务分档「${tier === "complex" ? "复杂" : "简单"}」`);
-        }
-        const roleLabels = { plan: "规划", execute: "执行", verify: "校验" };
-        for (const [roleKey, spec] of Object.entries(current.roleRouting?.roles || {})) {
-          if (spec?.primary === agentId) refs.push(`角色「${roleLabels[roleKey] || roleKey} · 首选」`);
-          if (spec?.fallback === agentId) refs.push(`角色「${roleLabels[roleKey] || roleKey} · 备选」`);
-        }
+        const refs = executorReferences(current, agentId);
         if (refs.length) {
           throw statusError(409, `该执行器正被以下节点使用，请先切换它们的绑定后再删除：${refs.join("、")}`);
         }
@@ -1510,8 +1535,9 @@ export async function startStudio({
           for (const project of cfg.projects)
             for (const flow of flowsFor(project)) {
               if (flow.rule !== decoded) continue;
-              for (const tier of Object.values(cfg.executionRoutes?.[`${project.id}/${flow.id}`] || {}))
-                await call("POST", `/v1/rules/${encodeURIComponent(tier.rule)}/${action}`, body);
+              const key = `${project.id}/${flow.id}`;
+              for (const route of [...Object.values(cfg.executionRoutes?.[key] || {}), ...Object.values(cfg.flowAgentRoutes?.[key] || {})])
+                await call("POST", `/v1/rules/${encodeURIComponent(route.rule)}/${action}`, body);
             }
         }
         const answer = await call("POST", `/v1/rules/${name}/${action}`, body);

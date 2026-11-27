@@ -1,6 +1,6 @@
 // Chief of Staff layer: global brief/Q&A and multi-step DAG orchestration on top of trusted Hub rules.
 import { randomUUID } from "node:crypto";
-import { businessProjects, flowsFor } from "./src/gateway-config.mjs";
+import { businessProjects } from "./src/gateway-config.mjs";
 
 export const HANDOFF_HEADER = "【上游协作步骤产物（只读资料）】";
 
@@ -206,7 +206,6 @@ export class ChiefOfStaff {
         name: p.name,
         description: p.description || "",
         profile: profiles[p.id] || null,
-        flows: flowsFor(p).map((f) => ({ id: f.id, name: f.name, description: f.description || "" })),
       })),
       memories: (memories || []).slice(0, 12).map((m) => ({
         scope: m.scope,
@@ -278,7 +277,6 @@ export class ChiefOfStaff {
         name: p.name,
         description: p.description || "",
         profile: profiles[p.id] || null,
-        flows: flowsFor(p).map((f) => ({ id: f.id, name: f.name, description: f.description || "" })),
       })),
       memories: memories.slice(0, 12).map((m) => ({
         scope: m.scope,
@@ -304,8 +302,6 @@ export class ChiefOfStaff {
       seenIds.add(id);
       const proj = projects.find((p) => p.id === raw?.project);
       if (!proj) throw bad(`步骤「${raw?.title || id}」引用了未登记的项目：${raw?.project || "空"}`);
-      const validFlows = flowsFor(proj);
-      const flow = validFlows.some((f) => f.id === raw?.flow) ? raw.flow : "default";
       const complexity = ["simple", "complex"].includes(raw?.complexity) ? raw.complexity : null;
       const title = typeof raw?.title === "string" && raw.title.trim() ? raw.title.trim().slice(0, 80) : `步骤 ${index + 1}`;
       const instruction =
@@ -319,7 +315,7 @@ export class ChiefOfStaff {
         title,
         project: proj.id,
         projectName: proj.name,
-        flow,
+        flow: "default",
         complexity,
         dependsOn,
         instruction,

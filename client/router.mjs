@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { businessProjects } from "./src/gateway-config.mjs";
+import { businessProjects, projectTags } from "./src/gateway-config.mjs";
 import { blockedTerm } from "./src/gateway-policy.mjs";
 
 const bad = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -26,11 +26,11 @@ function isDiscussionIntent(text) {
   return false;
 }
 
-function intent(config, text) {
+function intent(config, text, tagsFor) {
   if (progressQuestions.some((pattern) => pattern.test(text))) return "ask";
   const normalized = text.toLocaleLowerCase();
   const names = businessProjects(config).filter((project) =>
-    [project.name, project.id, ...(project.aliases || [])].some(
+    [project.name, project.id, ...tagsFor(project)].some(
       (name) => name && normalized.includes(name.toLocaleLowerCase()),
     ),
   );
@@ -40,8 +40,8 @@ function intent(config, text) {
 }
 
 export class MessageRouter {
-  constructor({ db, submit, chief, config, brief, planContext }) {
-    Object.assign(this, { db, submit, chief, config, brief, planContext });
+  constructor({ db, submit, chief, config, brief, planContext, tagsFor = projectTags }) {
+    Object.assign(this, { db, submit, chief, config, brief, planContext, tagsFor });
     this.pending = new Map();
   }
 
@@ -97,7 +97,7 @@ export class MessageRouter {
         ? "dispatch"
         : mode !== "auto"
           ? mode
-          : prefixKind || (input.attachments?.length ? "dispatch" : discussionId ? "discuss" : intent(config, text));
+          : prefixKind || (input.attachments?.length ? "dispatch" : discussionId ? "discuss" : intent(config, text, this.tagsFor));
 
     const key = `router:${input.id}`;
     const hash = createHash("sha256")
@@ -125,6 +125,7 @@ export class MessageRouter {
         {
           directProject: Boolean(input.project),
           confirm: confirm && !blocked,
+          confirmedByDefault: !confirm && input.requirementsConfirmed !== true,
         },
       );
       return { ...result, kind: result.needsProject || result.needsConfirmation ? "intake" : "task" };

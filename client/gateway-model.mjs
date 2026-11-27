@@ -12,7 +12,7 @@ import { findProgram } from "../worker/agents.ts";
 import { IN_THE_APP } from "../plugins/codex/agent.ts";
 
 import { gatewayPrompt } from "./src/gateway-policy.mjs";
-import { ROLE_BY_KIND, resolveRoleCandidates } from "./role-routing.mjs";
+import { ROLE_BY_KIND, isModelAgent, resolveRoleCandidates } from "./role-routing.mjs";
 
 /** Claude Code's print-mode JSON envelope wraps the classifier's answer in `result`. */
 function claudeAnswer(stdout) {
@@ -68,7 +68,7 @@ export function resolveGatewayAgent(config, kind = null) {
   return agent;
 }
 
-export function buildGatewayArgv({ kind, config, agent, output, images = [], find = findProgram }) {
+export function buildGatewayArgv({ kind, config, agent, output, images = [], find = findProgram, dedicated = false }) {
   const prompt = gatewayPrompt(kind);
   const viaClaude = agent.use === "claude";
   if (viaClaude && images.length) throw new Error("Claude 识别不支持图片，请改用手动选择项目");
@@ -79,11 +79,11 @@ export function buildGatewayArgv({ kind, config, agent, output, images = [], fin
       config.roleRouting?.economyMode,
   );
   const hasDedicatedNodeAgent = Boolean(
-    hasRoleRouting || (nodeKey && nodeKey !== "gateway" && config.nodeExecutors?.[nodeKey]),
+    dedicated || hasRoleRouting || (nodeKey && nodeKey !== "gateway" && config.nodeExecutors?.[nodeKey]),
   );
   const model = (hasDedicatedNodeAgent ? agent.model : config.gateway?.model || agent.model) || "";
   const effort =
-    (hasDedicatedNodeAgent ? agent.effort : config.gateway?.effort || agent.effort) || (viaClaude ? "" : "high");
+    (hasDedicatedNodeAgent ? agent.effort : config.gateway?.effort || agent.effort) || (viaClaude || dedicated ? "" : "high");
   const speed = hasDedicatedNodeAgent ? agent.speed || "" : config.gateway?.speed || agent.speed || "";
   // Claude Code: no tools, no user/project settings, no MCP; the classification prompt is the whole job.
   const argv = viaClaude
@@ -335,7 +335,7 @@ export class GatewayModel {
     this.health = health;
   }
 
-  async #runSingle({ kind, data, config, agent, images }) {
+  async #runSingle({ kind, data, config, agent, images, dedicated }) {
     const folder = mkdtempSync(path.join(tmpdir(), "studio-recognition-"));
     const output = path.join(folder, "answer.json");
     const env = Object.fromEntries(
@@ -346,7 +346,7 @@ export class GatewayModel {
         if (images.length) throw new Error("Antigravity（ACP）只读通道暂不支持图片，请切换支持图片的执行器");
         return await runAcpTurn({ kind, data, agent, folder, env, activeSet: this.active });
       }
-      const { argv, prompt, viaClaude } = buildGatewayArgv({ kind, config, agent, output, images });
+      const { argv, prompt, viaClaude } = buildGatewayArgv({ kind, config, agent, output, images, dedicated });
       let cancel, done;
       // Snapshot trusted adapter downloads; callers never supply image paths through the HTTP gateway.
       images.forEach((image, index) => {
@@ -441,7 +441,7 @@ export class GatewayModel {
     }
   }
 
-  async run(kind, data, config, { images = [] } = {}) {
+  async run(kind, data, config, { images = [], executorId } = {}) {
     if (this.closed) throw new Error("网关已关闭");
     if (!Array.isArray(images) || images.length > 8) throw new Error("一次最多识别 8 张图片");
     for (const image of images) {
@@ -451,11 +451,12 @@ export class GatewayModel {
     }
 
     const role = ROLE_BY_KIND[kind] || "plan";
-    const resolved = resolveRoleCandidates(config, role, { kind });
     const agents = config.rules?.agents || {};
+    if (executorId && !isModelAgent(agents[executorId])) throw new Error("此节点的模型执行器不可用");
+    const resolved = executorId ? { candidates: [executorId], economyActive: false } : resolveRoleCandidates(config, role, { kind });
     let ordered = resolved.candidates.filter((id) => Boolean(agents[id]));
     if (!ordered.length) {
-      throw new Error("请在「执行器与模型」中配置已登录的 Claude Code、Codex 或 Antigravity 执行器");
+      throw new Error("请在「执行器」中配置已登录的 Claude Code、Codex 或 Antigravity 执行器");
     }
     if (images.length > 0) {
       const visionCapable = ordered.filter((id) => agents[id]?.use === "codex");
@@ -474,7 +475,7 @@ export class GatewayModel {
       const agentId = attemptOrder[i];
       const agent = agents[agentId];
       try {
-        const result = await this.#runSingle({ kind, data, config, agent, images });
+        const result = await this.#runSingle({ kind, data, config, agent, images, dedicated: Boolean(executorId) });
         this.health?.markSuccess(agentId);
         const degraded = agentId !== primaryId;
         const primaryName = agents[primaryId]?.name || primaryId;

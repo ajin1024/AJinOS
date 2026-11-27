@@ -2,7 +2,6 @@ import React, { useLayoutEffect, useRef, useState } from "react";
 import { buildFlowModel, traceFlow } from "./flow-model.mjs";
 
 const glyphs = {
-  chat: "M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-1-2V6a2 2 0 0 1 2-2Zm2 5h10m-10 4h6",
   feishu: "m3.5 10 17-6-4 16-5-5-4 3v-5L3.5 10Zm4 3 10-6",
   github:
     "M7 8v8m10-8v1a4 4 0 0 1-4 4H7M9.5 5.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Zm10 0a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Zm-10 13a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Z",
@@ -43,7 +42,7 @@ export function FlowIcon({ name, className = "" }) {
 const lanes = [
   ["plug", "入口触发", "Triggers"],
   ["route", "总管路由", "AJinOS Router"],
-  ["folder", "项目领地与执行器", "Sandboxes & Workers"],
+  ["folder", "项目与执行器", "Projects & Workers"],
   ["inbox", "结果与本人介入", "Results & Human in the Loop"],
 ];
 const edgeKey = ({ from, to }) => `${from} → ${to}`;
@@ -223,8 +222,8 @@ export function SuperAgentFlow({
       .filter(({ enabled }) => enabled)
       .map(({ id }) => ({
         from: id,
-        to: id === "chat" ? "router" : "hub",
-        tone: id === "chat" ? "router" : "direct",
+        to: id === "feishu" ? "router" : "hub",
+        tone: id === "feishu" ? "router" : "direct",
       })),
     { from: "router", to: "hub", tone: "router" },
     ...model.projects.flatMap(({ id, worker }) => [
@@ -242,7 +241,6 @@ export function SuperAgentFlow({
   const settings = (section) => onNavigate({ view: "settings", section });
   const board = (statusFilter = "all") => onNavigate({ view: "tasks", tasksTab: "list", statusFilter });
   const sourceActions = {
-    chat: () => onNavigate({ view: "messages" }),
     feishu: () => settings("feishu"),
     github: () => settings("connections"),
     timer: () => settings("rules"),
@@ -268,7 +266,7 @@ export function SuperAgentFlow({
           <div>
             <h2>任务流转</h2>
             <p>
-              {model.sources.filter((source) => source.enabled).length} 个触发来源 · {model.projects.length} 个项目领地
+              {model.sources.filter((source) => source.enabled).length} 个触发来源 · {model.projects.length} 个项目
             </p>
           </div>
           <div className="row overview-stats">
@@ -415,7 +413,7 @@ export function SuperAgentFlow({
                   <FlowIcon name="down" className="node-chevron" />
                 </button>
               ))}
-              {!model.projects.length && <p className="empty-row">暂无项目领地</p>}
+              {!model.projects.length && <p className="empty-row">暂无项目</p>}
               <section className="card workers" {...node("workers")}>
                 <button type="button" className="workers-head node-action" onClick={() => settings("agents")}>
                   <FlowIcon name="term" />

@@ -732,6 +732,66 @@
         "ticket": {
           "type": ["string", "null"],
           "pattern": "^T-[0-9]{6,}$"
+        },
+        "ticketState": {
+          "description": "The ticket behind the card, for a channel that can offer to close it; absent on old cards.",
+          "type": ["object", "null"],
+          "properties": {
+            "id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "number": {
+              "type": "string",
+              "pattern": "^T-[0-9]{6,}$"
+            },
+            "state": {
+              "enum": ["open", "closed"]
+            },
+            "status": {
+              "enum": [
+                "queued",
+                "retrying",
+                "claimed",
+                "unknown",
+                "waiting",
+                "follow_up",
+                "blocked",
+                "needs_followup",
+                "needs_review",
+                "ready_for_acceptance",
+                "cancelled",
+                "closed"
+              ]
+            },
+            "resolution": {
+              "enum": ["completed", "unnecessary", null]
+            },
+            "outcome": {
+              "enum": ["completed", "unnecessary", "cancelled", null]
+            },
+            "closedAt": {
+              "type": ["string", "null"]
+            },
+            "closedNote": {
+              "type": ["string", "null"]
+            },
+            "closeable": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "number",
+            "state",
+            "status",
+            "resolution",
+            "outcome",
+            "closedAt",
+            "closedNote",
+            "closeable"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

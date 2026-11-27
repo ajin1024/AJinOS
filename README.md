@@ -29,7 +29,7 @@
 ## 核心特性
 
 - **挂起零消耗**：等你拍板时 Agent 进程直接退出，等待状态保存在本地数据库。三天后回复也会接上原会话继续执行，期间不占进程、不花 Token。
-- **三角色调度与自动降级**：按「规划 · 执行 · 校验」分工绑定已登录的 Claude Code、Codex 或 Antigravity（ACP），支持首选/备选冷却降级与省钱模式；默认沿用本机 CLI 模型，不硬编码私有模型名。
+- **项目流程选执行器**：在 Studio 保存软件、模型、思考强度和速度，再把同一套配置选给项目流程中的一个或多个模型节点。已有话题沿原执行归属续接。
 - **一体化消息记录与工作台**：新事项从飞书、GitHub Issue 或定时规则进来；在 AJinOS Studio 内查看图文记录、行内点卡片拍板、查看实时流转路径、人工验收或退回返工，应用内不设聊天输入和新建任务入口。
 - **一行配置接 Agent**：无需 SDK、无需修改 Agent 源码，任何命令行工具都可通过内置插件、ACP 协议或通用命令接入。
 - **每件事一张工单**：可定义必做流程步骤（`flow`），必做项未全部核验通过不能进入待验收，最终关闭权只属于你。
@@ -103,9 +103,9 @@ agent-autoloop try
 | ![只读事项记录](docs/screenshots/messages.png) | ![任务中心看板](docs/screenshots/tasks.png) |
 
 <details>
-<summary>查看项目空间与 Studio 架构分层图</summary>
+<summary>查看项目管理与 Studio 架构分层图</summary>
 
-![项目空间](docs/screenshots/projects.png)
+![项目管理](docs/screenshots/projects.png)
 
 ![AJinOS Studio 架构分层](docs/studio-architecture.svg)
 
@@ -115,7 +115,7 @@ agent-autoloop try
 - **消息记录与审批**：查看文字与图片记录、行内卡片答复、系统托盘提醒；应用内不设输入框、草稿和聊天快捷键，新事项从通道进入。
 - **三角色调度与模型自由配置**：按规划 / 执行 / 校验配置已登录的 Claude Code、Codex、Antigravity（ACP），模型留空即沿用本机 CLI 默认。
 - **任务中心与总管统筹**：聚合「待我处理」、看板/列表、零消耗全局简报与多工单 DAG 协作计划，验收关闭同步 Hub 原生工单。
-- **项目空间与长期记忆**：项目画像预分析、自定义流程与权限隔离、经本人确认后生效的长期记忆档案。
+- **项目管理与长期记忆**支持自动生成和手动编辑项目识别标签、设置项目权限，以及保存经本人确认的长期记忆。
 
 详见 [AJinOS Studio 使用说明](client/README.md) 与 [Studio 架构说明](docs/studio-architecture.md)。
 

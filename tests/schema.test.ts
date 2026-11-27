@@ -2,6 +2,7 @@
 // the wire contract drifts from the validators, and conformance accepts a server that opens the wrong door.
 // Required job structure and inherited object names must not bypass schema checks; Unicode limits count code points.
 // FYI notices must accept only an optional boolean without weakening notice limits or changing question receipts.
+// A card's optional ticket state must accept the published shape and reject unknown or malformed fields.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkSchema } from "../protocol/schema.ts";
@@ -87,6 +88,42 @@ test("published text limits count Unicode characters, including astral code poin
   const receipt = { outcome: "done", summary: "😀".repeat(500) };
   assert.deepEqual(checkSchema("result", receipt), []);
   assert.equal(parseResult(receipt).summary, receipt.summary);
+});
+
+test("a card's ticket state is optional, and its published fields are closed", () => {
+  const card = {
+    id: 1,
+    version: 1,
+    kind: "notice",
+    state: "closed",
+    title: "结果",
+    text: "完成",
+    options: [],
+    ref: null,
+    recommend: null,
+    choice: null,
+    answer: null,
+    by: null,
+    result: null,
+    link: null,
+    ticket: "T-000001",
+    ticketState: {
+      id: 1,
+      number: "T-000001",
+      state: "open",
+      status: "ready_for_acceptance",
+      resolution: "completed",
+      outcome: null,
+      closedAt: null,
+      closedNote: null,
+      closeable: true,
+    },
+  };
+  const { ticketState: _ticketState, ...withoutTicketState } = card;
+  assert.deepEqual(checkSchema("card", card), []);
+  assert.deepEqual(checkSchema("card", { ...withoutTicketState, ticket: null }), []);
+  assert.ok(checkSchema("card", { ...card, ticketState: { ...card.ticketState, status: "made-up" } }).length);
+  assert.ok(checkSchema("card", { ...card, ticketState: { ...card.ticketState, extra: true } }).length);
 });
 
 test("usage must be an object of finite nonnegative amounts", () => {

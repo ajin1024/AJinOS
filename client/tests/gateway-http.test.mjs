@@ -92,7 +92,7 @@ test("HTTP gateway profiles, routes once, persists bindings and continues by tas
     await connect();
     const profile = await request("/projects/orders/analyze", {});
     assert.equal(profile.status, 200);
-    assert.deepEqual(profile.data.tags, ["退款"]);
+    assert.deepEqual(profile.data.tags, ["订单", "支付", "履约", "退款"]);
     const body = { id: "semantic-first", text: "钱没退回来，请直接完成核查" };
     const [first, duplicate] = await Promise.all([request("/messages", body), request("/messages", body)]);
     assert.equal(first.status, 200);

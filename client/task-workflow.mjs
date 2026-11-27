@@ -12,6 +12,27 @@ import {
 const fail = (message) => {
   throw Object.assign(new Error(message), { status: 409 });
 };
+const cut = (value, max) => [...String(value ?? "")].slice(0, max).join("");
+const ticketSnapshot = (ticket) => ({
+  id: ticket.id,
+  number: ticket.number,
+  state: ticket.state,
+  outcome: ticket.outcome || null,
+  closedAt: ticket.closedAt || null,
+  closedBy: ticket.closedBy || null,
+  closedNote: ticket.closedNote || null,
+});
+
+/** Whether a run belongs to a topic's own conversation; the first colon separates project from topic. */
+function runOnTopic(run, topic, binding) {
+  return (run.events || []).some((event) => {
+    if (event?.source !== "local" || typeof event.subject !== "string") return false;
+    const pos = event.subject.indexOf(":");
+    if (pos < 0) return false;
+    return binding?.project ? event.subject === `${binding.project}:${topic}` : event.subject.slice(pos + 1) === topic;
+  });
+}
+
 export class TaskWorkflow {
   constructor({ gateway, call, config, topics, submit, refresh }) {
     Object.assign(this, { gateway, call, config, topics, submit, refresh });
@@ -42,16 +63,152 @@ export class TaskWorkflow {
     }
     return [...items.values()];
   }
-  async guardTopic(topic, internal = false) {
-    if (!topic || internal) return;
-    const saved = this.records()
-      .filter((r) => r.topic === topic)
-      .at(-1);
-    if (saved && ["closed", "paused", "human", "retarget"].includes(saved.mode)) {
-      const task = await this.task(saved.runIds.at(-1));
-      if (["closed", "paused", "human_working", "awaiting_confirmation"].includes(workflowFor(task, saved).status))
-        fail("此任务已关闭、暂停或由你接手，请先在任务详情中重新打开、恢复或交回 AI。");
+  /**
+   * Checks, without side effects, whether a reply to this topic has to reopen its ticket. A brand-new topic costs no
+   * Hub request; an active one only reads the first page; only a closed/paused/human-held record loads a topic-sized task.
+   */
+  async inspectTopicReply(topic, { internal = false, hubState = null } = {}) {
+    if (!topic || internal) return { needsReopen: false };
+    const records = this.records();
+    const local = records.filter((record) => record.topic === topic).at(-1);
+    const binding = this.gateway.binding?.(topic);
+    // Provably new: no local record and no gateway binding. Nothing to reopen, so don't touch the Hub.
+    if (!local && typeof this.gateway.binding === "function" && !binding) return { needsReopen: false };
+    const state = hubState || (await this.call("GET", "/v1/state"));
+    const latest = await this.topicRun(topic, binding, state, local);
+    if (!latest) return { needsReopen: false };
+    let ticket = null;
+    if (Number.isInteger(latest.ticket) && latest.ticket > 0) {
+      ticket = (state.tickets || []).find((item) => item.id === latest.ticket) || null;
+      if (!ticket) {
+        try {
+          // Hub snapshots only carry the latest 20 closed tickets; ask for this one by number instead of reading history.
+          ticket = await this.call("GET", `/v1/tickets/${latest.ticket}`);
+        } catch {
+          ticket = null;
+        }
+      }
     }
+    const held = ["closed", "paused", "human", "retarget"].includes(local?.mode);
+    if (!held && ticket?.state !== "closed") return { needsReopen: false };
+    const task = await this.topicTask(latest, state, topic, binding, ticket);
+    if (!task) return { needsReopen: false };
+    const saved = savedWorkflow(task, records);
+    const current = workflowFor(task, saved);
+    // The record's evidence can cover rounds outside the first page; a held mode still stands until a newer round exists.
+    const recordedNewest = Math.max(0, ...(local?.runIds || []));
+    const modeStatus = { paused: "paused", human: "human_working", retarget: "awaiting_confirmation" }[local?.mode];
+    if (
+      ["paused", "human_working", "awaiting_confirmation"].includes(current.status) ||
+      (modeStatus && latest.id <= recordedNewest)
+    ) {
+      fail("此任务已暂停、由你接手或待确认目标，请先在任务详情中恢复、交回 AI 或确认目标。");
+    }
+    if (current.status !== "closed") return { needsReopen: false };
+    return {
+      needsReopen: true,
+      alreadyOpen: Boolean(task.ticket?.id && task.ticket.state === "open"),
+      task,
+      saved,
+      current,
+      topic,
+    };
+  }
+  /** The topic's latest round, from the first page when possible; older records are fetched one page deep at most. */
+  async topicRun(topic, binding, state, local) {
+    const runs = state?.runs || [];
+    const found = runs.find((run) => runOnTopic(run, topic, binding));
+    if (found) return found;
+    const localId = local?.runIds?.at(-1);
+    if (Number.isInteger(localId)) {
+      const byId = runs.find((run) => run.id === localId);
+      if (byId) return byId;
+      try {
+        const page = await this.call("GET", `/v1/state?before=${localId + 1}`);
+        return page?.runs?.find((run) => run.id === localId) || null;
+      } catch {
+        return null;
+      }
+    }
+    let page = state;
+    while (page?.hasMore) {
+      page = await this.call("GET", `/v1/state?before=${page.nextBefore}`);
+      const next = page?.runs?.find((run) => runOnTopic(run, topic, binding));
+      if (next) return next;
+    }
+    return null;
+  }
+  /** A task made from this topic's own rounds and its ticket, never from every business round on the Hub. */
+  async topicTask(latest, state, topic, binding, fetchedTicket = null) {
+    const runs = state?.runs || [];
+    const related = runs.filter(
+      (run) =>
+        run.id === latest.id ||
+        (Number.isInteger(latest.ticket) && latest.ticket > 0 && run.ticket === latest.ticket) ||
+        runOnTopic(run, topic, binding),
+    );
+    // The latest round may sit on a later page than the snapshot we were handed; it must still anchor the group.
+    if (!related.some((run) => run.id === latest.id)) related.push(latest);
+    const tickets = [...(state?.tickets || [])];
+    if (fetchedTicket && !tickets.some((ticket) => ticket.id === fetchedTicket.id)) tickets.push(fetchedTicket);
+    return (
+      groupTasks({
+        config: this.config(),
+        topics: this.topics(),
+        runs: related,
+        cards: state?.cards || [],
+        timers: state?.timers || [],
+        tickets,
+      }).find((task) => task.runs.some((run) => run.id === latest.id)) || null
+    );
+  }
+  /** Reopens the ticket a reply continues, keeping its number and rounds. */
+  async reopenTopic(prepared) {
+    const { task } = prepared;
+    if (task.ticket?.id && task.ticket.state === "closed") {
+      const reopened = await this.call("POST", `/v1/tickets/${task.ticket.id}/reopen`, {
+        reason: "本人回复重新激活",
+      });
+      if (reopened?.ticket) task.ticket = ticketSnapshot(reopened.ticket);
+    }
+    return task;
+  }
+  /** Records why the topic continued, once the new round has actually reached the Hub. */
+  recordTopicReactivation(prepared, text = "") {
+    const { task, saved, current } = prepared;
+    const note = cut(text, 500),
+      at = new Date().toISOString();
+    this.gateway.record(`workflow:${task.key}`, {
+      key: task.key,
+      runIds: task.runs.map((run) => run.id),
+      topic: task.topic || null,
+      evidence: taskEvidence(task),
+      mode: "",
+      note,
+      outcome: null,
+      rework: !!saved?.rework,
+      history: [
+        ...(saved?.history || []),
+        { action: "reopen", label: "回复激活", text: note, at, by: "本人", stage: current.stage, outcome: null },
+      ],
+      at,
+    });
+    return { reactivated: true, ticketNumber: task.ticket?.number || null };
+  }
+  /** The old one-step form, kept for callers and tests that do not gate the reopen on later validation. */
+  async prepareTopicForReply(topic, { internal = false, text = "" } = {}) {
+    const prepared = await this.inspectTopicReply(topic, { internal });
+    if (!prepared.needsReopen) return { reactivated: false };
+    await this.reopenTopic(prepared);
+    if (prepared.alreadyOpen) {
+      return { reactivated: true, ticketNumber: prepared.task.ticket?.number || null };
+    }
+    return this.recordTopicReactivation(prepared, text);
+  }
+  async latestRunForTopic(topic) {
+    const binding = this.gateway.binding?.(topic);
+    const state = await this.call("GET", "/v1/state");
+    return this.topicRun(topic, binding, state, null);
   }
   async task(runId) {
     const config = this.config(),
@@ -81,8 +238,9 @@ export class TaskWorkflow {
     const targetTicketId = target.ticket;
     if (Number.isInteger(targetTicketId) && targetTicketId > 0 && !tickets.some((t) => t.id === targetTicketId)) {
       try {
+        // The ticket detail endpoint returns the ticket itself, unlike close/reopen which wrap it.
         const fetched = await this.call("GET", `/v1/tickets/${targetTicketId}`);
-        if (fetched?.ticket) tickets.push(fetched.ticket);
+        if (fetched?.id === targetTicketId) tickets.push(fetched);
       } catch {
         // Older Hub instances without /v1/tickets keep working via run-level state.
       }
@@ -110,15 +268,7 @@ export class TaskWorkflow {
       const ticketId = task.ticket?.id;
       const syncTicket = (updated) => {
         if (!updated) return;
-        task.ticket = {
-          id: updated.id,
-          number: updated.number,
-          state: updated.state,
-          outcome: updated.outcome || null,
-          closedAt: updated.closedAt || null,
-          closedBy: updated.closedBy || null,
-          closedNote: updated.closedNote || null,
-        };
+        task.ticket = ticketSnapshot(updated);
         next.evidence = taskEvidence(task);
       };
       if (ticketId && ["accept", "close"].includes(input.action) && task.ticket?.state !== "closed") {
@@ -197,6 +347,16 @@ export class TaskWorkflow {
     for (const task of tasks) {
       const saved = savedWorkflow(task, records);
       if (!shouldAutoAccept(task, saved, minutes, nowMs)) continue;
+      // A closed ticket older than the Hub's recent 20 arrives without a state; ask before letting auto-accept close it again.
+      if (task.ticket?.id && task.ticket.state === null) {
+        try {
+          const ticket = await this.call("GET", `/v1/tickets/${task.ticket.id}`);
+          if (ticket?.id === task.ticket.id) task.ticket = ticketSnapshot(ticket);
+        } catch {
+          continue;
+        }
+      }
+      if (task.ticket?.state === "closed") continue;
       const lastRun = task.runs.at(-1);
       if (!lastRun) continue;
       const workflow = workflowFor(task, saved);

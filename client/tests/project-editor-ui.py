@@ -48,6 +48,7 @@ with tempfile.TemporaryDirectory(prefix="studio-project-editor-") as home:
             page.goto(url)
             expect(page.locator('#nav [data-view="messages"]')).to_have_text("对话", timeout=5000)
             page.get_by_role("button", name="能力与沙箱", exact=True).click()
+            expect(page.get_by_role("button", name="项目管理", exact=True)).to_be_visible()
 
             current = page.request.get(url + "/api/config").json()
             current["value"]["roleRouting"] = {"roles": {"plan": {"primary": "codex"}, "execute": {"primary": "codex"}}}
@@ -69,6 +70,18 @@ with tempfile.TemporaryDirectory(prefix="studio-project-editor-") as home:
             release_profile.touch()
             page.get_by_role("button", name="查看inventory", exact=True).click()
             expect(page.get_by_text("库存管理", exact=True)).to_be_visible()
+            tags = page.get_by_role("textbox", name="项目识别标签")
+            tags.fill("盘点")
+            tags.press("Enter")
+            page.get_by_role("button", name="删除标签 库存管理", exact=True).click()
+            save = page.get_by_role("button", name="保存项目", exact=True)
+            save.click()
+            expect(save).to_be_disabled()
+            expect(page.get_by_text("盘点", exact=True)).to_be_visible()
+            expect(page.get_by_text("库存管理", exact=True)).to_have_count(0)
+            page.get_by_role("button", name="更新画像").click()
+            expect(page.get_by_text("项目画像已更新", exact=True)).to_be_visible()
+            assert page.request.get(pending_profile).json()["tags"] == ["盘点"]
             storage_url = url + "/api/projects/inventory/storage"
             storage = page.request.get(storage_url).json()
             assert storage["workspaceBytes"] == (folder / "README.md").stat().st_size
@@ -80,6 +93,7 @@ with tempfile.TemporaryDirectory(prefix="studio-project-editor-") as home:
             clear_dialog.get_by_text("确认清空", exact=True).click()
             expect(clear_dialog).not_to_be_visible()
             expect(page.get_by_text("库存管理", exact=True)).not_to_be_visible()
+            expect(page.get_by_text("盘点", exact=True)).to_be_visible()
             assert page.request.get(storage_url).json()["profileBytes"] == 0
             assert (folder / "README.md").read_text(encoding="utf-8") == "# Inventory"
             page.get_by_role("button", name="返回项目", exact=True).click()
@@ -87,9 +101,12 @@ with tempfile.TemporaryDirectory(prefix="studio-project-editor-") as home:
             def open_orders():
                 page.get_by_role("button", name="查看订单服务 · 演示", exact=True).click()
                 expect(page.get_by_role("heading", name="订单服务 · 演示", exact=True)).to_be_visible()
-                expect(page.get_by_text("演示订单问题的排查、人工决定和复查。", exact=True)).to_be_visible()
+                expect(page.get_by_role("heading", name="项目画像")).to_be_visible()
                 expect(page.locator('input[name="cwd"]')).to_be_visible()
-                expect(page.get_by_role("button", name="添加流程", exact=True)).to_be_visible()
+                expect(page.get_by_role("button", name="添加流程", exact=True)).to_have_count(0)
+                expect(page.get_by_text("谁来执行", exact=True)).to_have_count(0)
+                expect(page.get_by_role("switch", name="继续同一话题的上下文")).to_have_count(0)
+                expect(page.locator('input[name="aliases"]')).to_have_count(0)
                 expect(page.get_by_text("更多项目资料", exact=True)).to_have_count(0)
 
             def issue_settings():
@@ -106,11 +123,9 @@ with tempfile.TemporaryDirectory(prefix="studio-project-editor-") as home:
             expect(repo).to_be_visible()
             expect(page.get_by_role("switch", name="开源项目", exact=True)).to_have_count(0)
             expect(custom).not_to_be_visible()
-            page.locator('input[name="aliases"]').fill("库存, 订单")
             page.locator('input[name="parallel"]').fill("2")
             page.get_by_role("combobox", name="项目权限").click()
             page.get_by_role("option", name="工作区编辑").click()
-            page.get_by_role("switch", name="继续同一话题的上下文").click()
             auto.click()
             expect(page.get_by_role("radio", name="从今天起")).to_be_checked()
             expect(start_time).not_to_be_visible()
@@ -131,7 +146,7 @@ with tempfile.TemporaryDirectory(prefix="studio-project-editor-") as home:
             saved = page.request.get(url + "/api/config").json()["value"]
             orders = next(project for project in saved["projects"] if project["id"] == "orders")
             rule = next(rule for rule in saved["rules"]["rules"] if rule["name"] == orders["rule"])
-            assert orders["aliases"] == ["库存", "订单"] and rule["parallel"] == 2 and rule["resume"] is False
+            assert rule["parallel"] == 2 and rule["resume"] is True
             assert rule["access"] == "edit"
 
             page.get_by_role("button", name="返回项目", exact=True).click()

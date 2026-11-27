@@ -1,0 +1,212 @@
+<div id="ajinos-executor-redesign">
+  <style>
+    #ajinos-executor-redesign {
+      color-scheme: inherit;
+      --studio-bg: light-dark(#f7f8fc,#191d29);
+      --studio-panel: light-dark(#fff,#202534);
+      --studio-input: light-dark(#f0f3fa,#252c40);
+      --studio-text: light-dark(#1c2537,#edf1fb);
+      --studio-muted: light-dark(#4f5e77,#aebbd2);
+      --studio-line: light-dark(#dae1ec,#343d53);
+      --studio-accent: light-dark(#254fac,#a5c3ff);
+      --studio-action: light-dark(#2756bd,#89afff);
+      --studio-action-text: light-dark(#fff,#111b30);
+      font: 14px/1.5 "Inter", "Microsoft YaHei", sans-serif;
+      color: var(--studio-text);
+      background: var(--studio-bg);
+      border: 1px solid var(--studio-line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    #ajinos-executor-redesign * { box-sizing: border-box; }
+    #ajinos-executor-redesign [hidden] { display: none !important; }
+    #ajinos-executor-redesign h2, #ajinos-executor-redesign h3, #ajinos-executor-redesign p { margin: 0; color: inherit; }
+    #ajinos-executor-redesign button, #ajinos-executor-redesign select, #ajinos-executor-redesign input { font: inherit; }
+    #ajinos-executor-redesign button { color: inherit; }
+    #ajinos-executor-redesign .studio-bar { padding: 12px 22px; background: var(--studio-panel); border-bottom: 1px solid var(--studio-line); }
+    #ajinos-executor-redesign .studio-shell { display: grid; grid-template-columns: 158px minmax(0,1fr); }
+    #ajinos-executor-redesign .studio-nav { padding: 18px 10px; border-right: 1px solid var(--studio-line); }
+    #ajinos-executor-redesign .studio-nav span { display: block; padding: 9px 11px; color: var(--studio-muted); }
+    #ajinos-executor-redesign .studio-nav [aria-current] { color: var(--studio-accent); background: var(--studio-input); border-radius: 7px; }
+    #ajinos-executor-redesign .studio-main { padding: clamp(14px,3vw,28px); min-width: 0; }
+    #ajinos-executor-redesign .studio-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    #ajinos-executor-redesign .studio-head h2 { font-size: 23px; font-weight: 650; }
+    #ajinos-executor-redesign .studio-add { background: var(--studio-action); color: var(--studio-action-text); border: 0; border-radius: 7px; padding: 7px 12px; }
+    #ajinos-executor-redesign .studio-tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--studio-line); margin: 10px 0 14px; }
+    #ajinos-executor-redesign .studio-tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 0; color: var(--studio-muted); }
+    #ajinos-executor-redesign .studio-tabs [aria-selected="true"] { color: var(--studio-accent); border-color: currentColor; }
+    #ajinos-executor-redesign .studio-section { margin: 17px 0 5px; font-size: 13px; font-weight: 650; }
+    #ajinos-executor-redesign .studio-list { border: 1px solid var(--studio-line); background: var(--studio-panel); border-radius: 9px; }
+    #ajinos-executor-redesign .studio-list > :not(:first-child) { border-top: 1px solid var(--studio-line); }
+    #ajinos-executor-redesign .studio-record { margin: 0; }
+    #ajinos-executor-redesign .studio-record summary { display: grid; grid-template-columns: minmax(0,1.05fr) minmax(0,1.3fr) minmax(0,.85fr); align-items: center; gap: 10px; padding: 10px 12px; list-style: none; }
+    #ajinos-executor-redesign .studio-record summary::-webkit-details-marker { display: none; }
+    #ajinos-executor-redesign .studio-record summary > * { overflow-wrap: anywhere; }
+    #ajinos-executor-redesign .studio-record strong { font-weight: 600; }
+    #ajinos-executor-redesign .studio-record[open] summary { background: var(--studio-input); }
+    #ajinos-executor-redesign .studio-secondary { color: var(--studio-muted); font-size: 12px; }
+    #ajinos-executor-redesign .studio-ref { color: var(--studio-accent); font-size: 12px; text-align: right; }
+    #ajinos-executor-redesign .studio-detail { margin: 0; padding: 10px 12px; color: var(--studio-muted); font-size: 12px; }
+    #ajinos-executor-redesign .studio-detail-actions { display: flex; gap: 8px; padding: 0 12px 12px; }
+    #ajinos-executor-redesign .studio-route { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.45fr); gap: 12px; padding: 12px; align-items: center; }
+    #ajinos-executor-redesign .studio-route strong, #ajinos-executor-redesign .studio-route .studio-secondary { display: block; }
+    #ajinos-executor-redesign .studio-route-values { display: grid; grid-template-columns: 30px minmax(0,1fr); gap: 2px 10px; margin: 0; font-size: 13px; }
+    #ajinos-executor-redesign .studio-route-values dd { margin: 0; overflow-wrap: anywhere; }
+    #ajinos-executor-redesign .studio-after { margin-top: 12px; }
+    #ajinos-executor-redesign .studio-draft { margin: 10px 0; padding: 12px; background: var(--studio-panel); border: 1px solid var(--studio-line); border-radius: 9px; }
+    #ajinos-executor-redesign .studio-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; margin-top: 10px; }
+    #ajinos-executor-redesign .studio-fields label { display: grid; gap: 4px; }
+    #ajinos-executor-redesign .studio-fields input, #ajinos-executor-redesign .studio-fields select { width: 100%; color: var(--studio-text); background: var(--studio-input); border: 1px solid var(--studio-line); border-radius: 6px; padding: 6px 8px; }
+    #ajinos-executor-redesign .studio-quiet { border: 1px solid var(--studio-line); background: transparent; border-radius: 6px; padding: 4px 9px; }
+    @media (max-width: 620px) {
+      #ajinos-executor-redesign .studio-shell { grid-template-columns: minmax(0,1fr); }
+      #ajinos-executor-redesign .studio-nav { display: none; }
+    }
+    @media (max-width: 460px) {
+      #ajinos-executor-redesign .studio-record summary { grid-template-columns: minmax(0,1fr) auto; gap: 2px 8px; }
+      #ajinos-executor-redesign .studio-record summary > .studio-secondary { grid-row: 2; }
+      #ajinos-executor-redesign .studio-ref { grid-column: 2; grid-row: 1 / 3; }
+      #ajinos-executor-redesign .studio-route { grid-template-columns: minmax(0,1fr); gap: 5px; }
+    }
+  </style>
+  <header class="studio-bar">能力与沙箱</header>
+  <div class="studio-shell">
+    <nav class="studio-nav" aria-label="能力与沙箱">
+      <span>项目领地（沙箱）</span>
+      <span aria-current="page">执行器</span>
+      <span>规则与定时</span>
+      <span>来源与通知</span>
+      <span>运行环境与引擎</span>
+    </nav>
+    <div class="studio-main">
+      <div class="studio-head">
+        <h2>执行器</h2>
+        <button type="button" class="studio-add" aria-controls="studio-add-executor" aria-expanded="false">＋ 添加执行器</button>
+      </div>
+      <div class="studio-tabs" aria-label="执行器设置" role="tablist">
+        <button id="studio-list-tab" type="button" role="tab" aria-selected="true" aria-controls="studio-executor-list">执行器列表</button>
+        <button id="studio-route-tab" type="button" role="tab" aria-selected="false" aria-controls="studio-executor-routing">分派设置</button>
+      </div>
+      <section id="studio-add-executor" class="studio-draft" aria-label="添加执行器示例" hidden>
+        <div class="studio-head"><strong id="studio-editor-heading">添加执行器 · 示例</strong><button type="button" class="studio-quiet" data-close>关闭</button></div>
+        <div class="studio-fields">
+          <label>程序类型<select id="studio-executor-program"><option>Claude Code</option><option>Codex</option><option>Antigravity</option><option>普通命令</option></select></label>
+          <label>显示名称<input id="studio-executor-name" type="text" placeholder="例如 Claude Code · DeepSeek"></label>
+          <label data-model-field>模型<input id="studio-executor-model" type="text" placeholder="留空沿用 CLI 默认"></label>
+          <label data-model-field>权限上限<select><option>允许编辑</option><option>只读</option><option>完整权限</option></select></label>
+        </div>
+      </section>
+      <section id="studio-executor-list" role="tabpanel" aria-labelledby="studio-list-tab">
+        <h3 class="studio-section">模型执行器</h3>
+        <div class="studio-list">
+          <details class="studio-record">
+            <summary><strong>Claude Code</strong><span class="studio-secondary">deepseek-v4.1-flash-1017[1M]</span><span class="studio-ref">执行 · 首选</span></summary>
+            <dl class="studio-detail"><dt>引用示例</dt><dd>分派设置 → 执行首选</dd><dt>程序类型</dt><dd>Claude Code</dd></dl>
+            <div class="studio-detail-actions"><button type="button" class="studio-quiet" data-edit="编辑">编辑</button><button type="button" class="studio-quiet" data-edit="复制">复制配置</button></div>
+          </details>
+          <details class="studio-record">
+            <summary><strong>飞书项目 CC · DeepSeek</strong><span class="studio-secondary">deepseek-v4.1-flash-1017[1M]</span><span class="studio-ref">查看引用</span></summary>
+            <dl class="studio-detail"><dt>程序类型</dt><dd>feishu-claude</dd></dl>
+          </details>
+          <details class="studio-record">
+            <summary><strong>飞书群 CC · 群成员</strong><span class="studio-secondary">deepseek-v4.1-flash-1017[1M]</span><span class="studio-ref">查看引用</span></summary>
+            <dl class="studio-detail"><dt>程序类型</dt><dd>feishu-claude</dd></dl>
+          </details>
+          <details class="studio-record">
+            <summary><strong>Antigravity · 本机</strong><span class="studio-secondary">CLI 默认模型</span><span class="studio-ref">规划 · 首选</span></summary>
+            <dl class="studio-detail"><dt>引用示例</dt><dd>分派设置 → 规划首选</dd><dt>程序类型</dt><dd>Antigravity（ACP）</dd></dl>
+          </details>
+        </div>
+        <h3 class="studio-section">命令执行器</h3>
+        <div class="studio-list">
+          <details class="studio-record">
+            <summary><strong>飞书项目选择</strong><span class="studio-secondary">普通命令</span><span class="studio-ref">查看引用</span></summary>
+            <dl class="studio-detail"><dt>详情字段</dt><dd>启动命令、接单程序、超时与引用规则</dd></dl>
+          </details>
+          <details class="studio-record">
+            <summary><strong>巡检 AJinOS Issue</strong><span class="studio-secondary">普通命令</span><span class="studio-ref">查看引用</span></summary>
+            <dl class="studio-detail"><dt>详情字段</dt><dd>启动命令、接单程序、超时与引用规则</dd></dl>
+          </details>
+        </div>
+      </section>
+      <section id="studio-executor-routing" role="tabpanel" aria-labelledby="studio-route-tab" hidden>
+        <h3 class="studio-section">默认分工 · 示例</h3>
+        <div class="studio-list">
+          <div class="studio-route">
+            <div><strong>规划</strong><span class="studio-secondary">项目识别、需求确认、画像</span></div>
+            <dl class="studio-route-values"><dt>首选</dt><dd>Antigravity · 本机</dd><dt>备选</dt><dd>Claude Code</dd></dl>
+          </div>
+          <div class="studio-route">
+            <div><strong>执行</strong><span class="studio-secondary">接手业务任务</span></div>
+            <dl class="studio-route-values"><dt>首选</dt><dd>Claude Code</dd><dt>备选</dt><dd>Antigravity · 本机</dd></dl>
+          </div>
+          <div class="studio-route">
+            <div><strong>校验</strong><span class="studio-secondary">只读复核任务结果</span></div>
+            <dl class="studio-route-values"><dt>首选</dt><dd>Antigravity · 本机</dd><dt>备选</dt><dd>未设置</dd></dl>
+          </div>
+        </div>
+        <details class="studio-after studio-record studio-list">
+          <summary><strong>分派例外</strong><span class="studio-secondary">项目固定 · 任务分档</span><span class="studio-ref">展开</span></summary>
+          <p class="studio-detail">按项目和流程查看生效执行器、配置来源与生效原因。项目固定配置在对应项目里编辑。</p>
+        </details>
+      </section>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById("ajinos-executor-redesign");
+      const tabs = [...root.querySelectorAll("[role=tab]")];
+      const add = root.querySelector(".studio-add");
+      const draft = root.querySelector(".studio-draft");
+      const heading = root.querySelector("#studio-editor-heading");
+      const program = root.querySelector("#studio-executor-program");
+      const name = root.querySelector("#studio-executor-name");
+      const model = root.querySelector("#studio-executor-model");
+      let previousControl = add;
+      function showModelFields() {
+        for (const field of draft.querySelectorAll("[data-model-field]")) field.hidden = program.value === "普通命令";
+      }
+      function showDraft(open, control = add) {
+        draft.hidden = !open;
+        add.setAttribute("aria-expanded", String(open));
+        if (!open) {
+          previousControl.focus();
+          return;
+        }
+        previousControl = control;
+        const mode = control.dataset.edit || "添加";
+        heading.textContent = `${mode}执行器 · 示例`;
+        program.selectedIndex = 0;
+        program.disabled = mode === "编辑";
+        name.value = mode === "添加" ? "" : mode === "复制" ? "Claude Code · 副本" : "Claude Code";
+        model.value = mode === "添加" ? "" : "deepseek-v4.1-flash-1017[1M]";
+        showModelFields();
+        (program.disabled ? name : program).focus();
+      }
+      function selectTab(selected) {
+        for (const tab of tabs) {
+          const active = tab === selected;
+          tab.setAttribute("aria-selected", String(active));
+          document.getElementById(tab.getAttribute("aria-controls")).hidden = !active;
+        }
+        draft.hidden = true;
+        add.setAttribute("aria-expanded", "false");
+        add.hidden = selected !== tabs[0];
+      }
+      for (const tab of tabs) {
+        tab.addEventListener("click", () => selectTab(tab));
+        tab.addEventListener("keydown", (event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          const selected = event.key === "Home" ? tabs[0] : event.key === "End" ? tabs.at(-1) : tabs.find((item) => item !== tab);
+          event.preventDefault();
+          selectTab(selected);
+          selected.focus();
+        });
+      }
+      add.addEventListener("click", () => showDraft(draft.hidden));
+      draft.querySelector("[data-close]").addEventListener("click", () => showDraft(false));
+      program.addEventListener("change", showModelFields);
+      for (const control of root.querySelectorAll("[data-edit]")) control.addEventListener("click", () => showDraft(true, control));
+    })();
+  </script>
+</div>

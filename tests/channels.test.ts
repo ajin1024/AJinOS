@@ -7,6 +7,8 @@
 // version before the answer; an open one is sent again with buttons that don't count.
 // A slow CLI call must not block the hub's HTTP loop while looking up a user, sending or updating a card.
 // A U+2028 or U+2029 in what someone typed, which JSON leaves as it is, cuts the click's line and loses the click.
+// A closeable result card must offer the close button and a word-only channel its link; ordinary notices must not, and a
+// click on that button must close the ticket it names.
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -22,6 +24,25 @@ import type { Card } from "../host/channels.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "agent-autoloop-channels-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
+
+/** Shell fixtures run on Unix only; the Windows-runnable cases use `fakeLark` below. */
+const shellTest = process.platform === "win32" ? test.skip : test;
+
+/**
+ * A stand-in for lark-cli written in Node. Windows' CreateProcess can't run a shebang file, so Windows gets a .cmd shim
+ * whose node entry host/command.ts reads directly; Unix gets the shebang. The script body is the same either way.
+ */
+function fakeLark(name: string, source: string) {
+  writeFileSync(join(dir, `${name}.mjs`), source);
+  if (process.platform !== "win32") {
+    const file = join(dir, name);
+    writeFileSync(file, `#!${process.execPath}\n${source}`, { mode: 0o755 });
+    return file;
+  }
+  const file = join(dir, `${name}.cmd`);
+  writeFileSync(file, `@echo off\r\n"${process.execPath}" "%~dp0\\${name}.mjs" %*\r\n`);
+  return file;
+}
 
 const base: Card = {
   id: 5,
@@ -75,11 +96,9 @@ test("feishu CLI calls leave the HTTP loop available", async () => {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const lark = join(dir, "async-lark");
-  writeFileSync(
-    lark,
-    `#!${process.execPath}
-if (process.argv[2] === 'event') { setInterval(() => {}, 1000); }
+  const lark = fakeLark(
+    "async-lark",
+    `if (process.argv[2] === 'event') { setInterval(() => {}, 1000); }
 else {
   (async () => {
     if (process.argv[2] !== 'auth') for await (const chunk of process.stdin) {}
@@ -88,7 +107,6 @@ else {
   })().catch(() => process.exit(1));
 }
 `,
-    { mode: 0o755 },
   );
   const stop = new AbortController();
   const cards = [base, { ...base, version: 2, ref: "om_5" }];
@@ -134,7 +152,7 @@ test("feishu: a lark-cli that can't be started is said, not left to take the hub
   assert.match(lines[0] ?? "", /ENOENT/);
 });
 
-test("feishu: sends once per card, updates in place, reports failure, and only real clicks count", async () => {
+shellTest("feishu: sends once per card, updates in place, reports failure, and only real clicks count", async () => {
   const log = join(dir, "lark.log");
   const lark = join(dir, "lark-cli");
   // A stand-in for lark-cli: records each call; `event consume` prints two clicks and waits to be stopped.
@@ -215,7 +233,7 @@ esac
   );
 });
 
-test("feishu: U+2028 and U+2029 in a handling note don't lose the click", async () => {
+shellTest("feishu: U+2028 and U+2029 in a handling note don't lose the click", async () => {
   const lark = join(dir, "lark-cli-separators");
   writeFileSync(
     lark,
@@ -250,7 +268,7 @@ esac
   assert.deepEqual(answers, [[8, { choice: 0, by: "ou_me", ref: "om_8", text: "第一行 第二行 第三行" }]]);
 });
 
-test("feishu: a form submit carries the handling note, and the button's name finds its card", async () => {
+shellTest("feishu: a form submit carries the handling note, and the button's name finds its card", async () => {
   const log = join(dir, "lark-note.log");
   const lark = join(dir, "lark-cli-note");
   // A form submit has an empty action_value: the card's number is in the button's name, the note in form_value.
@@ -437,7 +455,7 @@ esac
   return { lines: readFileSync(log, "utf8").trim().split("\n"), calls };
 }
 
-test("feishu: a settled card that can't be updated is sent again, once for each version", async () => {
+shellTest("feishu: a settled card that can't be updated is sent again, once for each version", async () => {
   // Failure this guards: the bot didn't send the message being updated, so Feishu refuses and the update is dropped once the
   // tries run out. The reader is then stuck looking at the version before the answer.
   const { lines, calls } = await refusedUpdates([{ ...base, version: 2, ref: "om_old", state: "decided", choice: 1 }]);
@@ -451,15 +469,214 @@ test("feishu: a settled card that can't be updated is sent again, once for each 
   assert.deepEqual(calls, [["delivered", 5, 2, "om_old"]], "the hub goes on knowing the message it first heard of");
 });
 
-test("feishu: an open card that can't be updated isn't sent again, and a first message is keyed by the card alone", async () => {
-  // Failure this guards: the hub only counts answers on the first message, so buttons on a second one would do nothing; a
-  // first message keyed by its version comes twice when a report is lost and the card has moved on.
-  const open = await refusedUpdates([{ ...base, version: 2, ref: "om_old" }]);
-  assert.equal(open.lines.filter((l) => l.includes("+messages-send")).length, 0);
-  assert.deepEqual(open.calls, [["failed", 5, 2]], "it's tried again later");
+const readyTicket: NonNullable<Card["ticketState"]> = {
+  id: 7,
+  number: "T-000123",
+  state: "open",
+  status: "ready_for_acceptance",
+  resolution: "completed",
+  outcome: null,
+  closedAt: null,
+  closedNote: null,
+  closeable: true,
+};
+const resultCard: Card = {
+  ...base,
+  kind: "notice",
+  state: "closed",
+  options: [],
+  ticket: "T-000123",
+  ticketState: readyTicket,
+};
 
-  const first = await refusedUpdates([{ ...base, version: 3, ref: null }]);
-  const [send] = first.lines.filter((l) => l.includes("+messages-send"));
-  assert.ok(send.includes("--idempotency-key agent-autoloop-card-5 "), send);
-  assert.deepEqual(first.calls, [["delivered", 5, 3, "om_new"]]);
+test("feishu: a closeable result card carries a close button, and a closed one says how to reopen", () => {
+  const ready = render(resultCard);
+  assert.equal(ready.header.template, "turquoise");
+  const words = JSON.stringify(ready.body.elements);
+  assert.match(words, /"tag":"hr"/);
+  assert.match(words, /任务已完成，确认无误后点下方按钮一键关闭/);
+  assert.match(words, /"content":"一键关闭任务"/);
+  assert.match(words, /"value":\{"card":5,"action":"close_ticket"\}/);
+
+  const unnecessary = render({
+    ...resultCard,
+    ticketState: { ...readyTicket, resolution: "unnecessary" },
+  });
+  assert.match(JSON.stringify(unnecessary.body.elements), /已核实无需处理/);
+
+  const closed = render({
+    ...resultCard,
+    ticketState: { ...readyTicket, state: "closed", status: "closed", outcome: "completed", closeable: false },
+  });
+  assert.equal(closed.header.template, "green");
+  assert.match(JSON.stringify(closed.body.elements), /✅ 任务已关闭（T-000123 · 已完成）/);
+  assert.doesNotMatch(JSON.stringify(closed.body.elements), /callback|一键关闭任务/);
+
+  const continued = render({
+    ...resultCard,
+    version: 2,
+    ticketState: { ...readyTicket, closeable: false },
+  });
+  assert.equal(continued.header.template, "grey");
+  assert.match(JSON.stringify(continued.body.elements), /🔄 任务已继续处理（T-000123）/);
+  assert.doesNotMatch(JSON.stringify(continued.body.elements), /callback/);
+
+  const plain = render({ ...base, kind: "notice", state: "closed", options: [], version: 2 });
+  assert.equal(plain.header.template, "grey");
+  assert.doesNotMatch(JSON.stringify(plain.body.elements), /callback|一键关闭任务|🔄|✅/);
+
+  // A settled ordinary notice never draws the ticket footer, even if a caller hands it a ticket state.
+  const ordinaryClosed = render({
+    ...base,
+    kind: "notice",
+    state: "closed",
+    options: [],
+    version: 2,
+    result: "工单 T-000123 已关闭",
+    ticket: "T-000123",
+    ticketState: { ...readyTicket, state: "closed", status: "closed", outcome: "completed", closeable: false },
+  });
+  assert.equal(ordinaryClosed.header.template, "grey");
+  assert.doesNotMatch(JSON.stringify(ordinaryClosed.body.elements), /callback|一键关闭任务|🔄|✅/);
 });
+
+test("feishu: a closeable result card that can't be updated is never sent again with a dead button", async () => {
+  // Failure this guards: the close button on a new message points at a ref the hub never registered, so pressing it is refused.
+  const log = join(dir, "lark-closeable.log");
+  rmSync(log, { force: true });
+  const lark = fakeLark(
+    "lark-closeable",
+    `import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(log)}, args.join(" ") + "\\n");
+if (args[0] === "event") {
+  setInterval(() => {}, 1000);
+} else if (args.includes("patch")) {
+  for await (const _ of process.stdin) {}
+  process.exit(1);
+} else {
+  (async () => {
+    if (args[0] !== "auth") for await (const _ of process.stdin) {}
+    console.log(JSON.stringify({ ok: true, data: { message_id: "om_new" } }));
+  })().catch(() => process.exit(1));
+}
+`,
+  );
+  const stop = new AbortController();
+  const calls: unknown[][] = [];
+  let delivered = 0;
+  let served = false;
+  const hub = {
+    async nextCard() {
+      if (!served) {
+        served = true;
+        return { card: { ...resultCard, version: 2, ref: "om_old" } };
+      }
+      stop.abort();
+      return { card: null };
+    },
+    async delivered() {
+      delivered++;
+    },
+    async failed(...args: unknown[]) {
+      calls.push(args);
+    },
+  };
+  await feishu({ hub: hub as any, options: { user: "ou_me", lark }, log: () => {}, signal: stop.signal });
+  const lines = readFileSync(log, "utf8");
+  assert.match(lines, /messages patch --message-id om_old/, "the message that was sent is tried first");
+  assert.doesNotMatch(lines, /messages-send/, "no fresh card with a button the hub never registered");
+  assert.equal(delivered, 0);
+  assert.deepEqual(
+    calls.map((call) => call.slice(0, 2)),
+    [[5, 2]],
+  );
+});
+
+test("feishu: a click on the close button closes the ticket it names", async () => {
+  const lark = fakeLark(
+    "lark-cli-close",
+    `const args = process.argv.slice(2);
+if (args[0] === "event") {
+  console.log(JSON.stringify({ action_value: JSON.stringify({ card: 9, action: "close_ticket" }), operator_id: "ou_me", message_id: "om_9" }));
+  setInterval(() => {}, 1000);
+} else {
+  (async () => {
+    if (args[0] !== "auth") for await (const _ of process.stdin) {}
+    console.log(JSON.stringify({ ok: true, data: { message_id: "om_9" } }));
+  })().catch(() => process.exit(1));
+}
+`,
+  );
+  const stop = new AbortController();
+  const calls: unknown[][] = [];
+  let closed = () => {};
+  const clicked = new Promise<void>((resolve) => (closed = resolve));
+  const hub = {
+    async nextCard() {
+      await Promise.race([clicked, new Promise((resolve) => setTimeout(resolve, 5_000))]);
+      stop.abort();
+      return { card: null };
+    },
+    async closeTicketFromCard(...args: unknown[]) {
+      calls.push(args);
+      closed();
+      return { changed: true };
+    },
+  };
+  await feishu({ hub: hub as any, options: { user: "ou_me", lark }, log: () => {}, signal: stop.signal });
+  assert.deepEqual(calls, [[9, { by: "ou_me", ref: "om_9" }]]);
+});
+
+test("a webhook channel offers the close link on a closeable result card", async () => {
+  const seen: any[] = [];
+  const target = createServer((req, res) => {
+    let text = "";
+    req.on("data", (chunk) => (text += chunk));
+    req.on("end", () => {
+      seen.push(JSON.parse(text));
+      res.end(JSON.stringify({ errcode: 0 }));
+    });
+  });
+  await new Promise<void>((resolve) => target.listen(0, "127.0.0.1", resolve));
+  const stop = new AbortController();
+  const cards: Card[] = [resultCard];
+  const hub = {
+    async nextCard() {
+      const card = cards.shift();
+      if (!card) stop.abort();
+      return { card: card ?? null };
+    },
+    async delivered() {
+      return {};
+    },
+    async failed() {
+      return {};
+    },
+  };
+  await webhook({
+    hub: hub as any,
+    options: { platform: "wecom", url: `http://127.0.0.1:${(target.address() as AddressInfo).port}` },
+    log: () => {},
+    signal: stop.signal,
+  });
+  target.close();
+  assert.equal(seen.length, 1);
+  assert.match(seen[0].markdown.content, /\[一键关闭任务\]\(https:\/\/hub\.test\/c\/x\)/);
+});
+
+shellTest(
+  "feishu: an open card that can't be updated isn't sent again, and a first message is keyed by the card alone",
+  async () => {
+    // Failure this guards: the hub only counts answers on the first message, so buttons on a second one would do nothing; a
+    // first message keyed by its version comes twice when a report is lost and the card has moved on.
+    const open = await refusedUpdates([{ ...base, version: 2, ref: "om_old" }]);
+    assert.equal(open.lines.filter((l) => l.includes("+messages-send")).length, 0);
+    assert.deepEqual(open.calls, [["failed", 5, 2]], "it's tried again later");
+
+    const first = await refusedUpdates([{ ...base, version: 3, ref: null }]);
+    const [send] = first.lines.filter((l) => l.includes("+messages-send"));
+    assert.ok(send.includes("--idempotency-key agent-autoloop-card-5 "), send);
+    assert.deepEqual(first.calls, [["delivered", 5, 3, "om_new"]]);
+  },
+);

@@ -10,7 +10,6 @@ import {
   Banner,
   Empty,
   Dropdown,
-  SideSheet,
   Modal,
   RadioGroup,
   Switch,
@@ -28,13 +27,14 @@ import {
 } from "@douyinfe/semi-icons";
 import {
   businessProjects,
-  flowsFor,
   normalizeGitHubRepo,
   OPEN_SOURCE_POLL_MINUTES,
   projectDisplayRules,
-  projectRuleNames,
+  projectTags,
 } from "./gateway-config.mjs";
-import { ACCESS_NAMES, agentOptionsOf } from "./studio-helpers.mjs";
+import { projectEventEntries, removeProject } from "./project-bindings.mjs";
+import { ACCESS_NAMES } from "./studio-helpers.mjs";
+import { ProjectFlow } from "./project-flow.jsx";
 
 const required = (message) => [{ required: true, whitespace: true, message }];
 const asIssueTimestamp = (date) => date.toISOString().replace(".000Z", "Z");
@@ -46,19 +46,18 @@ function localDateTime(since) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
-function ProjectEditor({ project, actions, children, overlayOpen, onEditingChange, onSave, onBack, onReset, api }) {
+function ProjectEditor({ project, eventEntries, profile, actions, overlayOpen, onEditingChange, onSave, onBack, onReset, onAnalyze, api }) {
   const formApi = useRef();
   const heading = useRef(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
+  const [tagEdits, setTagEdits] = useState(project?.tagEdits);
   const initial = useRef({
     name: project?.name || "",
     cwd: project?.cwd || "",
-    aliases: project?.aliases?.join("、") || "",
     projectAccess: project?.access || "edit",
     parallel: project?.baseRule.parallel || 1,
-    resume: Boolean(project?.baseRule.resume),
     openSourceRepo: project?.openSource?.repo || "",
     pollMinutes: project?.openSource?.pollMinutes || 5,
     maxIssues: project?.openSource?.maxIssues ?? (project?.openSource?.autoHandleIssues ? "" : 5),
@@ -111,7 +110,7 @@ function ProjectEditor({ project, actions, children, overlayOpen, onEditingChang
         else if (issueRange === "custom") issueSince = customSince;
         else issueSince = "";
       }
-      const merged = { ...initial.current, ...values, autoHandleIssues, issueMode, issueSince };
+      const merged = { ...initial.current, ...values, tagEdits, autoHandleIssues, issueMode, issueSince };
       await onSave(project?.id, merged);
       if (project) onReset();
       else onBack();
@@ -145,7 +144,18 @@ function ProjectEditor({ project, actions, children, overlayOpen, onEditingChang
       >
         <div className="ps-form-scroll">
           <div className={`ps-editor-layout${project ? " ps-editor-layout-detail" : ""}`}>
-            {children}
+            {project && (
+              <ProjectOverview
+                project={project}
+                profile={profile}
+                tagEdits={tagEdits}
+                onTagsChange={(edits) => {
+                  setTagEdits(edits);
+                  setDirty(true);
+                }}
+                onAnalyze={onAnalyze}
+              />
+            )}
             <section className="ps-editor-card" aria-labelledby="ps-project-basics">
               <h3 id="ps-project-basics">
                 <IconFolder aria-hidden="true" /> {project ? "项目资料" : "选择工作目录"}
@@ -182,17 +192,23 @@ function ProjectEditor({ project, actions, children, overlayOpen, onEditingChang
                 <>
                   <ProjectStorage project={project} api={api} />
                   <Form.Input field="name" name="name" label="项目名称" rules={required("请输入项目名称")} />
-                  <Form.Input
-                    field="aliases"
-                    name="aliases"
-                    label="识别别名（选填）"
-                    placeholder="用逗号或顿号分隔，方便从消息识别项目"
-                  />
                 </>
               ) : (
-                <p className="ps-editor-help">项目名称取自文件夹。添加后会在后台读取项目资料，生成简介和标签。</p>
+                <p className="ps-editor-help">项目名称取自文件夹。添加后会自动生成用于识别项目的标签。</p>
               )}
             </section>
+
+            {project && eventEntries.length > 0 && (
+              <section className="ps-editor-card" aria-labelledby="ps-project-event-entries">
+                <h3 id="ps-project-event-entries">事件入口</h3>
+                <ul>
+                  {eventEntries.map(({ rule, attached }) => (
+                    <li key={rule.name}>{rule.name} · {rule.when.source}{attached ? "" : " · 目录相同，尚未绑定"}</li>
+                  ))}
+                </ul>
+                <a href="#settings/rules">管理事件规则</a>
+              </section>
+            )}
 
             {project && (
               <section className="ps-editor-card" aria-labelledby="ps-project-github">
@@ -355,97 +371,6 @@ function ProjectEditor({ project, actions, children, overlayOpen, onEditingChang
   );
 }
 
-function FlowDrawer({ project, config, onSaveConfig, onClose }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const base = config.rules.rules.find((r) => r.name === project?.rule);
-  const agentOptions = agentOptionsOf(config).filter((a) => !a.value.startsWith("studio-"));
-
-  async function submit(v) {
-    setBusy(true);
-    setError("");
-    try {
-      const next = structuredClone(config);
-      const target = next.projects.find((p) => p.id === project.id);
-      const flow = {
-        id: v.id.trim(),
-        name: v.name.trim(),
-        description: (v.description || "").trim(),
-        rule: `${project.name} · ${v.name.trim()}`,
-      };
-      if (next.rules.rules.some((r) => r.name === flow.rule)) throw new Error("流程名称已存在");
-      target.flows = [...(target.flows || []), flow];
-      next.rules.rules.push({
-        ...base,
-        name: flow.rule,
-        to: v.agent,
-        when: { source: "local", types: [`project.${project.id}.flow.${flow.id}`] },
-        prompt: v.prompt || "",
-      });
-      await onSaveConfig(next);
-      onClose();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <SideSheet
-      title={project ? `添加流程 · ${project.name}` : "添加项目流程"}
-      visible={!!project}
-      onCancel={() => !busy && onClose()}
-      width={460}
-      motion={false}
-      closeOnEsc={!busy}
-      maskClosable={!busy}
-    >
-      {project && (
-        <Form
-          initValues={{ id: "", name: "", description: "", agent: base?.to || agentOptions[0]?.value, prompt: "" }}
-          onSubmit={submit}
-          className="sc-sheet-form"
-        >
-          <div className="sc-sheet-body">
-            <p className="sc-muted">流程固定工作目录和允许执行的指令，网关只在已登记流程中选择。</p>
-            {error && <Banner type="danger" description={error} closeIcon={null} />}
-            <Form.Input
-              field="id"
-              name="id"
-              label="流程编号"
-              placeholder="例如：audit"
-              extraText="小写字母、数字、短横线，最多 16 个字符"
-              rules={[
-                ...required("请输入流程编号"),
-                { pattern: /^[a-z0-9][a-z0-9-]{0,15}$/, message: "小写字母、数字或短横线，最多 16 个字符" },
-              ]}
-            />
-            <Form.Input field="name" name="name" label="流程名称" placeholder="例如：核查" rules={required("请输入流程名称")} />
-            <Form.TextArea field="description" name="description" label="什么时候使用" rows={2} placeholder="描述适用场景，帮助网关识别" />
-            <Form.Select
-              field="agent"
-              label="执行连接"
-              optionList={agentOptions}
-              style={{ width: "100%" }}
-              rules={required("请选择执行连接")}
-            />
-            <Form.TextArea field="prompt" name="prompt" label="处理要求" rows={4} placeholder="交给执行器的任务指令" />
-          </div>
-          <div className="sc-sheet-footer">
-            <Button disabled={busy} onClick={onClose}>
-              取消
-            </Button>
-            <Button theme="solid" htmlType="submit" loading={busy}>
-              保存流程
-            </Button>
-          </div>
-        </Form>
-      )}
-    </SideSheet>
-  );
-}
-
 function ProjectStatus({ project }) {
   return (
     <span className={`ps-status${project.running ? " is-running" : ""}`}>
@@ -557,9 +482,31 @@ function ProjectStorage({ project, api }) {
   );
 }
 
-function ProjectOverview({ project, profile, onAddFlow, onAnalyze, onOpenExecutors }) {
+function ProjectOverview({ project, profile, tagEdits, onTagsChange, onAnalyze }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [draft, setDraft] = useState("");
+  const edits = tagEdits || { added: [], removed: [] };
+  const tags = projectTags({ ...project, tagEdits: edits }, profile?.tags);
+  const tag = draft.trim();
+  const matches = (first, second) => first.trim().toLocaleLowerCase() === second.trim().toLocaleLowerCase();
+  const canAdd = tag && !tags.some((value) => matches(value, tag));
+
+  function addTag() {
+    if (!canAdd) return;
+    onTagsChange({
+      added: [...edits.added, tag],
+      removed: edits.removed.filter((value) => !matches(value, tag)),
+    });
+    setDraft("");
+  }
+
+  function removeTag(tag) {
+    onTagsChange({
+      added: edits.added.filter((value) => !matches(value, tag)),
+      removed: [...edits.removed, tag],
+    });
+  }
 
   async function analyze() {
     setError("");
@@ -590,43 +537,41 @@ function ProjectOverview({ project, profile, onAddFlow, onAnalyze, onOpenExecuto
             {profile ? "更新画像" : "分析项目"}
           </Button>
         </div>
-        <p className="ps-description">{profile?.summary || project.description || "暂无项目画像"}</p>
-        {profile?.tags?.length > 0 && (
+        <p className="ps-description">这些标签帮助系统从消息中识别项目，可以手动添加或删除。</p>
+        {tags.length > 0 && (
           <div className="ps-tags">
-            {[...new Set(profile.tags)].map((tag) => (
-              <Tag key={tag} color="grey">
-                {tag}
-              </Tag>
+            {tags.map((tag) => (
+              <span key={tag} className="ps-tag">
+                <span>{tag}</span>
+                <button type="button" aria-label={`删除标签 ${tag}`} onClick={() => removeTag(tag)}>×</button>
+              </span>
             ))}
           </div>
         )}
-        {error && <Banner type="danger" description={error} closeIcon={null} />}
-      </section>
-      <section className="ps-editor-card" aria-labelledby="ps-project-flows">
-        <div className="ps-editor-row">
-          <h3 id="ps-project-flows">
-            <IconLayers aria-hidden="true" /> 任务流程
-          </h3>
-          <Button size="small" theme="borderless" icon={<IconPlus aria-hidden="true" />} onClick={onAddFlow}>
-            添加流程
+        <div className="ps-tag-input">
+          <Input
+            value={draft}
+            onChange={setDraft}
+            maxLength={120}
+            aria-label="项目识别标签"
+            placeholder="输入标签"
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+              event.preventDefault();
+              addTag();
+            }}
+          />
+          <Button htmlType="button" icon={<IconPlus aria-hidden="true" />} disabled={!canAdd} onClick={addTag}>
+            添加标签
           </Button>
         </div>
-        <ul className="ps-flow-list" aria-label="已配置流程">
-          {project.flows.map((flow) => (
-            <li key={flow.id}>{flow.name}</li>
-          ))}
-        </ul>
-        <div className="ps-executor-note">
-          <div className="ps-editor-row">
-            <strong>谁来执行</strong>
-            <Button size="small" theme="borderless" onClick={onOpenExecutors}>
-              执行器与模型
-            </Button>
-          </div>
-          <p className="ps-muted">
-            {project.followsGlobal ? "跟随全局配置" : project.agent?.name || "未配置"} ·
-            执行器负责实际运行任务，例如本机 Codex。
-          </p>
+        {error && <Banner type="danger" description={error} closeIcon={null} />}
+      </section>
+      <section className="ps-editor-card" aria-labelledby="ps-project-access">
+        <div className="ps-editor-row">
+          <h3 id="ps-project-access">
+            <IconLayers aria-hidden="true" /> 权限与并发
+          </h3>
         </div>
         <div className="ps-execution-fields">
           {project.service === "autoloop" ? (
@@ -653,12 +598,6 @@ function ProjectOverview({ project, profile, onAddFlow, onAnalyze, onOpenExecuto
             rules={[{ required: true, type: "integer", min: 1, message: "请输入大于 0 的整数" }]}
           />
         </div>
-        <Form.Switch
-          field="resume"
-          label="继续同一话题的上下文"
-          aria-label="继续同一话题的上下文"
-          extraText="开启后，同一话题的新消息沿用之前的执行会话。"
-        />
       </section>
     </>
   );
@@ -675,7 +614,6 @@ export function ProjectSpace({
   openNewSignal,
   detailId,
   onSelectProject,
-  onOpenExecutors,
   api,
 }) {
   const [query, setQuery] = useState("");
@@ -683,8 +621,9 @@ export function ProjectSpace({
   const [permission, setPermission] = useState("all");
   const [adding, setAdding] = useState(false);
   const [draftVersion, setDraftVersion] = useState(0);
-  const [flowProject, setFlowProject] = useState(null);
+  const [flowOpen, setFlowOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [entryDecisions, setEntryDecisions] = useState(new Map());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lastOpenNew = useRef(openNewSignal);
@@ -704,7 +643,6 @@ export function ProjectSpace({
     restoreFocus.current = null;
   }, [detailId, adding]);
 
-  const execute = config.roleRouting?.roles?.execute;
   const projects = businessProjects(config).map((p) => {
     const rule = config.rules.rules.find((r) => r.name === p.rule) || {};
     const agent = config.rules.agents[rule.to];
@@ -713,36 +651,33 @@ export function ProjectSpace({
     return {
       ...p,
       baseRule: rule,
-      agent,
       profileVersion: profiles[p.id]?.version,
-      followsGlobal:
-        p.service !== "autoloop" &&
-        p.executionMode !== "fixed" &&
-        Boolean(execute?.primary || execute?.fallback || config.executionTiers),
+      tags: profiles[p.id]?.tags ?? projectTags(p),
       running,
       access: rule.access || (agent ? agent.access || "edit" : "unset"),
-      flows: flowsFor(p),
     };
   });
   const visibleProjects = projects.filter(
     (p) =>
       (filter === "all" || p.running > 0) &&
       (permission === "all" || p.access === permission) &&
-      [p.name, p.id, p.cwd, ...(p.aliases || [])].join(" ").toLowerCase().includes(query.toLowerCase().trim()),
+      [p.name, p.id, p.cwd, ...p.tags].join(" ").toLowerCase().includes(query.toLowerCase().trim()),
   );
   const selected = projects.find((p) => p.id === detailId);
+  const affectedEntries = deleteTarget ? projectEventEntries(config, deleteTarget) : [];
+  const destinations = projects
+    .filter((p) => p.id !== deleteTarget?.id)
+    .map((p) => ({ value: `project:${p.id}`, label: `迁到 ${p.name}（${p.cwd}）` }));
 
   async function confirmDelete() {
     if (!deleteTarget) return;
     setError("");
     setBusy(true);
     try {
-      const next = structuredClone(config);
-      const p = next.projects.find((item) => item.id === deleteTarget.id);
-      next.projects = next.projects.filter((item) => item.id !== deleteTarget.id);
-      if (p) {
-        next.rules.rules = next.rules.rules.filter((r) => !projectRuleNames(next, p).includes(r.name));
-      }
+      const decisions = new Map([...entryDecisions].map(([name, value]) => [
+        name, value === "remove" ? { remove: true } : value === "keep" ? {} : { project: value.slice(8) },
+      ]));
+      const next = removeProject(config, deleteTarget.id, decisions);
       await onSaveConfig(next);
       onSelectProject(null);
       setDeleteTarget(null);
@@ -774,22 +709,26 @@ export function ProjectSpace({
                     selected.aliases,
                     selected.access,
                     selected.baseRule.parallel,
-                    selected.baseRule.resume,
+                    selected.tagEdits,
                     draftVersion,
                   ])
                 : "new"
             }
             project={selected}
+            eventEntries={selected ? projectEventEntries(config, selected) : []}
+            profile={profiles[selected?.id]}
             api={api}
-            overlayOpen={Boolean(flowProject || deleteTarget)}
+            overlayOpen={Boolean(deleteTarget || flowOpen)}
             onEditingChange={onEditingChange}
             onSave={onSaveProject}
+            onAnalyze={onAnalyzeProject}
             onBack={backToProjects}
             onReset={() => setDraftVersion((version) => version + 1)}
             actions={
               selected && (
                 <div className="ps-detail-actions">
                   <ProjectStatus project={selected} />
+                  <Button icon={<IconBranch aria-hidden="true" />} onClick={() => setFlowOpen(true)}>项目流程</Button>
                   <Dropdown
                     trigger="click"
                     position="bottomRight"
@@ -799,6 +738,7 @@ export function ProjectSpace({
                           type="danger"
                           onClick={() => {
                             setError("");
+                            setEntryDecisions(new Map());
                             setDeleteTarget(selected);
                           }}
                         >
@@ -812,17 +752,7 @@ export function ProjectSpace({
                 </div>
               )
             }
-          >
-            {selected && (
-              <ProjectOverview
-                project={selected}
-                profile={profiles[selected.id]}
-                onAddFlow={() => setFlowProject(selected)}
-                onAnalyze={onAnalyzeProject}
-                onOpenExecutors={onOpenExecutors}
-              />
-            )}
-          </ProjectEditor>
+          />
         ) : (
           <>
             <div className="ps-toolbar">
@@ -840,7 +770,7 @@ export function ProjectSpace({
                 showClear
                 value={query}
                 onChange={setQuery}
-                placeholder="搜索项目名称、目录或别名"
+                placeholder="搜索项目名称、目录或标签"
                 aria-label="搜索项目"
               />
               <span id="ps-access-filter" className="ps-sr-only">
@@ -882,10 +812,6 @@ export function ProjectSpace({
                           <IconLayers aria-hidden="true" />
                           <ProjectAccess project={project} />
                         </span>
-                        <span className="ps-flow-count">
-                          <IconBranch aria-hidden="true" />
-                          {project.flows.length} 个流程
-                        </span>
                       </span>
                     </button>
                   ))}
@@ -898,13 +824,7 @@ export function ProjectSpace({
         )}
       </div>
 
-      <FlowDrawer
-        project={flowProject}
-        config={config}
-        onSaveConfig={onSaveConfig}
-        onClose={() => setFlowProject(null)}
-      />
-
+      {selected && flowOpen && <ProjectFlow key={selected.id} config={config} project={selected} onSaveConfig={onSaveConfig} onClose={() => setFlowOpen(false)} />}
       <Modal
         title="移除项目"
         visible={!!deleteTarget}
@@ -917,12 +837,38 @@ export function ProjectSpace({
         okText="移除配置"
         cancelText="取消"
         okType="danger"
+        okButtonProps={{
+          "aria-label": "移除配置",
+          disabled: affectedEntries.some(({ rule }) => !entryDecisions.has(rule.name)),
+        }}
         confirmLoading={busy}
       >
         {error && <Banner type="danger" description={error} closeIcon={null} />}
-        <p className="sc-muted">
-          移除「{deleteTarget?.name}」及其绑定规则。历史事实和执行记录会保留；如存在关联引用会被校验阻止。
-        </p>
+        <p className="sc-muted">移除「{deleteTarget?.name}」及它的项目流程配置。</p>
+        {affectedEntries.length > 0 && (
+          <div className="ps-entry-decisions">
+            <p>请选择每个事件入口的去向。迁移后，新消息会派到目标项目的目录。</p>
+            {affectedEntries.map(({ rule, attached }) => (
+              <div key={rule.name}>
+                <strong>{rule.name}</strong>
+                <p className="sc-muted">{rule.when.source} · {rule.when.types?.join("、")} · {attached ? "已绑定" : "目录相同，尚未绑定"}</p>
+                <Select
+                  aria-label={`${rule.name} 的处理方式`}
+                  placeholder="请选择"
+                  value={entryDecisions.get(rule.name)}
+                  style={{ width: "100%" }}
+                  disabled={busy}
+                  onChange={(value) => setEntryDecisions((before) => new Map(before).set(rule.name, value))}
+                  optionList={[
+                    { value: "remove", label: "停用并移除入口" },
+                    ...destinations,
+                    ...(!attached ? [{ value: "keep", label: "保留为独立入口" }] : []),
+                  ]}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </Modal>
     </div>
   );

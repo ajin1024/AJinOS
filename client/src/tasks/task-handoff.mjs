@@ -16,7 +16,7 @@ export function flowChoicesFor(config, projectId) {
   const agents = config?.rules?.agents || {};
   return flowsFor(project).map((flow) => {
     const rule = rules.find((r) => r.name === flow.rule);
-    const agentId = rule?.to || "";
+    const agentId = flow.modelNodes?.execute || rule?.to || "";
     const agentName = agents[agentId]?.name || agentId;
     return {
       ...flow,

@@ -132,8 +132,8 @@
       <rect x="946" y="500" width="398" height="125" rx="16" class="panel"/>
       <text x="970" y="532" class="section indigo">③ 能力与沙箱</text>
       <text x="1320" y="531" class="small muted" text-anchor="end">低频配置</text>
-      <text x="970" y="559" class="small">项目领地 · 目录 / 画像 / 规则 / 权限</text>
-      <text x="970" y="582" class="small">执行器 · 规划 / 执行 / 校验及降级链</text>
+      <text x="970" y="559" class="small">项目管理 · 目录 / 画像标签 / 权限</text>
+      <text x="970" y="582" class="small">执行器 · 项目流程节点引用配置</text>
       <text x="970" y="605" class="small">MemoryStore 长期记忆档案 · 外部来源与通道</text>
     </g>
 

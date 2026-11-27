@@ -12,6 +12,7 @@ import {
   eventsOf,
   flowOf,
   jobOf,
+  lastResultCard,
   openInScope,
   pauseOf,
   routingOf,
@@ -235,6 +236,10 @@ function enqueue(
         : undefined;
   const linked = found?.state === "open" ? found : undefined;
   const ticket = linked ?? openTicket(draft, rule, lane, !eventRule(rule));
+  // A new round makes the last result card's close button stale. Only a ticket that was waiting for acceptance ever
+  // showed one, and only a card a channel already received has anything to refresh.
+  if (!existing && ticketRuns(draft.view, ticket).length && waitingForAcceptance(draft, ticket))
+    refreshResultCards(draft, ticket);
   const stamps = { not_before: draft.at, created_at: draft.at, rules_version: rulesVersion, ticket: ticket.id };
   const run =
     existing ??
@@ -622,7 +627,7 @@ function nextCard(draft: Draft, channel: string) {
     put(draft, "deliveries", key, { card_id: card.id, channel, ...attempt });
     const run = card.kind === "ask" && card.run_id != null ? draft.view.get("runs", card.run_id) : null;
     return {
-      ...cardView(card, draft.env, delivery.ref, draft.rules.channels[channel]?.links === true),
+      ...cardView(card, draft.env, delivery.ref, draft.rules.channels[channel]?.links === true, draft.view),
       ...(run && { run: { id: run.id, attempt: run.attempts + 1 } }),
     };
   }
@@ -765,6 +770,42 @@ const ticketProblem = (draft: Draft, ticket: Row) => {
   return null;
 };
 
+/** A ticket's acceptance view taken from the rows fetched here: what closing and refreshing are judged against. */
+function ticketStatusIn(draft: Draft, ticket: Row) {
+  const runs = ticketRuns(draft.view, ticket);
+  const status = ticketStatusOf({
+    ticket: ticket as any,
+    runs: runs.map((run) => ({ id: run.id, state: run.state, attempts: run.attempts, task: taskOf(run) })),
+    cards: ticketCards(draft.view, ticket) as any,
+    timers: ticketTimers(draft.view, ticket),
+    flow: flowOf(draft.view, ticket.rule, runs.at(-1)?.rules_version),
+  });
+  return { latest: runs.at(-1), status };
+}
+
+/** The latest round's last fyi result card, if a channel actually received it: the one already on someone's screen. */
+function sentResultCards(draft: Draft, ticket: Row) {
+  const latest = ticketRuns(draft.view, ticket).at(-1);
+  if (!latest) return [];
+  const card = lastResultCard(draft.view, latest.id);
+  if (!card) return [];
+  const sent = rows(draft.view, "deliveries", { card_id: card.id }).some(
+    (delivery) => delivery.ref !== null && !delivery.given_up,
+  );
+  return sent ? [card] : [];
+}
+
+/** A card already sent keeps its words; bumping its version is what makes the channel draw it again in place. */
+function refreshResultCards(draft: Draft, ticket: Row) {
+  for (const card of sentResultCards(draft, ticket)) put(draft, "cards", card.id, { version: card.version + 1 });
+}
+
+/** Whether the ticket is showing a close button right now: a result card it sent, waiting for acceptance. */
+function waitingForAcceptance(draft: Draft, ticket: Row) {
+  if (!sentResultCards(draft, ticket).length) return false;
+  return ticketStatusIn(draft, ticket).status.status === "ready_for_acceptance";
+}
+
 /** The owner closes a ticket: no active rounds, no open question and no pending review, and for a normal close also a
  * report that passed every required step. Closing is a fact of its own; it never edits what the rounds recorded. */
 function closeTicket(draft: Draft, id: number, by: string, given: Row) {
@@ -781,19 +822,7 @@ function closeTicket(draft: Draft, id: number, by: string, given: Row) {
   if (outcome !== "cancelled") {
     const problem = ticketProblem(draft, ticket);
     if (problem) throw new Conflict(problem);
-    const runs = ticketRuns(draft.view, ticket);
-    const status = ticketStatusOf({
-      ticket: ticket as any,
-      runs: runs.map((run) => ({
-        id: run.id,
-        state: run.state,
-        attempts: run.attempts,
-        task: taskOf(run),
-      })),
-      cards: ticketCards(draft.view, ticket) as any,
-      timers: ticketTimers(draft.view, ticket),
-      flow: flowOf(draft.view, ticket.rule, runs.at(-1)?.rules_version),
-    });
+    const { status } = ticketStatusIn(draft, ticket);
     if (status.status !== "ready_for_acceptance") throw new Conflict(`工单还不能关闭：${status.reason}`);
     if (outcome === "completed" && status.resolution !== "completed") {
       throw new Conflict("没有逐项通过的验收依据，不能按已完成关闭");
@@ -811,7 +840,55 @@ function closeTicket(draft: Draft, id: number, by: string, given: Row) {
     closed_by: by,
     closed_note: reason || null,
   });
+  refreshResultCards(draft, draft.view.get("tickets", id)!);
   return { changed: true, ticket: ticketView(draft.view, draft.view.get("tickets", id)!) };
+}
+
+/** The owner or a channel closes a ticket from the result card itself. The card must be the latest round's last fyi
+ * result, and every check of a normal close still applies; the outcome defaults to what the report resolved. */
+function closeTicketFromCard(draft: Draft, id: number, given: Row) {
+  const card = draft.view.get("cards", id);
+  if (!card) throw new NotFound("没有这张卡片");
+  if (given.by !== undefined && (typeof given.by !== "string" || [...given.by].length > ANSWER_BY)) {
+    throw new InputError(`关闭人最多 ${ANSWER_BY} 字`);
+  }
+  if (given.ref !== undefined && (typeof given.ref !== "string" || [...given.ref].length > ANSWER_REF)) {
+    throw new InputError(`消息编号最多 ${ANSWER_REF} 字`);
+  }
+  // A channel may only act on the message it sent, as the person it sent it to.
+  if (given.channel !== undefined) {
+    const allowed = draft.rules.channels[given.channel]?.answerers;
+    if (!allowed || !allowed.includes(given.by ?? "")) throw new AuthError("这个人不能关闭这张卡片");
+    const delivery = draft.view.get("deliveries", `${id}:${given.channel}`);
+    if (!delivery?.ref || delivery.ref !== given.ref) throw new AuthError("不是发出去的那条消息");
+  }
+  // The request itself is checked before anything about the ticket, so a closed one cannot be used to probe it.
+  if (given.outcome !== undefined && given.outcome !== "completed" && given.outcome !== "unnecessary") {
+    throw new InputError("outcome 只能是 completed 或 unnecessary");
+  }
+  if (given.reason !== undefined && typeof given.reason !== "string") throw new InputError("说明要是文字");
+  const reason = typeof given.reason === "string" ? given.reason.trim() : "";
+  if ([...reason].length > TICKET_REASON) throw new InputError(`关闭说明最多 ${TICKET_REASON} 字`);
+  if (card.ticket == null) throw new Conflict("这张卡片没有关联工单");
+  const ticket = draft.view.get("tickets", card.ticket);
+  if (!ticket) throw new NotFound("没有这张工单");
+  const { latest, status } = ticketStatusIn(draft, ticket);
+  const lastResult = latest ? lastResultCard(draft.view, latest.id) : null;
+  if (
+    card.kind !== "notice" ||
+    !card.fyi ||
+    latest === undefined ||
+    card.run_id !== latest.id ||
+    card.id !== lastResult?.id
+  ) {
+    throw new Conflict("这张卡片不是最新一轮的结果，请查看最新结果后再关闭");
+  }
+  if (ticket.state === "closed") return { changed: false, ticket: ticketView(draft.view, ticket) };
+  const outcome = given.outcome === undefined ? status.resolution : given.outcome;
+  if (outcome !== "completed" && outcome !== "unnecessary") {
+    throw new Conflict(`工单还不能关闭：${status.reason}`);
+  }
+  return closeTicket(draft, ticket.id, given.by ?? "本人", { outcome, reason: given.reason });
 }
 
 /** Reopening keeps the same number and its rounds; it is refused while another ticket for the matter is open. */
@@ -831,6 +908,7 @@ function reopenTicket(draft: Draft, id: number, by: string, given: Row) {
     closed_by: null,
     closed_note: reason || null,
   });
+  refreshResultCards(draft, draft.view.get("tickets", id)!);
   return { changed: true, ticket: ticketView(draft.view, draft.view.get("tickets", id)!) };
 }
 
@@ -920,6 +998,7 @@ const HANDLERS: Record<string, (draft: Draft, ...args: any[]) => unknown> = {
   answer,
   closeTicket,
   reopenTicket,
+  closeTicketFromCard,
   nextCard,
   delivered(draft, channel, id, version, ref) {
     if (!draft.view.get("cards", id)) throw new NotFound("没有这张卡片");

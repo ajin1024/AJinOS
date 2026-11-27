@@ -40,15 +40,15 @@ export class TaskVerifier {
     return map;
   }
 
-  shouldAutoVerify({ run, ticket, binding, isPlanStep = false } = {}) {
+  shouldAutoVerify({ run, ticket, binding, isPlanStep = false, executorId } = {}) {
     if (!run?.id || run.state !== "done") return false;
     if (ticket && (ticket.state !== "open" || ticket.status !== "ready_for_acceptance")) return false;
     if (this.pending.has(run.id) || this.get(run.id)) return false;
     const isComplex = binding?.complexity === "complex";
-    return Boolean(isComplex || isPlanStep);
+    return Boolean(isComplex || isPlanStep || (executorId && ticket?.status === "ready_for_acceptance"));
   }
 
-  async verifyRun(config, input) {
+  async verifyRun(config, input, { executorId } = {}) {
     const runId = Number(input?.runId);
     if (!Number.isSafeInteger(runId) || runId < 1) {
       throw Object.assign(new Error("任务轮次编号无效"), { status: 400 });
@@ -71,7 +71,7 @@ export class TaskVerifier {
         nextStep: String(input.nextStep || "").slice(0, 400),
         outputTail: String(input.outputTail || "").slice(-4000),
       };
-      const raw = await this.model("verify", payload, config);
+      const raw = await this.model("verify", payload, config, executorId ? { executorId } : undefined);
       const verdict = typeof raw?.verdict === "string" ? raw.verdict.trim().toLowerCase() : "";
       const summary = cleanText(raw?.summary, 400);
       if (!VALID_VERDICTS.has(verdict) || !summary) {
@@ -87,7 +87,7 @@ export class TaskVerifier {
             .filter((item) => Boolean(item.point))
         : [];
       const suggestion = cleanText(raw?.suggestion, 300);
-      const meta = this.lastRunMeta?.() || null;
+      const meta = executorId ? { agentId: executorId, agentName: config.rules.agents[executorId]?.name } : this.lastRunMeta?.() || null;
       const report = {
         runId,
         verdict,

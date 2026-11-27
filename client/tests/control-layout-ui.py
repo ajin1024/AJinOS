@@ -129,7 +129,7 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
         page.goto(url + "/#overview")
         expect(page.get_by_role("button", name="流转概览")).to_have_attribute("aria-pressed", "true")
         flow = page.get_by_role("region", name="任务流转画布")
-        expect(flow.locator(".lane-head h3")).to_have_text(["入口触发", "总管路由", "项目领地与执行器", "结果与本人介入"])
+        expect(flow.locator(".lane-head h3")).to_have_text(["入口触发", "总管路由", "项目与执行器", "结果与本人介入"])
         expect(flow.locator(".wires path").first).to_be_visible()
         pending = flow.get_by_role("region", name="待验收").get_by_role("button", name=re.compile(title))
         expect(pending).to_be_visible(timeout=30000)
@@ -163,7 +163,7 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
         expect(rail.get_by_role("button", name="能力与沙箱")).to_have_attribute("aria-current", "page")
         settings = page.get_by_role("navigation", name="能力与沙箱导航")
         expect(settings.get_by_role("button")).to_have_text([
-            "项目领地（沙箱）", "执行器与三角色", "长期记忆档案", "规则与定时", "来源与通知",
+            "项目管理", "执行器", "长期记忆档案", "规则与定时", "项目识别网关", "来源与通知",
             "飞书群聊采集", "运行环境与引擎", "引擎日志", "高级 JSON 与版本",
         ])
         expect(settings.locator('[data-settings-section="projects"]')).to_have_attribute("aria-current", "page")

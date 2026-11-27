@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Banner, Button, Empty, Form, Modal, SideSheet, Tag } from "@douyinfe/semi-ui";
 import { IconDelete, IconEdit, IconPause, IconPlay, IconPlus } from "@douyinfe/semi-icons";
-import { updateProjectBinding } from "../project-bindings.mjs";
-import { projectRuleNames } from "../gateway-config.mjs";
+import { setEventRuleProject, updateProjectBinding } from "../project-bindings.mjs";
+import { businessProjects, projectRuleNames } from "../gateway-config.mjs";
 import { agentOptionsOf, formatDate, generatedOwner, parseList } from "../studio-helpers.mjs";
+import { statusOf } from "../workbench-state.mjs";
 
 const required = (message) => [{ required: true, whitespace: true, message }];
 
@@ -13,12 +14,18 @@ function RuleEditorSheet({ ruleName, isNew, config, onSaveConfig, onClose }) {
   const existing = isNew ? null : config.rules.rules.find((r) => r.name === ruleName);
   const boundProject = existing && config.projects.find((p) => p.rule === existing.name);
   const flowProject = existing && config.projects.find((p) => p.flows?.some((f) => f.rule === existing.name));
+  const attachedProject = existing && config.projects.find((p) => p.eventRules?.includes(existing.name));
+  const canAttach = !existing || Boolean(attachedProject) || !config.projects.some((p) => projectRuleNames(config, p).includes(existing.name));
+  const projectRule = Boolean(boundProject && boundProject.role !== "integration");
+  const resumesTopic = projectRule || Boolean(flowProject && flowProject.role !== "integration");
   const [trigger, setTrigger] = useState(existing?.when?.cron ? "cron" : "event");
+  const [projectId, setProjectId] = useState("");
 
   useEffect(() => {
     setTrigger(existing?.when?.cron ? "cron" : "event");
+    setProjectId(attachedProject?.id || "");
     setError("");
-  }, [ruleName, isNew]);
+  }, [ruleName, isNew, attachedProject?.id]);
 
   const agents = agentOptionsOf(config);
   const sources = Object.entries(config.rules.sources || {}).map(([value, s]) => ({
@@ -51,18 +58,19 @@ function RuleEditorSheet({ ruleName, isNew, config, onSaveConfig, onClose }) {
     setError("");
     try {
       const next = structuredClone(config);
+      const destination = canAttach && trigger === "event" && next.projects.find((p) => p.id === projectId);
       const nextRule = {
         name: v.name.trim(),
-        to: v.to,
-        cwd: flowProject?.cwd || v.cwd.trim(),
+        to: projectRule ? existing.to : v.to,
+        cwd: destination ? (existing?.cwd || destination.cwd) : flowProject?.cwd || v.cwd.trim(),
         when:
           boundProject || flowProject
             ? existing.when
-            : v.trigger === "cron"
+            : trigger === "cron"
               ? { cron: v.cron.trim() }
               : { source: v.source, types: parseList(v.types) },
         tell: v.tell,
-        resume: Boolean(v.resume),
+        resume: resumesTopic || Boolean(v.resume),
       };
       for (const key of ["skill", "prompt", "group"]) {
         if (String(v[key] || "").trim()) nextRule[key] = String(v[key]).trim();
@@ -71,10 +79,13 @@ function RuleEditorSheet({ ruleName, isNew, config, onSaveConfig, onClose }) {
       if (existing?.model) nextRule.model = existing.model;
       if (existing?.effort) nextRule.effort = existing.effort;
       if (existing?.speed) nextRule.speed = existing.speed;
+      if (existing?.flow) nextRule.flow = existing.flow;
+      if (existing?.workspace) nextRule.workspace = existing.workspace;
       if (existing?.priority !== undefined) nextRule.priority = existing.priority;
       if (v.parallel !== "" && v.parallel != null) nextRule.parallel = Number(v.parallel);
       if (v.emitSource) nextRule.emits = { source: v.emitSource, types: parseList(v.emitTypes) };
       if (String(v.channels || "").trim()) nextRule.channels = parseList(v.channels);
+      if (canAttach) setEventRuleProject(next, existing?.name, nextRule, destination);
       if (existing) {
         const idx = next.rules.rules.findIndex((item) => item.name === existing.name);
         if (idx >= 0) next.rules.rules[idx] = nextRule;
@@ -106,7 +117,9 @@ function RuleEditorSheet({ ruleName, isNew, config, onSaveConfig, onClose }) {
             <p className="sc-muted">保存会校验整个规则集；排队任务领取时使用新配置，已领取任务保留原配置。</p>
             {error && <Banner type="danger" description={error} closeIcon={null} />}
             <Form.Input field="name" name="name" label="规则名称" rules={required("请输入规则名称")} />
-            <Form.Select field="to" label="执行者" optionList={agents} style={{ width: "100%" }} rules={required("请选择执行者")} />
+            {!projectRule && (
+              <Form.Select field="to" label="执行者" optionList={agents} style={{ width: "100%" }} rules={required("请选择执行者")} />
+            )}
             <Form.Select
               field="trigger"
               label="触发方式"
@@ -143,18 +156,36 @@ function RuleEditorSheet({ ruleName, isNew, config, onSaveConfig, onClose }) {
                 />
               </>
             )}
-            <Form.Input
-              field="cwd"
-              name="cwd"
-              label="工作目录"
-              disabled={Boolean(flowProject)}
-              extraText={
-                flowProject
-                  ? "使用项目目录，请在项目空间中修改。"
-                  : "修改已有项目目录时，也需更换规则名称以隔离旧会话。"
-              }
-              rules={required("请输入工作目录")}
-            />
+            {canAttach && trigger === "event" && (
+              <div className="semi-form-field">
+                <label htmlFor="rule-project" className="semi-form-field-label">归属项目</label>
+                <select
+                  id="rule-project"
+                  className="sc-rule-project-select"
+                  value={projectId}
+                  onChange={(event) => setProjectId(event.target.value)}
+                >
+                  <option value="">独立入口</option>
+                  {businessProjects(config).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}（{p.cwd}）</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {!(canAttach && trigger === "event" && projectId) && (
+              <Form.Input
+                field="cwd"
+                name="cwd"
+                label="工作目录"
+                disabled={Boolean(flowProject)}
+                extraText={
+                  flowProject
+                    ? "使用项目目录，请在项目管理中修改。"
+                    : "修改已有项目目录时，也需更换规则名称以隔离旧会话。"
+                }
+                rules={required("请输入工作目录")}
+              />
+            )}
             <div className="sc-grid-2">
               <Form.Select
                 field="access"
@@ -190,7 +221,7 @@ function RuleEditorSheet({ ruleName, isNew, config, onSaveConfig, onClose }) {
                 style={{ width: "100%" }}
               />
             </div>
-            <Form.Switch field="resume" label="普通新事件续接同事项会话" />
+            {!resumesTopic && <Form.Switch field="resume" label="普通新事件续接同事项会话" />}
             <Form.TextArea field="prompt" name="prompt" label="任务指令" rows={3} />
             <div className="sc-grid-2">
               <Form.Select
@@ -232,6 +263,16 @@ export function RulesPanel({ config, state, api, toast, onSaveConfig, onEditingC
   const configured = (config.rules?.rules || []).filter((r) => !generatedOwner(config, "rule", r.name));
   const eventRules = configured.filter((r) => !r.when?.cron);
   const cronRules = configured.filter((r) => Boolean(r.when?.cron));
+  const projectByRule = new Map();
+  for (const project of config.projects) {
+    for (const name of projectRuleNames(config, project)) projectByRule.set(name, project);
+  }
+  const independent = eventRules.filter((rule) => !projectByRule.has(rule.name));
+  const projectEvents = eventRules.filter((rule) => projectByRule.has(rule.name));
+  const latestRuns = new Map();
+  for (const run of state.runs || []) {
+    if (!latestRuns.has(run.rule) || run.id > latestRuns.get(run.rule).id) latestRuns.set(run.rule, run);
+  }
   const agentName = (id) => config.rules?.agents?.[id]?.name || id;
 
   async function togglePause(ruleName, paused) {
@@ -283,18 +324,23 @@ export function RulesPanel({ config, state, api, toast, onSaveConfig, onEditingC
       <div className="sc-rule-list">
         {rules.map((r) => {
           const line = state.lines?.find((l) => l.name === r.name);
-          const trigger = r.when?.cron || [r.when?.source, ...(r.when?.types || [])].join(" · ");
+          const latest = latestRuns.get(r.name);
+          const minutes = Number(r.when?.cron?.match(/^\*\/(\d+) \* \* \* \*$/)?.[1]);
+          const trigger =
+            minutes > 0 && 60 % minutes === 0
+              ? `每 ${minutes} 分钟`
+              : line?.every || r.when?.cron || [r.when?.source, ...(r.when?.types || [])].join(" · ");
           return (
             <article className="sc-rule-card" key={r.name}>
               <div className="sc-rule-top">
                 <h3>{r.name}</h3>
-                <Tag color={line?.paused ? "amber" : "green"} shape="circle">
-                  {line?.paused ? "已暂停" : "已启用"}
+                <Tag color={line?.paused ? "amber" : line ? "green" : "grey"} shape="circle">
+                  {line?.paused ? "已暂停" : line ? "已启用" : "状态待同步"}
                 </Tag>
               </div>
               <div className="sc-rule-route">
                 <div>
-                  <span>触发条件</span>
+                  <span>{r.when?.cron ? "执行频率" : "触发条件"}</span>
                   <strong>{trigger}</strong>
                 </div>
                 <span className="sc-rule-arrow" aria-hidden="true">
@@ -314,9 +360,9 @@ export function RulesPanel({ config, state, api, toast, onSaveConfig, onEditingC
               </div>
               <div className="sc-rule-foot">
                 <span className="sc-muted" style={{ fontSize: 12 }}>
-                  组 {r.group || r.name} · 并发 {r.parallel ?? 1}
-                  {r.resume ? " · 续接会话" : ""}
-                  {line?.next ? ` · 下次 ${formatDate(line.next)}` : ""}
+                  {projectByRule.has(r.name) && `${projectByRule.get(r.name).name} · `}
+                  {latest ? `最近一轮 ${formatDate(latest.finishedAt || latest.createdAt)}（${statusOf(latest)}）` : "近期无执行记录"}
+                  {line?.next && !line.paused ? ` · 下次 ${formatDate(line.next)}` : ""}
                 </span>
                 <div className="sc-header-actions">
                   <Button
@@ -364,7 +410,6 @@ export function RulesPanel({ config, state, api, toast, onSaveConfig, onEditingC
       <header className="sc-header">
         <div>
           <h1>规则与定时</h1>
-          <p>管理事件路由与定时触发规则；自动生成的分档规则随来源流程同步。</p>
         </div>
         <div className="sc-header-actions">
           <Button theme="solid" icon={<IconPlus aria-hidden="true" />} onClick={() => setCreating(true)}>
@@ -376,20 +421,27 @@ export function RulesPanel({ config, state, api, toast, onSaveConfig, onEditingC
       <section className="sc-card">
         <div className="sc-card-head">
           <h2>
-            事件规则 <span className="sc-count">{eventRules.length}</span>
-          </h2>
-        </div>
-        {renderList(eventRules, "还没有事件规则")}
-      </section>
-
-      <section className="sc-card">
-        <div className="sc-card-head">
-          <h2>
             定时规则 <span className="sc-count">{cronRules.length}</span>
           </h2>
         </div>
         {renderList(cronRules, "还没有定时规则")}
       </section>
+
+      <section className="sc-card">
+        <div className="sc-card-head">
+          <h2>
+            独立事件规则 <span className="sc-count">{independent.length}</span>
+          </h2>
+        </div>
+        {renderList(independent, "还没有独立事件规则")}
+      </section>
+
+      {projectEvents.length > 0 && (
+        <details className="sc-card">
+          <summary>项目事件规则 <span className="sc-count">{projectEvents.length}</span></summary>
+          {renderList(projectEvents, "")}
+        </details>
+      )}
 
       <RuleEditorSheet
         ruleName={editingRule}

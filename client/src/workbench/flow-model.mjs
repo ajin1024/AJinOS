@@ -2,11 +2,11 @@ import { businessProjects } from "../gateway-config.mjs";
 import { resolveRoleCandidates } from "../../role-routing.mjs";
 
 const sourceLabels = {
-  chat: "本机提交",
   feishu: "飞书私聊 / 群采集",
   github: "GitHub Issue",
   timer: "定时规则",
 };
+const isFeishuSource = (id) => id === "feishu" || /^feishu[-_]/i.test(id);
 const activeRun = (run) => ["queued", "claimed"].includes(run.state);
 const receiptItem = (task) => ({ key: `task:${task.key}`, task, title: task.title });
 const isReview = (task) =>
@@ -16,11 +16,15 @@ const isReview = (task) =>
 
 function sourceOf(event, githubSources) {
   if (!event) return null;
-  if (event.source === "feishu" || event.type?.startsWith("feishu.")) return "feishu";
+  if (event.source === "local") {
+    const feishuSubject = event.subject?.startsWith("feishu:") || event.subject?.includes(":feishu:");
+    const feishuId =
+      typeof event.id === "string" && (event.id.startsWith("studio:feishu:") || event.id.startsWith("feishu:"));
+    return feishuSubject || feishuId || event.type?.startsWith("feishu.") ? "feishu" : null;
+  }
+  if (isFeishuSource(event.source) || event.type?.startsWith("feishu.")) return "feishu";
   if (githubSources.has(event.source)) return !event.type || /^issues?[.:]/.test(event.type) ? "github" : null;
   if (event.source === "schedule") return "timer";
-  if (event.source === "local" && event.subject?.startsWith("feishu:")) return "feishu";
-  if (event.source === "local") return "chat";
   return event.source ? `source:${event.source}` : null;
 }
 
@@ -50,9 +54,15 @@ export function buildFlowModel({
       .filter(([, source]) => source.adapter === "github")
       .map(([id]) => id),
   ]);
+  const rulesByName = new Map((rules.rules || []).map((rule) => [rule.name, rule]));
+  const isGithubPollRule = (rule) =>
+    Boolean(rule?.name?.startsWith("studio-gh-poll:")) ||
+    Boolean(rule?.emits?.source && githubSources.has(rule.emits.source));
   const eventSource = (event, run) => {
-    if (event?.source === "schedule" && run?.agent === "feishu-inbox-reader") return "feishu";
-    if (event?.source === "schedule" && run?.rule?.startsWith("studio-gh-poll:")) return "github";
+    if (event?.source === "schedule") {
+      if (run?.agent === "feishu-inbox-reader") return "feishu";
+      if (run?.rule?.startsWith("studio-gh-poll:") || isGithubPollRule(rulesByName.get(run?.rule))) return "github";
+    }
     return sourceOf(event, githubSources);
   };
   const active = runs.filter(activeRun);
@@ -150,13 +160,18 @@ export function buildFlowModel({
     if (message.topic) continuedTopics.add(message.topic);
   }
   const enabled = {
-    chat: Boolean(Object.hasOwn(rules.sources || {}, "local") || messages.length),
-    feishu: Boolean(rules.channels?.feishu || rules.sources?.feishu || agents.has("feishu-inbox-reader")),
-    github: [...githubSources].some(
-      (id) => Object.hasOwn(rules.sources || {}, id) || state.sources?.some((source) => source.id === id),
+    feishu: Boolean(
+      rules.channels?.feishu ||
+      Object.keys(rules.sources || {}).some(isFeishuSource) ||
+      state.sources?.some((source) => isFeishuSource(source.id)) ||
+      agents.has("feishu-inbox-reader"),
     ),
+    github:
+      [...githubSources].some(
+        (id) => Object.hasOwn(rules.sources || {}, id) || state.sources?.some((source) => source.id === id),
+      ) || (rules.rules || []).some((rule) => rule.when?.cron && isGithubPollRule(rule)),
     timer: (rules.rules || []).some(
-      (rule) => rule.when?.cron && rule.to !== "feishu-inbox-reader" && !rule.name.startsWith("studio-gh-poll:"),
+      (rule) => rule.when?.cron && rule.to !== "feishu-inbox-reader" && !isGithubPollRule(rule),
     ),
   };
   const observedSources = new Set();
@@ -244,10 +259,12 @@ export function traceFlow(model, target) {
   if (!target) return { nodes, edges };
   const { task, card, result } = target;
   const first = task?.runs[0];
-  const source = model.eventSource(first?.events?.[0] || (card?.source && { source: card.source }), first);
+  const event = first?.events?.[0] || (card?.source && { source: card.source });
+  const source = model.eventSource(event, first);
   const hasSource = model.sources.some((entry) => entry.id === source);
-  if (source === "chat") {
-    link(source, "router", "router");
+  const routed = event?.source === "local" && !event.type?.startsWith("feishu.");
+  if (routed) {
+    if (hasSource) link(source, "router", "router");
     nodes.add(model.continuedTopics.has(task?.topic) && task?.runs.length > 1 ? "fast" : "slow");
     link("router", "hub", "router");
   } else if (hasSource) link(source, "hub", "direct");

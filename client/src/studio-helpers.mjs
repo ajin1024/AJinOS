@@ -1,5 +1,5 @@
 import { flowsFor } from "./gateway-config.mjs";
-import { isImportedExecutor } from "./executor-presets.mjs";
+import { EFFORT_NAMES, isImportedExecutor } from "./executor-presets.mjs";
 
 export const SETTINGS_SECTIONS = [
   "projects",
@@ -81,6 +81,9 @@ export function routeToHash(route) {
 export function generatedOwner(config, kind, id) {
   for (const p of config?.projects || []) {
     for (const flow of flowsFor(p)) {
+      if (kind === "rule" && Object.values(config.flowAgentRoutes?.[`${p.id}/${flow.id}`] || {}).some((r) => r.rule === id)) {
+        return { project: p, flow };
+      }
       if (Object.values(config.executionRoutes?.[`${p.id}/${flow.id}`] || {}).some((r) => r[kind] === id)) {
         return { project: p, flow };
       }
@@ -119,14 +122,6 @@ export const ENGINE_META = {
   },
 };
 
-export const EFFORT_LABELS = {
-  low: "低 (low)",
-  medium: "中 (medium)",
-  high: "高 (high)",
-  xhigh: "极高 (xhigh)",
-  max: "最高 (max)",
-};
-
 export const SPEED_LABELS = {
   standard: "标准",
   fast: "快速 (Fast)",
@@ -139,6 +134,19 @@ export function engineIdOfAgent(agent) {
   if (family === "codex") return "codex";
   if (family === "acp") return "antigravity";
   return null;
+}
+
+export const EXECUTOR_FIELDS = ["软件", "模型", "思考强度", "速度"];
+
+export function executorValues(agent) {
+  const engine = ENGINE_META[engineIdOfAgent(agent)];
+  const software = engine ? (agent.use === engine.use ? engine.name : `${engine.name} · ${agent.use}`) : agent.use;
+  return [
+    software,
+    agent.model || "软件默认",
+    EFFORT_NAMES[agent.effort] || agent.effort || "随软件",
+    agent.speed === "fast" ? "快速" : agent.speed === "standard" || engine?.speeds.length ? "标准" : agent.speed || "随软件",
+  ];
 }
 
 /** Formats layer-1 engine + layer-2 runtime parameters (model / effort / speed) as a concise human summary. */

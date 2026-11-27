@@ -53,17 +53,19 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
                     page.get_by_role("button", name="查看ui-review", exact=True).click()
                     expect(page.get_by_role("heading", name="ui-review", exact=True)).to_be_visible()
 
-                    # Add flow via SideSheet
-                    page.get_by_role("button", name="添加流程", exact=True).click()
-                    sheet = page.locator(".semi-sidesheet")
-                    sheet.locator('input[name="id"]').fill("audit")
-                    sheet.locator('input[name="name"]').fill("核查")
-                    sheet.locator('textarea[name="description"]').fill("检查记录")
-                    sheet.locator('textarea[name="prompt"]').fill("检查资料并交回结果")
-                    sheet.get_by_role("button", name="保存流程", exact=True).click()
-                    expect(sheet).not_to_be_visible()
+                    # Seed a legacy flow to exercise rule edits and directory isolation.
+                    current = page.request.get(url + "/api/config").json()
+                    workspace_config = current["value"]
+                    project = next(p for p in workspace_config["projects"] if p["id"] == "ui-review")
+                    base = next(r for r in workspace_config["rules"]["rules"] if r["name"] == project["rule"])
+                    project["flows"] = [{"id": "audit", "name": "核查", "description": "检查记录", "rule": "ui-review · 核查"}]
+                    workspace_config["rules"]["rules"].append({
+                        **base, "name": "ui-review · 核查", "when": {"source": "local", "types": ["project.ui-review.flow.audit"]},
+                    })
+                    saved = page.request.put(url + "/api/config", data=current, headers={"x-studio-action": "1", "Origin": url})
+                    assert saved.ok, saved.text()
                     project_details = page.get_by_role("region", name="ui-review", exact=True)
-                    expect(project_details.get_by_role("list", name="已配置流程").get_by_text("核查", exact=True)).to_be_visible()
+                    expect(project_details.get_by_role("button", name="添加流程", exact=True)).to_have_count(0)
                     page.keyboard.press("Escape")
                     expect(project_details).not_to_be_visible()
 
@@ -94,7 +96,7 @@ with tempfile.TemporaryDirectory(prefix="studio-dialog-e2e-") as temp:
                     # Gateway blockedTerms persistence & real 422 interception
                     page.locator('#nav [data-view="settings"]').click()
                     page.locator('[data-settings-section="agents"]').click()
-                    page.get_by_role("button", name="配置项目识别网关").click()
+                    page.get_by_role("button", name="项目识别网关", exact=True).click()
                     page.locator('textarea[name="blockedTerms"]').fill("禁止测试词")
                     page.get_by_role("button", name="保存网关规则", exact=True).click()
                     page.reload()

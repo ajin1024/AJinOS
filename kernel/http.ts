@@ -106,8 +106,15 @@ async function cardAtLink(call: Call, linkToken: string) {
   if (call.now - Date.parse(card.created_at) > LINK_LIFETIME) {
     throw new AuthError("这个链接过期了。在装它的电脑上运行 agent-autoloop status，还没答的卡片都在那里，可以接着回答");
   }
-  if (request.method === "GET") return new Response(cardPage(cardView(card, environment)), { headers: PAGE_HEADERS });
+  if (request.method === "GET") {
+    return new Response(cardPage(cardView(card, environment, null, false, call.view)), { headers: PAGE_HEADERS });
+  }
   const form = new URLSearchParams(await readText(request));
+  // Closing takes a press of its own: looking at the page never changes anything.
+  if (form.get("action") === "close_ticket") {
+    act(call, "closeTicketFromCard", card.id, { by: "链接" });
+    return new Response(null, { status: 303, headers: { location: call.url.pathname, ...NO_STORE } });
+  }
   const choice = form.has("choice") && { choice: Number(form.get("choice")) };
   act(call, "answer", card.id, { ...choice, text: form.get("text") ?? undefined, by: "链接" });
   return new Response(null, { status: 303, headers: { location: call.url.pathname, ...NO_STORE } });
@@ -206,6 +213,23 @@ async function cardAction(call: Call, id: number, action: string) {
   return json({ ok: true });
 }
 
+/** A channel closes the ticket from the result card it delivered; the owner may do the same from any result card. */
+async function closeTicketFromCard(call: Call, id: number) {
+  const channel = keyHolder(call, "channel");
+  const holder = requireKey(call, channel ? "channel" : "owner");
+  const given = await readJson(call.request);
+  if (!given || typeof given !== "object" || Array.isArray(given)) throw new InputError("要是一个 JSON 对象");
+  const known = channel ? ["by", "ref", "outcome", "reason"] : ["outcome", "reason"];
+  const unknown = Object.keys(given).filter((field) => !known.includes(field));
+  if (unknown.length) throw new InputError(`不认识的字段：${unknown.join("、")}`);
+  const input = {
+    ...(channel ? { channel, by: given.by, ref: given.ref } : { by: holder }),
+    ...(given.outcome !== undefined && { outcome: given.outcome }),
+    ...(given.reason !== undefined && { reason: given.reason }),
+  };
+  return json(act(call, "closeTicketFromCard", id, input));
+}
+
 const CONTROL_FIELDS: Record<string, string[]> = { pause: ["reason", "until"], resume: [], run: ["subject", "reason"] };
 const CONTROL_INPUTS: Record<string, string> = { pause: "pauseRule", resume: "resumeRule", run: "runRule" };
 
@@ -294,6 +318,8 @@ async function route(call: Call): Promise<Response> {
   }
   if (method === "POST" && action === "result") return json(act(call, "finish", runId, token, await readJson(request)));
   if (method === "GET" && path === "/v1/cards/next") return nextCard(call);
+  const closeFromCard = /^\/v1\/cards\/([1-9][0-9]*)\/close-ticket$/.exec(path);
+  if (method === "POST" && closeFromCard) return closeTicketFromCard(call, Number(closeFromCard[1]));
   const card = /^\/v1\/cards\/([1-9][0-9]*)\/(delivered|failed|answer|resolve)$/.exec(path);
   if (method === "POST" && card) return cardAction(call, Number(card[1]), card[2]);
   if (method === "GET" && path === "/v1/tickets") {

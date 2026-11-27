@@ -186,7 +186,7 @@ rl.on("line", (line) => {
   }
 });
 
-test("selectExecutionTarget degrades to fallback when primary is offline or cooling down, and respects project fixed mode", () => {
+test("selectExecutionTarget degrades to fallback when primary is offline or cooling down, even for legacy fixed projects", () => {
   const config = makeRoleConfig();
   const health = new ExecutorHealth();
 
@@ -226,7 +226,6 @@ test("selectExecutionTarget degrades to fallback when primary is offline or cool
   assert.equal(cooled.degraded, true);
   assert.match(cooled.degradedReason, /冷却|限流/);
 
-  // When project explicitly locks executionMode="fixed", returns null so base flow rule is kept
   const fixedProject = { ...config.projects[0], executionMode: "fixed" };
   const fixed = selectExecutionTarget(config, fixedProject, {
     health,
@@ -235,7 +234,7 @@ test("selectExecutionTarget degrades to fallback when primary is offline or cool
       { id: "agy-gemini", online: true },
     ],
   });
-  assert.equal(fixed, null);
+  assert.equal(fixed.executor, "agy-gemini");
 });
 
 test("Gateway.choose applies roleRouting execute target for follow projects without breaking explicit executor", async () => {

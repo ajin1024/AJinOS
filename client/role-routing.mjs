@@ -201,15 +201,14 @@ function liveStatusOf(liveAgents, agentId) {
 
 /**
  * Select a trusted execution agent from the global `execute` role chain for a business project.
- * Returns null if the project explicitly locks its own rule or if roleRouting.execute isn't configured.
+ * The configuration assistant uses its Codex rule to access the Studio MCP.
  */
 export function selectExecutionTarget(
   config,
   project,
   { health = null, liveAgents = null, flowId = "default", now = Date.now() } = {},
 ) {
-  if (!project || project.role === "integration") return null;
-  if (project.executionMode === "fixed") return null;
+  if (!project || project.role === "integration" || project.service === "autoloop") return null;
   if (flowId && flowId !== "default") return null;
 
   const routing = normalizeRoleRouting(config);

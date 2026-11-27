@@ -295,6 +295,8 @@ export function MessageCenter({
                     onPreview={setLightbox}
                     replyProps={replyProps}
                     intakeProps={intakeProps}
+                    onAction={onWorkflowAction}
+                    connected={snapshot.connected}
                   />
                 ) : (
                   <MainChat

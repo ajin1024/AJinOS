@@ -29,7 +29,7 @@ One machine is enough — no cloud server and no inbound ports required.
 ## Highlights
 
 - **Zero-cost wait**: while waiting for your decision, the agent process exits and state lives locally. Reply three days later and it resumes the original session with zero processes running and zero tokens spent in between.
-- **3-role routing & automatic fallback**: bind installed Claude Code, Codex, or Antigravity (ACP) executors across Plan, Execute, and Verify roles with automatic cooldown fallback and economy mode. Models default to your CLI's own default unless you override them.
+- **Executors for project workflows**: save the CLI, model, reasoning effort, and speed as one configuration, then reuse it across model nodes. Existing conversations continue on their original execution routes.
 - **Built-in result center & workspace**: answer approval cards inline, inspect real-time progress, and accept or request rework right inside AJinOS Studio. New work enters through channels (Feishu, GitHub issues, schedules); the app itself has no chat box or new-task form.
 - **Connect an agent in one line**: no SDK and no agent source changes. Any CLI tool that accepts a prompt and prints a final reply can connect.
 - **One ticket per matter**: required flow steps (`flow`) gate acceptance, and only you can close a ticket.
@@ -103,9 +103,9 @@ These screenshots show an isolated local Studio with demo projects and tasks.
 | ![Message Record](docs/screenshots/messages.png) | ![Task Center](docs/screenshots/tasks.png) |
 
 <details>
-<summary>View Project Space & Studio Architecture Diagram</summary>
+<summary>View Project Management & Studio Architecture Diagram</summary>
 
-![Project Space](docs/screenshots/projects.png)
+![Project Management](docs/screenshots/projects.png)
 
 ![AJinOS Studio Architecture](docs/studio-architecture.svg)
 
@@ -115,7 +115,7 @@ These screenshots show an isolated local Studio with demo projects and tasks.
 - **Message Record & Approvals**: view text and image records, answer inline cards, and get system tray alerts. The app has no chat box, drafts, or chat hotkey; new work arrives through channels.
 - **3-Role Routing & Configurable Models**: configure Claude Code, Codex, or Antigravity (ACP) across Plan / Execute / Verify roles; leaving model blank inherits your CLI's default.
 - **Task Center & Chief of Staff**: unified inbox for pending items, board/list views, zero-token global briefs, Q&A, multi-ticket DAG plans, and owner acceptance synced to native Hub tickets.
-- **Project Space & Long-Term Memory**: repository profiling, isolated project flows, and owner-approved memory archives.
+- **Project Management & Long-Term Memory** offers automatically generated and editable routing tags, per-project permissions, and owner-approved memory archives.
 
 See the [Studio guide](client/README.md) (Chinese) and [Studio architecture](docs/studio-architecture.md).
 

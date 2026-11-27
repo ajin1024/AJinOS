@@ -2,8 +2,9 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { typeMatches } from "../kernel/rules.ts";
 import { parseRules } from "../protocol/rules.ts";
-import { flowsFor, flowType, buildExecutionRoutes, syncOpenSourceIssueRoutes } from "./src/gateway-config.mjs";
+import { flowsFor, flowType, buildExecutionRoutes, projectRuleNames, projectTags, syncOpenSourceIssueRoutes } from "./src/gateway-config.mjs";
 import { isImportedExecutor } from "./src/executor-presets.mjs";
+import { acceptsFlowExecutor, FLOW_MODEL_NODES } from "./src/flow-executors.mjs";
 
 import { withStudioDefaults, assignIslandStyles, ISLAND_STYLES } from "./src/island-presets.mjs";
 
@@ -176,6 +177,15 @@ export function validateWorkspace(given) {
     if (typeof p.name !== "string" || !p.name.trim()) throw new Error("项目名称不能为空");
     if (!Array.isArray(p.aliases) || p.aliases.some((v) => typeof v !== "string" || !v.trim()))
       throw new Error("项目别名必须是文字列表");
+    if (
+      p.tagEdits !== undefined &&
+      (!p.tagEdits ||
+        ![p.tagEdits.added, p.tagEdits.removed].every(
+          (tags) => Array.isArray(tags) && tags.every((tag) => typeof tag === "string" && tag.trim()),
+        ) ||
+        p.tagEdits.added.some((tag) => tag.length > 120))
+    )
+      throw new Error("项目标签必须是 1 到 120 字的文字列表");
     if (!/^#[a-fA-F0-9]{6}$/.test(p.color || "")) throw new Error("项目颜色需要是十六进制颜色");
     if (p.islandStyle !== undefined && !ISLAND_STYLES.some((s) => s.id === p.islandStyle))
       throw new Error("岛屿样式不存在，请从 10 种默认样式中选择");
@@ -214,11 +224,32 @@ export function validateWorkspace(given) {
       names.add(flow.rule);
     }
   }
+  const managedRules = new Set(config.projects.flatMap(({ eventRules, ...project }) => projectRuleNames(config, project)));
+  for (const p of config.projects) {
+    if (p.eventRules === undefined) continue;
+    if (!Array.isArray(p.eventRules)) throw new Error("项目事件入口必须是列表");
+    for (const name of p.eventRules) {
+      const rule = config.rules.rules.find((r) => r.name === name);
+      if (!rule?.when.source || rule.cwd !== p.cwd || managedRules.has(name) || names.has(name))
+        throw new Error("项目事件入口必须独立绑定到一个项目，并使用该项目的目录");
+      names.add(name);
+    }
+  }
   for (const p of config.projects)
     for (const flow of flowsFor(p)) {
+      if (flow.modelNodes !== undefined) {
+        if (p.role === "integration" || !flow.modelNodes || typeof flow.modelNodes !== "object" || Array.isArray(flow.modelNodes))
+          throw new Error("项目流程的模型节点配置必须是对象");
+        for (const [node, id] of Object.entries(flow.modelNodes)) {
+          if (!Object.hasOwn(FLOW_MODEL_NODES, node)) throw new Error(`不支持的流程模型节点：${node}`);
+          if (id !== "" && (typeof id !== "string" || !acceptsFlowExecutor(p, node, id, config.rules.agents[id])))
+            throw new Error(`「${FLOW_MODEL_NODES[node]}」需要该节点支持的模型执行器`);
+        }
+      }
       const routes = [
         { type: flowType(p, flow), rule: flow.rule },
         ...Object.values(config.executionRoutes?.[`${p.id}/${flow.id}`] || {}),
+        ...Object.values(config.flowAgentRoutes?.[`${p.id}/${flow.id}`] || {}),
         ...(flow.id === "default"
           ? Object.values(config.agentRoutes?.[p.id] || {}).filter(
               (route) => route.auto && isImportedExecutor(route.agent),
@@ -247,7 +278,7 @@ export function resolveProject(projects, text, explicit) {
   const matches = projects
     .map((p) => ({
       p,
-      words: [p.id, p.name, p.cwd, ...p.aliases].filter((w) => w && normalized.includes(w.toLocaleLowerCase())),
+      words: [p.id, p.name, p.cwd, ...projectTags(p)].filter((w) => w && normalized.includes(w.toLocaleLowerCase())),
     }))
     .filter((m) => m.words.length);
   return {
@@ -262,12 +293,14 @@ export function resolveProject(projects, text, explicit) {
   };
 }
 
-export function eventFor(config, project, message, flow = flowsFor(project)[0], complexity, executor) {
+export function eventFor(config, project, message, flow = flowsFor(project)[0], complexity, executor, rule) {
   if (typeof message.text !== "string" || !message.text.trim() || [...message.text].length > 4000)
     throw new Error("任务说明需要 1 到 4000 字");
   if (!/^[a-zA-Z0-9._:-]{1,55}$/.test(message.topic)) throw new Error("话题编号格式不正确");
   if (!/^[a-zA-Z0-9._:-]{1,100}$/.test(message.id)) throw new Error("消息编号格式不正确");
-  const agentRoute = executor ? config.agentRoutes?.[project.id]?.[executor] : null;
+  const route = executor ? config.agentRoutes?.[project.id]?.[executor] : null;
+  const flowRoute = executor ? config.flowAgentRoutes?.[`${project.id}/${flow.id}`]?.[executor] : null;
+  const agentRoute = flowRoute && flowRoute.rule === rule ? flowRoute : route?.legacy && route.legacy.rule === rule ? route.legacy : route;
   return {
     id: `studio:${message.id}`,
     type: agentRoute

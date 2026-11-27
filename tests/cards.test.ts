@@ -23,6 +23,7 @@
 // The answers material carries the chosen text, or a 0-based choice gets read as the first option (issue #197: an Agent
 // reported 绿色 as 蓝色).
 // An automatic end notice must not accompany a question or reappear while that same thread still awaits an answer.
+// A card's ticket snapshot must reach a channel only on cards that have a ticket.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { at, setup } from "./helpers.ts";
@@ -33,6 +34,7 @@ setup("cards");
 const { ingest } = await import("./hub.ts");
 const { cancel, claimNext, execute, finish, heartbeat, started, sweep, why } = await import("./hub.ts");
 const { answer, resolve, nextCard, delivered, failed, tell, cardByToken, getView } = await import("./hub.ts");
+const { closeTicket } = await import("./hub.ts");
 const { AuthError, InputError, NotFound } = await import("../kernel/errors.ts");
 const { all, one, run } = await import("./storage.ts");
 
@@ -790,6 +792,52 @@ test("what only needed saying goes stale: a channel coming back after a day does
   assert.equal(nextCard("chat", at(25 * 60)), null);
   const { id } = asked(1, at(25 * 60));
   assert.equal(nextCard("chat", at(25 * 60))?.id, id, "what still needs an answer does");
+});
+
+test("only the latest round's last fyi result card carries the ticket state; asks and ordinary notices don't", () => {
+  clean();
+  const { id } = asked(1);
+  const shown = nextCard("chat", at(1))!;
+  assert.equal(shown.id, id);
+  assert.equal(shown.ticketState, undefined, "an open question isn't the place to close the ticket");
+  delivered("chat", id, shown.version, "om_1", at(1));
+  tell("source:app:loose", "应用", "没有工单", at(2));
+  const loose = nextCard("chat", at(2))!;
+  assert.equal(loose.ticketState, undefined, "a card with no ticket has no ticket state to draw");
+});
+
+test("a split result's earlier fyi and an ordinary notice keep no ticket state, so closing can't paint them as results", () => {
+  clean();
+  ingest("app", note(1), at(0));
+  const job = claimNext("w1", "split", at(0))!;
+  finish(
+    job.run,
+    job.token,
+    {
+      outcome: "done",
+      notice: [
+        { title: "结果一", text: "a", fyi: true },
+        { title: "结果二", text: "b", fyi: true },
+        { title: "普通通知", text: "c" },
+      ],
+    },
+    at(1),
+  );
+  const shown = Array.from({ length: 3 }, () => nextCard("chat", at(1))!);
+  const byTitle = Object.fromEntries(shown.map((card) => [card.title, card]));
+  assert.equal(byTitle["结果一"].ticketState, undefined, "the earlier piece of a split result has no close button");
+  assert.equal("ticketState" in byTitle["结果二"], true, "the last fyi result carries the ticket snapshot");
+  assert.equal(byTitle["结果二"].ticketState?.closeable, false, "an open notice still blocks acceptance");
+  assert.equal(byTitle["普通通知"].ticketState, undefined, "an ordinary notice is never drawn as a result card");
+  for (const card of shown) delivered("chat", card.id, card.version, `om_${card.id}`, at(1));
+  // Cancelling closes the open notice with a result; the update must stay a plain notice, not a result card.
+  closeTicket(job.ticket!.id, "me", { outcome: "cancelled", reason: "不做了" }, at(2));
+  const updates = Array.from({ length: 2 }, () => nextCard("chat", at(2))!);
+  const notice = updates.find((card) => card.title === "普通通知")!;
+  assert.deepEqual([notice.state, notice.version, notice.result], ["closed", 2, `工单 ${job.ticket!.number} 已关闭`]);
+  assert.equal(notice.ticketState, undefined, "a closed ordinary notice carries no ticket footer");
+  const drawn = JSON.stringify(render(notice));
+  assert.doesNotMatch(drawn, /✅|🔄|一键关闭任务|callback/);
 });
 
 test("a card's link goes only to a channel that allows it, and opens only that card", () => {

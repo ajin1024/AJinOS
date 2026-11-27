@@ -4,8 +4,9 @@ import { readdirSync, readFileSync, realpathSync, lstatSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { GatewayModel } from "./gateway-model.mjs";
-import { flowsFor, flowType, businessProjects } from "./src/gateway-config.mjs";
+import { flowsFor, businessProjects, newTaskTiers, projectTags } from "./src/gateway-config.mjs";
 import { selectExecutionTarget } from "./role-routing.mjs";
+import { modelExecutorFor } from "./src/flow-executors.mjs";
 export { flowsFor, flowType } from "./src/gateway-config.mjs";
 
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -13,18 +14,6 @@ const fail = (message) => Object.assign(new Error(message), { status: 409 });
 const cleanText = (value, max) => typeof value === "string" && value.trim() && value.length <= max;
 export const projectIdentity = (p) =>
   hash({ id: p.id, cwd: p.cwd, name: p.name, description: p.description, aliases: p.aliases });
-
-function newTaskTiers(config, project, flowId) {
-  const execute = config.roleRouting?.roles?.execute;
-  if (
-    flowId === "default" &&
-    project.service !== "autoloop" &&
-    project.executionMode !== "fixed" &&
-    (execute?.primary || execute?.fallback) &&
-    !config.executionTiers
-  ) return null;
-  return config.executionRoutes?.[`${project.id}/${flowId}`];
-}
 
 export function projectSnapshot(project) {
   const root = realpathSync(project.cwd.replace(/^~(?=[/\\])/, homedir()));
@@ -51,7 +40,7 @@ export function projectSnapshot(project) {
   const data = {
     id: project.id,
     name: project.name,
-    aliases: project.aliases,
+    aliases: projectTags(project),
     description: project.description || "",
     directories,
     documents,
@@ -84,7 +73,11 @@ export class Gateway {
   profile(project) {
     const cached = this.db.prepare("SELECT data FROM project_profile_cache WHERE project=?").get(project.id);
     const value = cached ? JSON.parse(cached.data) : this.read(`profile:${project.id}`);
-    return value?.summary && value.identity === projectIdentity(project) ? value : null;
+    if (!value?.summary || value.identity !== projectIdentity(project)) return null;
+    return { ...value, tags: projectTags(project, value.tags) };
+  }
+  projectTags(project) {
+    return this.profile(project)?.tags ?? projectTags(project);
   }
   profileBytes(project) {
     const cache = this.db.prepare("SELECT length(CAST(data AS BLOB)) AS bytes FROM project_profile_cache WHERE project=?").get(project.id);
@@ -161,15 +154,30 @@ export class Gateway {
       this.db.exec("ROLLBACK");
       throw error;
     }
-    return profile;
+    return { ...profile, tags: projectTags(project, profile.tags) };
   }
-  resolve(config, projectId, flowId, extra = {}) {
+  resolve(config, projectId, flowId, { boundRule, ...extra } = {}) {
     const project = config.projects.find((p) => p.id === projectId);
     if (!project) throw fail("项目不存在或已移除");
     const flow = flowsFor(project).find((f) => f.id === (flowId || "default"));
     if (!flow || !config.rules.rules.some((r) => r.name === flow.rule)) throw fail("流程不存在或已移除");
+    const configuredExecutor = !extra.skipRoleRouting && !extra.executor && flow.modelNodes?.execute;
+    const nodeRoute = config.flowAgentRoutes?.[`${project.id}/${flow.id}`]?.[configuredExecutor || extra.executor];
+    if (nodeRoute && (configuredExecutor || nodeRoute.rule === boundRule)) {
+      return {
+        ...extra,
+        project,
+        flow,
+        rule: nodeRoute.rule,
+        executor: nodeRoute.agent,
+        complexity: null,
+        candidates: [project.id],
+        reason: extra.reason || "按流程的执行任务节点派发",
+      };
+    }
     if (extra.executor) {
-      const agentRoute = config.agentRoutes?.[project.id]?.[extra.executor];
+      const route = config.agentRoutes?.[project.id]?.[extra.executor];
+      const agentRoute = route?.legacy && route.legacy.rule === boundRule ? route.legacy : route;
       if (!agentRoute || !config.rules.rules.some((r) => r.name === agentRoute.rule))
         throw fail("所选执行器不可用，请重新选择");
       return {
@@ -255,6 +263,7 @@ export class Gateway {
         topic,
         complexity: bound.complexity || null,
         executor: bound.executor || null,
+        boundRule: bound.rule,
         skipRoleRouting: true,
         reason: "按已有话题归属续接",
       });
@@ -265,7 +274,7 @@ export class Gateway {
     const candidatesConfig = businessProjects(config);
     if (body.project && config.projects.find((p) => p.id === body.project)?.role === "integration")
       return { project: null, candidates: [], reason: "请选择业务项目，消息接入不作为新任务的项目归属" };
-    let explicit, fixedFlow;
+    let explicit;
     if (body.project) {
       if (body.executor) return this.resolve(config, body.project, body.flow, { topic, executor: body.executor });
       explicit = this.resolve(config, body.project, body.flow, { topic });
@@ -273,9 +282,8 @@ export class Gateway {
         return body.complexity && newTaskTiers(config, explicit.project, explicit.flow.id)
           ? this.resolve(config, body.project, body.flow, { topic, complexity: body.complexity })
           : explicit;
-      fixedFlow = body.flow || body.complexity || flowsFor(explicit.project).length === 1 ? explicit.flow.id : null;
       const tiers = newTaskTiers(config, explicit.project, explicit.flow.id);
-      if (fixedFlow && (!tiers || body.complexity))
+      if (!tiers || body.complexity)
         return tiers
           ? this.resolve(config, body.project, body.flow, { topic, complexity: body.complexity })
           : { ...explicit, complexity: null };
@@ -283,31 +291,34 @@ export class Gateway {
     if (body.executor && !body.project) throw fail("指定执行器时需要同时指定项目");
     if (body.flow && !body.project) throw fail("指定流程时需要同时指定项目");
     const pending = (reason, candidates = []) => ({ project: null, candidates, reason });
-    if (config.gateway?.enabled === false) return pending("智能识别已关闭，请选择项目与流程");
+    if (config.gateway?.enabled === false) return pending("智能识别已关闭，请选择项目");
     if (!candidatesConfig.length) return pending("请先登记项目");
     const text = body.text.toLocaleLowerCase();
     const matches = candidatesConfig.filter((p) =>
-      [p.id, p.name, p.cwd, ...p.aliases].some((word) => word && text.includes(word.toLocaleLowerCase())),
+      [p.id, p.name, p.cwd, ...this.projectTags(p)].some((word) => word && text.includes(word.toLocaleLowerCase())),
     );
     if (
       !explicit &&
       matches.length === 1 &&
-      flowsFor(matches[0]).length === 1 &&
       !newTaskTiers(config, matches[0], "default")
     )
-      return this.resolve(config, matches[0].id, "default", { topic, reason: "匹配已登记的项目名称、目录或别名" });
+      return this.resolve(config, matches[0].id, "default", { topic, reason: "匹配已登记的项目名称、目录或标签" });
+    const flowId = explicit?.flow.id || "default";
     const projects = candidatesConfig
       .filter((p) => !explicit || p.id === explicit.project.id)
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        aliases: p.aliases,
-        description: p.description || "",
-        profile: this.profile(p),
-        flows: flowsFor(p)
-          .filter((f) => !fixedFlow || f.id === fixedFlow)
-          .map(({ id, name, description }) => ({ id, name, description })),
-      }));
+      .map((p) => {
+        const profile = this.profile(p);
+        return {
+          id: p.id,
+          name: p.name,
+          aliases: profile?.tags ?? projectTags(p),
+          description: p.description || "",
+          profile,
+          flows: flowsFor(p)
+            .filter((f) => f.id === flowId)
+            .map(({ id, name, description }) => ({ id, name, description })),
+        };
+      });
     try {
       const output = await this.model("route", { text: body.text, projects }, config);
       if (output?.needsConfirmation === true)
@@ -332,12 +343,12 @@ export class Gateway {
         typeof output.flow !== "string"
       )
         return pending(
-          "无法唯一确定项目与流程，请选择" + (cleanText(output?.reason, 600) ? `：${output.reason}` : ""),
+          "无法唯一确定项目，请选择" + (cleanText(output?.reason, 600) ? `：${output.reason}` : ""),
           candidates,
         );
       const project = candidatesConfig.find((p) => p.id === output.project);
       if (!project) return pending("识别结果不属于已登记的业务项目");
-      if ((explicit && output.project !== explicit.project.id) || (fixedFlow && output.flow !== fixedFlow))
+      if ((explicit && output.project !== explicit.project.id) || output.flow !== flowId)
         throw fail("识别结果与指定项目或流程不一致");
       const tiered = newTaskTiers(config, project, output.flow);
       if (tiered && !["simple", "complex"].includes(output.complexity))
@@ -349,7 +360,7 @@ export class Gateway {
         profileVersion: projects.find((p) => p.id === output.project)?.profile?.version || null,
       });
     } catch (error) {
-      return pending("智能识别未完成，请手动选择项目与流程（" + String(error.message).slice(0, 160) + "）");
+      return pending("智能识别未完成，请手动选择项目（" + String(error.message).slice(0, 160) + "）");
     }
   }
   async confirmRequirements(config, body) {
@@ -359,7 +370,8 @@ export class Gateway {
     if (config.gateway?.enabled === false)
       return { confirmed: false, reason: "智能确认已关闭，请补充目标并勾选确认需求后提交。" };
     try {
-      const result = await this.model("confirm", { text: body.text }, config);
+      const executorId = modelExecutorFor(config, body.project, body.flow, "confirm");
+      const result = await this.model("confirm", { text: body.text }, config, executorId ? { executorId } : undefined);
       if (result?.confirmed === true && cleanText(result.reason, 600))
         return { confirmed: true, reason: result.reason };
       if (result?.confirmed === false && cleanText(result.question, 600))

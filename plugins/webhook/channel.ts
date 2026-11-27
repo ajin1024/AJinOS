@@ -33,7 +33,14 @@ function words(card: Card, platform = "") {
   )
     return [title, source, card.text, `[点击处理](${card.link})`].filter(Boolean).join("\n\n");
   const choices = card.options.map((option, index) => `${index + 1}. ${option}`).join("\n");
-  const parts = [title, source, card.text, ...(card.state === "open" ? [choices, card.link] : [])];
+  // A channel that can only send words gets the card's own page as the close button.
+  const closeLink =
+    card.ticketState?.closeable && card.link
+      ? platform === "wecom"
+        ? `[一键关闭任务](${card.link})`
+        : `一键关闭任务：${card.link}`
+      : "";
+  const parts = [title, source, card.text, ...(card.state === "open" ? [choices, card.link] : []), closeLink];
   return parts.filter(Boolean).join("\n\n");
 }
 

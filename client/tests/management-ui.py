@@ -33,7 +33,10 @@ def run_test(url):
             elif request.url.endswith("/api/config") and request.method == "PUT":
                 body = request.post_data_json
                 writes.append(body)
-                route.fulfill(json={"value": body["value"], "revision": "ui-test", "profiles": {}, "restartRequired": False})
+                if target_url:
+                    route.fulfill(json={"value": body["value"], "revision": "ui-test", "profiles": {}, "restartRequired": False})
+                else:
+                    route.continue_()
             else:
                 route.abort()
 
@@ -50,7 +53,7 @@ def run_test(url):
         for node, expected_hash, heading in [
             ("github", "#settings/connections", "来源与通知"),
             ("project:ajinos", "#settings/projects/ajinos", None),
-            ("workers", "#settings/agents", "执行器与模型"),
+            ("workers", "#settings/agents", "执行器"),
             ("hub", "#settings/runtime", "运行环境与引擎"),
             ("timer", "#settings/rules", "规则与定时"),
         ]:
@@ -67,33 +70,52 @@ def run_test(url):
             else:
                 expect(page.locator(".ps-page-host")).to_be_visible()
 
-        # Verify static import templates and selection in the normal task entry.
+        # Verify saved executor parameters, node reuse, and copy on a narrow screen.
         page.locator('[data-settings-section="agents"]').click()
         if not target_url:
-            for example, name, model in [
-                ("Sol 6.2 · 高", "我的 Sol 执行器", "gpt-6.2-sol"),
-                ("Astra 6.2 · 高", "我的 Astra 执行器", "gpt-6.2-astra"),
+            for speed, name, model in [
+                ("fast", "我的 Sol 执行器", "gpt-6.2-sol"),
+                ("", "我的 Astra 执行器", "gpt-6.2-astra"),
             ]:
-                page.get_by_role("button", name="快捷导入", exact=True).click()
-                dialog = page.get_by_role("dialog", name="快捷导入执行器")
-                dialog.get_by_role("button", name=example, exact=True).click()
-                expect(dialog.get_by_label("模型 ID")).to_have_value(model)
-                expect(dialog.get_by_label("思考强度")).to_have_value("high")
-                dialog.get_by_label("执行器名称").fill(name)
+                page.get_by_role("button", name="新建执行器", exact=True).click()
+                dialog = page.get_by_role("dialog", name="新建执行器")
+                dialog.get_by_label("软件", exact=True).select_option("codex")
+                dialog.get_by_label("模型", exact=True).fill(model)
+                dialog.get_by_label("思考强度", exact=True).select_option("high")
+                dialog.get_by_label("速度", exact=True).select_option(speed)
+                dialog.get_by_label("显示名称").fill(name)
                 with page.expect_response(lambda res: res.url.endswith("/api/agents/import")) as response:
-                    dialog.get_by_role("button", name="导入执行器", exact=True).click()
+                    dialog.get_by_role("button", name="保存", exact=True).click()
                 assert response.value.ok, response.value.text()
                 expect(dialog).to_have_count(0)
-                expect(page.locator(".sc-executor-item").filter(has_text=name)).to_contain_text(model)
+                expect(page.get_by_role("row").filter(has_text=name)).to_contain_text(model)
+                if speed:
+                    sol_id = response.value.json()["agentId"]
             page.reload()
             expect(page.get_by_text("我的 Sol 执行器", exact=True)).to_be_visible()
             expect(page.get_by_text("我的 Astra 执行器", exact=True)).to_be_visible()
+            page.goto(url + "/#settings/projects/orders")
+            page.get_by_role("button", name="项目流程", exact=True).click()
+            flow = page.get_by_role("dialog", name=re.compile("项目流程"))
+            flow.get_by_label("需求确认的执行器").select_option(sol_id)
+            flow.get_by_role("button", name=re.compile("执行任务")).click()
+            flow.get_by_label("执行任务的执行器").select_option(sol_id)
+            expect(flow.get_by_text("快速", exact=True)).to_be_visible()
+            with page.expect_response(lambda res: res.url.endswith("/api/config") and res.request.method == "PUT") as response:
+                flow.get_by_role("button", name="保存流程", exact=True).click()
+            assert response.value.ok, response.value.text()
+            expect(flow).to_have_count(0)
+            page.goto(url + "/#settings/agents")
+            page.get_by_role("button", name="编辑我的 Sol 执行器").click()
+            edit = page.get_by_role("dialog", name="编辑执行器")
+            expect(edit.locator(".sc-executor-references li")).to_have_text([
+                "订单服务 · 演示 / 默认流程 / 需求确认", "订单服务 · 演示 / 默认流程 / 执行任务",
+            ])
+            edit.get_by_role("button", name="取消", exact=True).click()
             page.set_viewport_size({"width": 390, "height": 800})
-            sol = page.locator(".sc-executor-item").filter(has_text="我的 Sol 执行器")
-            sol.locator("summary").click()
-            sol.get_by_role("button", name="复用配置导入").click()
-            dialog = page.get_by_role("dialog", name="快捷导入执行器")
-            expect(dialog.get_by_label("模型 ID")).to_have_value("gpt-6.2-sol")
+            page.get_by_role("button", name="复制我的 Sol 执行器").click()
+            dialog = page.get_by_role("dialog", name="复制执行器")
+            expect(dialog.get_by_label("模型", exact=True)).to_have_value("gpt-6.2-sol")
             expect(dialog.get_by_label("思考强度")).to_have_value("high")
             assert dialog.evaluate("el => el.getBoundingClientRect().width <= window.innerWidth")
             dialog.get_by_role("button", name="取消", exact=True).click()
@@ -102,8 +124,7 @@ def run_test(url):
 
         # Verify gateway preview & save.
         page.locator('#nav [data-view="settings"]').click()
-        page.locator('[data-settings-section="agents"]').click()
-        page.get_by_role("button", name="配置项目识别网关").click()
+        page.locator('[data-settings-section="gateway"]').click()
         page.locator('textarea[name="blockedTerms"]').fill("删除生产数据\nDROP TABLE")
         page.locator('textarea[name="probe"]').fill("please drop table orders")
         expect(page.locator("#gateway-probe-result")).to_contain_text("会拦截")
@@ -113,7 +134,7 @@ def run_test(url):
         # Verify responsive layout across all settings sections and projects.
         for width in (1280, 640, 390):
             page.set_viewport_size({"width": width, "height": 800})
-            for section in ("rules", "connections", "runtime", "agents", "advanced"):
+            for section in ("rules", "connections", "runtime", "agents", "gateway", "advanced"):
                 if width < 960:
                     page.get_by_role("button", name="能力与沙箱导航", exact=True).click()
                 page.locator(f'[data-settings-section="{section}"]').click()

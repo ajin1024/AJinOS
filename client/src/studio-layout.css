@@ -303,10 +303,6 @@ body.station-view #drawer.studio-other-drawer {
   padding: 22px 26px;
   overflow: hidden;
 }
-.sc-router-link {
-  width: min(100%, 820px);
-  margin: 0 auto 12px;
-}
 #app .sc-container {
   margin: 0 auto;
   max-width: 820px;

@@ -143,7 +143,7 @@ test("only the owner on the delivered card in the original chat can select a cur
   assert.doesNotMatch(JSON.stringify(s.updated.at(-1).card), /再次选择同一项/);
 });
 
-test("tiered projects ask for a flow and task level, then bypass the failed classifier with explicit choices", async () => {
+test("tiered projects ask for a task level and use the default flow even when a legacy flow exists", async () => {
   const bodies = [];
   const s = setup({
     submit: async (body) => {
@@ -160,7 +160,9 @@ test("tiered projects ask for a flow and task level, then bypass the failed clas
   await s.picker.offer("om_original", s.record);
   await s.picker.clicked(event());
   assert.deepEqual(bodies, [{ ...s.record.body, project: "two" }]);
-  assert.equal(dropdown(s.updated.at(-1).card).options.length, 3);
+  const select = dropdown(s.updated.at(-1).card);
+  assert.equal(select.options.length, 2);
+  assert.equal(select.placeholder.content, "选择任务等级");
   await s.picker.clicked(event("route", "1"));
   assert.deepEqual(bodies[1], { ...s.record.body, project: "two", flow: "default", complexity: "complex" });
 });

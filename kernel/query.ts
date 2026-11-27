@@ -4,7 +4,14 @@ import { rows, type Fact, type Row, type View } from "./evolve.ts";
 import { ruleOf, type Rule, type Rules } from "./rules.ts";
 import type { Job } from "../protocol/job.ts";
 import { stepsOf, taskStatusOf, type FlowStep } from "../protocol/task-status.ts";
-import { ticketNumber, ticketStatusOf, ticketStatusNames, type TicketRow } from "../protocol/ticket.ts";
+import {
+  ticketNumber,
+  ticketStatusOf,
+  ticketStatusNames,
+  type TicketOutcome,
+  type TicketRow,
+  type TicketStatus,
+} from "../protocol/ticket.ts";
 
 export function configuration(view: View, version?: number): Rules {
   const current = view.get("config", "rules");
@@ -131,11 +138,66 @@ export function openInScope(view: View, run: Row) {
   );
 }
 
-export function cardView(card: Row, env: Environment, ref: string | null = null, links = false) {
+/** A card's ticket as a channel sees it: enough to tell whether the card may close it in place. */
+export type CardTicketState = {
+  id: number;
+  number: string;
+  state: "open" | "closed";
+  status: TicketStatus;
+  resolution: "completed" | "unnecessary" | null;
+  outcome: TicketOutcome | null;
+  closedAt: string | null;
+  closedNote: string | null;
+  /** True only for the newest round's last fyi result card of a ticket waiting for acceptance. */
+  closeable: boolean;
+};
+
+/** The last fyi result card a round told, if any: the only one a channel may draw a close button on. */
+export function lastResultCard(view: View, runId: number) {
+  const results = rows(view, "cards", { run_id: runId }).filter((row) => row.kind === "notice" && row.fyi);
+  return results.sort((a, b) => a.id - b.id).at(-1) ?? null;
+}
+
+/** Where the ticket behind a card is now, and whether this card is the one offered to close it. */
+function ticketStateOf(view: View, card: Row): CardTicketState | null {
+  if (card.kind !== "notice" || !card.fyi || card.run_id == null) return null;
+  if (lastResultCard(view, card.run_id)?.id !== card.id) return null;
+  const ticket = card.ticket == null ? undefined : view.get("tickets", card.ticket);
+  if (!ticket) return null;
+  const runs = ticketRuns(view, ticket);
+  const latest = runs.at(-1);
+  const status = ticketStatusOf({
+    ticket: ticket as TicketRow,
+    runs: runs.map((run) => ({ id: run.id, state: run.state, attempts: run.attempts, task: taskOf(run) })),
+    cards: ticketCards(view, ticket) as any,
+    timers: ticketTimers(view, ticket),
+    flow: flowOf(view, ticket.rule, latest?.rules_version),
+  });
+  const closeable =
+    ticket.state === "open" &&
+    status.status === "ready_for_acceptance" &&
+    status.resolution !== null &&
+    latest !== undefined &&
+    card.run_id === latest.id;
+  return {
+    id: ticket.id,
+    number: ticketNumber(ticket.id),
+    state: ticket.state,
+    status: status.status,
+    resolution: status.resolution,
+    outcome: ticket.outcome ?? null,
+    closedAt: ticket.closed_at ?? null,
+    closedNote: ticket.closed_note ?? null,
+    closeable,
+  };
+}
+
+export function cardView(card: Row, env: Environment, ref: string | null = null, links = false, view?: View) {
   const { id, version, kind, state, title, text, recommend, choice, answer, by, result } = card;
   const options: string[] = kind === "ask" ? JSON.parse(card.options) : state === "open" ? ["已处理"] : [];
   const link = links ? `${env.publicUrl.replace(/\/$/, "")}/c/${credential(env, "card", id, card.created_at)}` : null;
   const when = { createdAt: card.created_at, decidedAt: card.decided_at, closedAt: card.closed_at };
+  const ticketState = view ? ticketStateOf(view, card) : null;
   return {
     id,
     version,
@@ -153,6 +215,7 @@ export function cardView(card: Row, env: Environment, ref: string | null = null,
     link,
     rule: card.rule,
     ticket: card.ticket ? ticketNumber(card.ticket) : null,
+    ...(ticketState ? { ticketState } : {}),
     ...when,
   };
 }

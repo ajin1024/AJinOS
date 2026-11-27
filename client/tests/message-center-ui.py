@@ -73,7 +73,7 @@ with running_studio("studio-messages-ui-") as url, sync_playwright() as playwrig
     expect(page.get_by_role("heading", name="待我处理", exact=True)).to_be_visible()
     expect(page.get_by_role("region", name="待澄清与失败请求").get_by_text("无法唯一判断归属的请求")).to_be_visible()
     approval_card = page.locator(".queue-card").filter(has_text="继续执行演示验证吗？")
-    expect(approval_card.get_by_text("来自 主私聊")).to_be_visible(timeout=30000)
+    expect(approval_card.get_by_text("来自 总管路由")).to_be_visible(timeout=30000)
     approval_card.get_by_text("结束演示", exact=True).click()
     approval_card.get_by_role("button", name="提交答复").click()
     expect(approval_card).to_have_count(0)
