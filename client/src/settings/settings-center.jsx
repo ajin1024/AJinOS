@@ -52,6 +52,7 @@ export function SettingsCenter({
   versionProgress,
   onEditingChange,
   projectSpace,
+  onOpenTicket,
 }) {
   const [showNav, setShowNav] = React.useState(false);
   const active = section || "projects";
@@ -90,7 +91,9 @@ export function SettingsCenter({
         {active === "gateway" && (
           <GatewayPanel config={config} onSaveConfig={onSaveConfig} onEditingChange={onEditingChange} />
         )}
-        {active === "memory" && <MemoryPanel config={config} api={api} toast={toast} />}
+        {active === "memory" && (
+          <MemoryPanel config={config} api={api} toast={toast} onOpenTicket={onOpenTicket} />
+        )}
         {active === "rules" && (
           <RulesPanel
             config={config}
