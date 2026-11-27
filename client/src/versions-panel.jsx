@@ -2,6 +2,32 @@ import React, { useEffect, useState } from "react";
 import { Banner, Button, Collapse, Tag } from "@douyinfe/semi-ui";
 import { IconRefresh } from "@douyinfe/semi-icons";
 import { formatDate } from "./studio-helpers.mjs";
+import { githubLink } from "../github-links.mjs";
+
+const stableTag = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+function GithubAction({ target, tag, repo, className, title, children, onError }) {
+  const href = githubLink(target, { tag, repo });
+  if (window.studio?.openGitHub) {
+    return (
+      <button
+        type="button"
+        className={className}
+        title={title}
+        onClick={() => {
+          window.studio.openGitHub(target, tag).catch(() => onError?.(`无法打开系统浏览器，请手动访问 ${href}`));
+        }}
+      >
+        {children}
+      </button>
+    );
+  }
+  return (
+    <a className={className} href={href} target="_blank" rel="noreferrer" title={title}>
+      {children}
+    </a>
+  );
+}
 
 function ReleaseNotes({ text }) {
   const lines = String(text || "此版本没有提供更新说明")
@@ -81,13 +107,30 @@ export function VersionsPanel({ windowsUpdate, progress, toast }) {
   const current = data.current;
   if (data.installed) {
     const update = windowsUpdate || data.packageUpdate;
+    const releaseTag = stableTag.test(current.label) ? current.label : null;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <section className="sc-card version-current">
           <div className="sc-card-head">
-            <h3>{current.label}</h3>
+            <h3>
+              <GithubAction
+                target={releaseTag ? "release" : "releases"}
+                tag={releaseTag || undefined}
+                repo={update?.repo}
+                className="sc-version-link"
+                title={releaseTag ? "在 GitHub 查看此版本的发布页" : "在 GitHub 查看发布列表"}
+                onError={setStatus}
+              >
+                {current.label}
+              </GithubAction>
+            </h3>
             <Tag color="cyan">Windows 安装版</Tag>
           </div>
+          <p className="sc-version-github">
+            <GithubAction target="repo" repo={update?.repo} className="sc-github-link" onError={setStatus}>
+              在 GitHub 查看项目
+            </GithubAction>
+          </p>
         </section>
         {update ? (
           <section className="sc-card">
@@ -103,9 +146,13 @@ export function VersionsPanel({ windowsUpdate, progress, toast }) {
               )}
             </div>
             {update.tag && <ReleaseNotes text={update.notes} />}
-            <p className="sc-muted" style={{ fontSize: 12 }}>
-              {update.repo}
-            </p>
+            {update.repo && (
+              <p className="sc-muted" style={{ fontSize: 12 }}>
+                <GithubAction target="repo" repo={update?.repo} className="sc-github-link" onError={setStatus}>
+                  {update.repo}
+                </GithubAction>
+              </p>
+            )}
           </section>
         ) : (
           <p className="sc-note">运行新版安装包即可更新。</p>
@@ -121,6 +168,7 @@ export function VersionsPanel({ windowsUpdate, progress, toast }) {
 
   const history = (data.history || []).filter((v) => v.root !== current.root);
   const latest = data.available?.[0];
+  const releaseTag = stableTag.test(current.tag || "") ? current.tag : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -130,7 +178,17 @@ export function VersionsPanel({ windowsUpdate, progress, toast }) {
             <span className="sc-muted" style={{ fontSize: 12 }}>
               当前正在使用
             </span>
-            <h3 style={{ marginTop: 2 }}>{current.label}</h3>
+            <h3 style={{ marginTop: 2 }}>
+              <GithubAction
+                target={releaseTag ? "release" : "releases"}
+                tag={releaseTag || undefined}
+                className="sc-version-link"
+                title={releaseTag ? "在 GitHub 查看此版本的发布页" : "在 GitHub 查看发布列表"}
+                onError={setStatus}
+              >
+                {current.label}
+              </GithubAction>
+            </h3>
           </div>
           {window.studio && (
             <Button icon={<IconRefresh aria-hidden="true" />} loading={busy} onClick={() => runAction("check")}>
@@ -142,6 +200,11 @@ export function VersionsPanel({ windowsUpdate, progress, toast }) {
           {current.commit?.slice(0, 12) || "无提交记录"}
           {current.dirty ? " · 含本地修改，更新会保留原目录" : " · 工作目录干净"}
           {data.checkedAt ? ` · 上次检查 ${formatDate(data.checkedAt)}` : ""}
+        </p>
+        <p className="sc-version-github">
+          <GithubAction target="repo" className="sc-github-link" onError={setStatus}>
+            在 GitHub 查看项目
+          </GithubAction>
         </p>
       </section>
 

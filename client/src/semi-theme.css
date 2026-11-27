@@ -758,6 +758,32 @@ body[theme-mode="dark"] .semi-switch-checked {
 .sc-version-history + .sc-version-history {
   border-top: 1px solid var(--ui-line);
 }
+.sc-version-link {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.sc-version-link:hover {
+  color: var(--ui-accent-ink);
+  text-decoration: underline;
+}
+.sc-version-github {
+  margin: 0;
+}
+.sc-github-link {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ui-accent-ink);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
 
 /* JSON editor */
 .sc-json-textarea textarea {
