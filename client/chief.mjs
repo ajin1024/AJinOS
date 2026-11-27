@@ -19,6 +19,8 @@ export function buildGlobalBrief({ state = {}, memories = [], plans = [] } = {})
   const awaitingAcceptance = tickets.filter((t) => t.state === "open" && t.status === "ready_for_acceptance");
   const running = runs.filter((r) => r.state === "claimed");
   const queued = runs.filter((r) => r.state === "queued");
+  const isIssueRule = (rule) => String(rule || "").startsWith("studio-gh-");
+  const issueBacklog = queued.filter((r) => isIssueRule(r.rule));
   const blocked = runs.filter((r) => r.state === "cancelled" || r.state === "unknown");
   const memoryDrafts = memories.filter((m) => m.status === "draft");
   const activePlans = plans.filter((p) => p.status === "running" || p.status === "draft");
@@ -31,6 +33,7 @@ export function buildGlobalBrief({ state = {}, memories = [], plans = [] } = {})
       awaitingAcceptance: awaitingAcceptance.length,
       running: running.length,
       queued: queued.length,
+      issueBacklog: issueBacklog.length,
       blocked: blocked.length,
       memoryDrafts: memoryDrafts.length,
       activePlans: activePlans.length,
@@ -43,6 +46,13 @@ export function buildGlobalBrief({ state = {}, memories = [], plans = [] } = {})
       summary: t.summary || "",
     })),
     running: running.slice(0, 10).map((r) => ({ id: r.id, rule: r.rule, ticketNumber: r.ticketNumber || null })),
+    queued: queued.slice(0, 10).map((r) => ({
+      id: r.id,
+      rule: r.rule,
+      ticketNumber: r.ticketNumber || null,
+      isIssue: isIssueRule(r.rule),
+      summary: r.summary || (r.events || []).at(-1)?.summary || "",
+    })),
     blocked: blocked.slice(0, 10).map((r) => ({
       id: r.id,
       rule: r.rule,
@@ -146,8 +156,9 @@ export class ChiefOfStaff {
         ...(brief.blocked || []).map((run) => [run.rule, run.reason].filter(Boolean).join(" · ")),
         ...(brief.openQuestions || []).map((card) => card.title),
       ].filter(Boolean).slice(0, 5);
+      const backlogNote = counts.issueBacklog > 0 ? `（含外部 Issue 积压 ${counts.issueBacklog} 项）` : "";
       return {
-        answer: `当前待拍板 ${counts.openQuestions} 项、待验收 ${counts.awaitingAcceptance} 项、运行中 ${counts.running} 项、排队 ${counts.queued ?? 0} 项、受阻 ${counts.blocked ?? 0} 项。`,
+        answer: `当前待拍板 ${counts.openQuestions} 项、待验收 ${counts.awaitingAcceptance} 项、运行中 ${counts.running} 项、排队 ${counts.queued ?? 0} 项${backlogNote}、受阻 ${counts.blocked ?? 0} 项。`,
         highlights,
         at: brief.at || new Date().toISOString(),
       };
@@ -168,6 +179,90 @@ export class ChiefOfStaff {
           .map((h) => h.trim().slice(0, 160))
       : [];
     return { answer: output.answer.trim().slice(0, 2000), highlights, at: new Date().toISOString() };
+  }
+
+  async discuss(
+    config,
+    { message, discussionId = null, turns = [], brief = null, memories = [], profiles = {}, focusProject = null } = {},
+  ) {
+    if (typeof message !== "string" || !message.trim() || [...message].length > 4000)
+      throw bad("请输入 1 到 4000 字的讨论内容");
+    if (!this.model) throw bad("总管模型未配置", 503);
+    const projects = businessProjects(config);
+    const focused = focusProject && projects.find((p) => p.id === focusProject) ? focusProject : null;
+    const conversation = (Array.isArray(turns) ? turns : [])
+      .slice(-8)
+      .filter((turn) => turn && typeof turn.user === "string")
+      .map((turn) => ({
+        user: turn.user.trim().slice(0, 800),
+        assistant: typeof turn.assistant === "string" ? turn.assistant.trim().slice(0, 1000) : "",
+      }));
+    const payload = {
+      message: message.trim(),
+      focusProject: focused,
+      conversation,
+      projects: projects.map((p) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description || "",
+        profile: profiles[p.id] || null,
+        flows: flowsFor(p).map((f) => ({ id: f.id, name: f.name, description: f.description || "" })),
+      })),
+      memories: (memories || []).slice(0, 12).map((m) => ({
+        scope: m.scope,
+        project: m.project,
+        kind: m.kind,
+        title: m.title,
+        content: m.content,
+      })),
+      ...(brief ? { brief } : {}),
+    };
+    let output;
+    try {
+      output = await this.model("discuss", payload, config);
+    } catch (cause) {
+      throw Object.assign(new Error("总管需求沟通暂时不可用，请稍后重试。", { cause }), { status: 503 });
+    }
+    if (typeof output?.reply !== "string" || !output.reply.trim())
+      throw bad("总管返回格式无效，请重试", 502);
+    const questions = Array.isArray(output.questions)
+      ? output.questions
+          .filter((q) => typeof q === "string" && q.trim())
+          .slice(0, 3)
+          .map((q) => q.trim().slice(0, 200))
+      : [];
+    const suggestedAction = ["discuss", "task", "plan"].includes(output.suggestedAction)
+      ? output.suggestedAction
+      : "discuss";
+    let draft = null;
+    if (output.draft && typeof output.draft === "object" && !Array.isArray(output.draft)) {
+      const summary = typeof output.draft.summary === "string" ? output.draft.summary.trim().slice(0, 1500) : "";
+      if (summary) {
+        const matchedProject =
+          typeof output.draft.project === "string" ? projects.find((p) => p.id === output.draft.project) : null;
+        const title =
+          typeof output.draft.title === "string" && output.draft.title.trim()
+            ? output.draft.title.trim().slice(0, 80)
+            : [...summary].slice(0, 40).join("");
+        const complexity = ["simple", "complex"].includes(output.draft.complexity) ? output.draft.complexity : null;
+        draft = {
+          title,
+          project: matchedProject ? matchedProject.id : null,
+          projectName: matchedProject ? matchedProject.name : null,
+          summary,
+          complexity,
+        };
+      }
+    }
+    return {
+      discussionId: discussionId || randomUUID().slice(0, 12),
+      reply: output.reply.trim().slice(0, 2000),
+      questions,
+      ready: Boolean(output.ready),
+      suggestedAction,
+      draft,
+      at: new Date().toISOString(),
+    };
   }
 
   async createPlan(config, { goal, memories = [], profiles = {} }) {

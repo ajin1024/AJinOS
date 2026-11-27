@@ -8,6 +8,7 @@ export const ROLE_BY_KIND = {
   message: "plan",
   profile: "plan",
   brief: "plan",
+  discuss: "plan",
   plan: "plan",
   verify: "verify",
   memory: "verify",
@@ -20,6 +21,7 @@ const NODE_KEY_BY_KIND = {
   message: "gateway",
   profile: "profile",
   brief: "chief",
+  discuss: "chief",
   plan: "chief",
   memory: "memory",
 };

@@ -94,3 +94,43 @@ test("watch-github-issues.mjs forwards optional search filter and rejects invali
   const bad = runWatcher(["not a repo"], []);
   assert.notEqual(bad.status, 0);
 });
+
+test("watch-github-issues.mjs supports --limit, --label, and --exclude-label filtering and attaches labels to detail", () => {
+  const issues = [
+    {
+      number: 21,
+      title: "Duplicate bug",
+      url: "https://github.com/owner/repo/issues/21",
+      body: "dup",
+      labels: [{ name: "Duplicate" }],
+    },
+    {
+      number: 22,
+      title: "Real crash",
+      url: "https://github.com/owner/repo/issues/22",
+      body: "stack trace",
+      labels: [{ name: "bug" }, { name: "P1" }],
+    },
+    {
+      number: 23,
+      title: "Another bug",
+      url: "https://github.com/owner/repo/issues/23",
+      body: "details",
+      labels: [{ name: "bug" }],
+    },
+  ];
+  const filtered = runWatcher(
+    ["owner/repo", "--limit", "1", "--label", "bug", "--exclude-label", "duplicate", "--exclude-label", "wontfix"],
+    issues,
+  );
+  assert.equal(filtered.status, 0, filtered.stderr);
+  assert.ok(filtered.asked.includes("--label") && filtered.asked[filtered.asked.indexOf("--label") + 1] === "bug");
+  const { result, problem } = resultFrom(readMessage(filtered.stdout), {});
+  assert.equal(problem, undefined);
+  assert.equal(result.events?.length, 1, "must exclude matching labels and enforce --limit on emitted events");
+  assert.equal(result.events?.[0]?.id, "issue-22");
+  assert.match(result.events?.[0]?.detail ?? "", /^\[标签: bug, P1\]\n\nstack trace$/);
+
+  const badLimit = runWatcher(["owner/repo", "--limit", "0"], []);
+  assert.notEqual(badLimit.status, 0);
+});

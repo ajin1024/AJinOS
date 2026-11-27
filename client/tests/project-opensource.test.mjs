@@ -73,6 +73,7 @@ test("Issue handling shares the project's parallel limit and caps its access at 
   assert.equal(handleRule.access, "edit", "external GitHub Issues must not inherit full access automatically");
   assert.equal(handleRule.group, projectRule.name);
   assert.equal(handleRule.parallel, projectRule.parallel);
+  assert.equal(handleRule.priority, -10);
   assert.equal(handleRule.tell, "always");
 
   // Re-validating is idempotent and projectRuleNames includes the derived Issue rules
@@ -133,4 +134,73 @@ test("invalid openSource settings fail validation with clear Chinese errors", ()
     pollMinutes: 7,
   };
   assert.throws(() => validateWorkspace(badInterval), /轮询间隔/);
+
+  const badMode = baseWorkspace();
+  badMode.projects[0].openSource = {
+    enabled: true,
+    repo: "ajin1024/AJinOS",
+    autoHandleIssues: true,
+    issueMode: "magic",
+  };
+  assert.throws(() => validateWorkspace(badMode), /处理策略/);
+
+  const badMax = baseWorkspace();
+  badMax.projects[0].openSource = {
+    enabled: true,
+    repo: "ajin1024/AJinOS",
+    autoHandleIssues: true,
+    maxIssues: 99,
+  };
+  assert.throws(() => validateWorkspace(badMax), /拉取.*上限/);
+});
+
+test("triage mode isolates read-only Issue triage from the project coding group and gates edits on owner approval", () => {
+  const cfg = baseWorkspace();
+  const projectRule = cfg.rules.rules.find((rule) => rule.name === cfg.projects[0].rule);
+  projectRule.parallel = 2;
+  cfg.projects[0].openSource = {
+    enabled: true,
+    repo: "ajin1024/AJinOS",
+    autoHandleIssues: true,
+    issueMode: "triage",
+    pollMinutes: 15,
+    maxIssues: 5,
+    includeLabels: ["bug"],
+    excludeLabels: ["duplicate", "wontfix"],
+  };
+
+  const validated = validateWorkspace(cfg);
+  const route = validated.issueRoutes?.orders;
+  assert.equal(route.issueMode, "triage");
+  assert.equal(route.eventType, "issues.opened.orders");
+  assert.equal(route.approvedEventType, "issues.approved.orders");
+  assert.ok(route.triageRule);
+
+  const watcher = validated.rules.agents[route.pollAgent];
+  assert.ok(watcher.command.includes("--limit") && watcher.command.includes("5"));
+  assert.ok(watcher.command.includes("--label") && watcher.command.includes("bug"));
+  assert.ok(watcher.command.includes("--exclude-label") && watcher.command.includes("duplicate"));
+
+  const triageRule = validated.rules.rules.find((r) => r.name === route.triageRule);
+  assert.ok(triageRule);
+  assert.deepEqual(triageRule.when, { source: "github", types: ["issues.opened.orders"] });
+  assert.equal(triageRule.access, "read");
+  assert.notEqual(triageRule.group, projectRule.name, "read-only triage must not contend with project coding group");
+  assert.equal(triageRule.priority, -5);
+  assert.equal(triageRule.tell, "needed");
+  assert.deepEqual(triageRule.emits, { source: "github", types: ["issues.approved.orders"] });
+
+  const handleRule = validated.rules.rules.find((r) => r.name === route.handleRule);
+  assert.ok(handleRule);
+  assert.deepEqual(handleRule.when, { source: "github", types: ["issues.approved.orders"] });
+  assert.equal(handleRule.access, "edit");
+  assert.equal(handleRule.group, projectRule.name);
+  assert.equal(handleRule.priority, -10);
+
+  const owned = projectRuleNames(validated, validated.projects[0]);
+  assert.ok(owned.includes(route.triageRule));
+
+  validated.projects[0].openSource.autoHandleIssues = false;
+  const disabled = validateWorkspace(validated);
+  assert.equal(disabled.rules.rules.some((r) => r.name === route.triageRule), false);
 });

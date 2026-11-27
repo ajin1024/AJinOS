@@ -1,7 +1,14 @@
 // Prevent broken legacy bookmarks, invalid derived project IDs, or hidden derived rules from slipping into Studio navigation and forms.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseHashRoute, routeToHash, deriveProjectId, folderNameFromPath } from "../src/studio-helpers.mjs";
+import {
+  parseHashRoute,
+  routeToHash,
+  deriveProjectId,
+  folderNameFromPath,
+  nextThemeMode,
+  formatRailVersion,
+} from "../src/studio-helpers.mjs";
 
 test("parseHashRoute maps canonical and legacy hashes cleanly", () => {
   for (const hash of ["", "#", "#overview", "#tasks/overview"])
@@ -64,4 +71,20 @@ test("deriveProjectId always generates valid unique protocol IDs", () => {
   ]) {
     assert.match(id, /^[a-z][a-z0-9-]{0,39}$/);
   }
+});
+
+test("nextThemeMode cycles light -> dark -> system -> light without popovers", () => {
+  assert.equal(nextThemeMode("light"), "dark");
+  assert.equal(nextThemeMode("dark"), "system");
+  assert.equal(nextThemeMode("system"), "light");
+  assert.equal(nextThemeMode("unknown"), "light");
+});
+
+test("formatRailVersion produces compact bottom-rail labels for release and dev builds", () => {
+  assert.equal(formatRailVersion({ tag: "v0.0.3", label: "v0.0.3", commit: "4f2af13a" }), "v0.0.3");
+  assert.equal(formatRailVersion({ label: "v1.2.10" }), "v1.2.10");
+  assert.equal(formatRailVersion({ tag: null, commit: "4f2af13a", label: "开发版 4f2af13" }), "开发版");
+  assert.equal(formatRailVersion({ label: "本地安装 · 开发版" }), "开发版");
+  assert.equal(formatRailVersion({ tag: null, commit: null, label: "本地安装（无 Git 记录）" }), "本地版");
+  assert.equal(formatRailVersion(null), "版本");
 });

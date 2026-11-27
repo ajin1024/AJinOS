@@ -61,6 +61,70 @@ test("buildGlobalBrief aggregates open cards, awaiting acceptance, blocked, runn
   assert.equal(brief.counts.blocked, 1);
   assert.equal(brief.counts.memoryDrafts, 1);
   assert.equal(brief.counts.activePlans, 1);
+  assert.equal(brief.counts.issueBacklog, 0);
+
+  const withBacklog = buildGlobalBrief({
+    state: {
+      runs: [
+        { id: 20, rule: "studio-gh-handle:orders", state: "queued", events: [{ summary: "Crash #42" }] },
+        { id: 21, rule: "studio-gh-triage:orders", state: "queued", events: [{ summary: "Question #43" }] },
+        { id: 22, rule: "订单处理", state: "queued", events: [{ summary: "直接需求" }] },
+      ],
+    },
+  });
+  assert.equal(withBacklog.counts.queued, 3);
+  assert.equal(withBacklog.counts.issueBacklog, 2);
+  assert.equal(withBacklog.queued.length, 3);
+  assert.equal(withBacklog.queued[0].isIssue, true);
+  assert.equal(withBacklog.queued[2].isIssue, false);
+});
+
+test("chief discuss conducts multi-turn read-only requirement discussion and sanitizes untrusted draft projects", async () => {
+  let receivedPayload = null;
+  const { db, chief, dispatched } = setup({
+    model: async (kind, payload) => {
+      assert.equal(kind, "discuss");
+      receivedPayload = payload;
+      return {
+        reply: "我们可以先加一个免打扰时段开关，把非紧急通知延后到早上统一汇总。",
+        questions: ["免打扰默认时段要设为 22:00-08:00 吗？"],
+        ready: true,
+        suggestedAction: "task",
+        draft: {
+          title: "新增通知免打扰时段",
+          project: payload.focusProject || "unregistered-evil",
+          summary: "在订单系统增加通知免打扰时段配置",
+          complexity: "complex",
+          cwd: "/etc/passwd",
+        },
+      };
+    },
+  });
+  try {
+    const first = await chief.discuss(config, {
+      message: "我想聊聊怎么减少晚上的通知打扰",
+      turns: [{ user: "通知太频繁了", assistant: "你希望按时段静音还是按优先级合并？" }],
+      brief: buildGlobalBrief({ state: { runs: [], cards: [], tickets: [] } }),
+    });
+    assert.ok(first.discussionId);
+    assert.equal(first.ready, true);
+    assert.equal(first.suggestedAction, "task");
+    assert.equal(first.draft.project, null, "unregistered model project must be dropped");
+    assert.equal(first.draft.cwd, undefined, "untrusted path fields must never pass through");
+    assert.equal(receivedPayload.conversation.length, 1);
+    assert.equal(dispatched.length, 0, "discuss must never open tickets or dispatch runs");
+
+    const focused = await chief.discuss(config, {
+      message: "就按 22:00 到 08:00 来",
+      discussionId: first.discussionId,
+      focusProject: "orders",
+    });
+    assert.equal(focused.discussionId, first.discussionId);
+    assert.equal(focused.draft.project, "orders");
+    assert.equal(focused.draft.projectName, "订单系统");
+  } finally {
+    db.close();
+  }
 });
 
 test("chief ask answers global questions without dispatching any worker task", async () => {

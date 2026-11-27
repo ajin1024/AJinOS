@@ -4,6 +4,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildConversations,
+  buildMainEntries,
+  buildThreadItems,
+  isOutboxSettled,
+  outboxProgressLabel,
   filterConversations,
   countActionableConversations,
   diffDesktopNotifications,
@@ -364,4 +368,174 @@ test("diffDesktopNotifications stays quiet after the baseline and only reports n
   assert.equal(taskNotice.title, "任务待验收");
   assert.equal(taskNotice.route, "messages/topic-1");
   assert.deepEqual(diffDesktopNotifications([], [base()], {}), []);
+});
+
+test("buildMainEntries shows optimistic outbox messages immediately and merges routing state without duplicating intakes", () => {
+  const sending = {
+    id: "msg-1",
+    pane: null,
+    text: "帮我检查订单状态",
+    attachments: [{ id: "att-1", url: "/api/attachments/att-1", filename: "shot.png" }],
+    payload: { id: "msg-1", text: "帮我检查订单状态", mode: "auto" },
+    at: "2026-11-26T09:00:00.000Z",
+    status: "sending",
+    error: "",
+    result: null,
+  };
+  const routingIntake = {
+    id: "msg-1",
+    state: "routing",
+    text: "帮我检查订单状态",
+    input: { text: "帮我检查订单状态", attachments: [{ id: "att-1", url: "/api/attachments/att-1", filename: "shot.png" }] },
+    at: "2026-11-26T09:00:01.000Z",
+  };
+  const standaloneIntake = {
+    id: "msg-2",
+    state: "needsProject",
+    text: "改一下首页文案",
+    reason: "无法唯一确定项目",
+    candidates: ["orders"],
+    input: { text: "改一下首页文案" },
+    at: "2026-11-26T08:50:00.000Z",
+  };
+  const topicIntake = {
+    id: "msg-3",
+    state: "routing",
+    text: "继续处理",
+    input: { topic: "topic-1", text: "继续处理" },
+    at: "2026-11-26T08:55:00.000Z",
+  };
+
+  const entries = buildMainEntries({
+    outbox: [sending],
+    intakes: [routingIntake, standaloneIntake, topicIntake],
+  });
+
+  assert.deepEqual(
+    entries.map((entry) => [entry.key, entry.kind]),
+    [
+      ["intake:msg-2", "intake"],
+      ["outbox:msg-1", "outbox"],
+    ],
+  );
+  assert.equal(entries[1].intakeState, "routing");
+  assert.equal(outboxProgressLabel(entries[1].entry, routingIntake), "正在分配项目…");
+  assert.equal(entries[1].attachments[0].id, "att-1");
+});
+
+test("buildMainEntries and isOutboxSettled hand off cleanly once history, intake or receipt arrives", () => {
+  const answerOutbox = {
+    id: "ans-1",
+    pane: null,
+    text: "今日简报",
+    attachments: [],
+    payload: { id: "ans-1", text: "今日简报", mode: "auto" },
+    at: "2026-11-26T09:00:00.000Z",
+    status: "sent",
+    result: { kind: "answer", id: "ans-1" },
+  };
+  const taskOutbox = {
+    id: "task-1",
+    pane: null,
+    text: "修复导出",
+    attachments: [],
+    payload: { id: "task-1", text: "修复导出", project: "orders" },
+    at: "2026-11-26T09:01:00.000Z",
+    status: "sent",
+    result: { kind: "task", topic: "topic-9", project: "orders" },
+  };
+  const failedOutbox = {
+    id: "fail-1",
+    pane: null,
+    text: "测试失败重试",
+    attachments: [{ id: "att-2", url: "/api/attachments/att-2", filename: "b.png" }],
+    payload: { id: "fail-1", text: "测试失败重试", mode: "auto" },
+    at: "2026-11-26T09:02:00.000Z",
+    status: "failed",
+    error: "测试连接暂时中断",
+    result: null,
+  };
+
+  // Before receipt arrives, taskOutbox stays visible; answerOutbox is already in history so it dedupes away.
+  const history = [{ id: "ans-1", kind: "answer", text: "今日简报", answer: "一切正常", at: "2026-11-26T09:00:01.000Z" }];
+  const beforeReceipt = buildMainEntries({ history, outbox: [answerOutbox, taskOutbox, failedOutbox] });
+  assert.deepEqual(
+    beforeReceipt.map((entry) => [entry.key, entry.kind]),
+    [
+      ["history:ans-1", "answer"],
+      ["outbox:task-1", "outbox"],
+      ["outbox:fail-1", "outbox"],
+    ],
+  );
+  assert.equal(isOutboxSettled(answerOutbox, { history }), true);
+  assert.equal(isOutboxSettled(taskOutbox, { receipts: [] }), false);
+  assert.equal(isOutboxSettled(failedOutbox, { intakes: [] }), false);
+
+  // Once the receipt arrives for topic-9, taskOutbox hands off cleanly.
+  const receipts = [{ key: "r-9", topic: "topic-9", updatedAt: "2026-11-26T09:01:02.000Z", runs: [{ id: 9 }] }];
+  const afterReceipt = buildMainEntries({ history, receipts, outbox: [answerOutbox, taskOutbox, failedOutbox] });
+  assert.deepEqual(
+    afterReceipt.map((entry) => [entry.key, entry.kind]),
+    [
+      ["history:ans-1", "answer"],
+      ["task:r-9", "task"],
+      ["outbox:fail-1", "outbox"],
+    ],
+  );
+  assert.equal(isOutboxSettled(taskOutbox, { receipts }), true);
+});
+
+test("buildThreadItems appends optimistic thread replies for that topic only and dedupes once stored", () => {
+  const conversation = {
+    id: "topic-1",
+    kind: "topic",
+    topic: "topic-1",
+    items: [{ type: "user_message", key: "message:m1", at: "2026-11-26T09:00:00.000Z", message: { id: "m1", text: "首条" } }],
+  };
+  const outbox = [
+    { id: "m1", pane: "topic-1", text: "首条", at: "2026-11-26T09:00:00.000Z", status: "sent" },
+    { id: "m2", pane: "topic-1", text: "补充说明", at: "2026-11-26T09:01:00.000Z", status: "sending" },
+    { id: "m3", pane: "topic-other", text: "别的话题", at: "2026-11-26T09:02:00.000Z", status: "sending" },
+    { id: "m4", pane: null, text: "主对话消息", at: "2026-11-26T09:03:00.000Z", status: "sending" },
+  ];
+
+  const items = buildThreadItems(conversation, outbox);
+  assert.deepEqual(
+    items.map((item) => [item.type, item.key]),
+    [
+      ["user_message", "message:m1"],
+      ["outbox", "outbox:m2"],
+    ],
+  );
+  assert.equal(isOutboxSettled(outbox[0], { messages: [{ id: "m1" }] }), true);
+  assert.equal(isOutboxSettled(outbox[1], { messages: [{ id: "m1" }] }), false);
+});
+
+test("discuss outbox entries show discussion progress label and settle cleanly once history arrives", () => {
+  const sending = {
+    id: "disc-1",
+    pane: null,
+    text: "先聊聊需求",
+    attachments: [],
+    payload: { id: "disc-1", text: "先聊聊需求", mode: "discuss" },
+    at: "2026-11-26T09:05:00.000Z",
+    status: "sending",
+    result: null,
+  };
+  assert.equal(outboxProgressLabel(sending), "正在和总管沟通需求…");
+  const sent = {
+    ...sending,
+    status: "sent",
+    result: { kind: "discuss", id: "disc-1", discussionId: "d-1", reply: "好的，先看范围。" },
+  };
+  assert.equal(isOutboxSettled(sent, { history: [] }), false);
+  const history = [
+    { id: "disc-1", kind: "discuss", discussionId: "d-1", text: "先聊聊需求", reply: "好的，先看范围。", at: "2026-11-26T09:05:01.000Z" },
+  ];
+  assert.equal(isOutboxSettled(sent, { history }), true);
+  const entries = buildMainEntries({ history, outbox: [sent] });
+  assert.deepEqual(
+    entries.map((entry) => [entry.key, entry.kind]),
+    [["history:disc-1", "discuss"]],
+  );
 });

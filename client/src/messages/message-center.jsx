@@ -4,6 +4,7 @@ import { IconInbox, IconSidebar } from "@douyinfe/semi-icons";
 import { DialogSidebar } from "./dialog-sidebar.jsx";
 import { AgentMessage, Avatar, DayDivider, PlanCard, ReceiptCard, UserMessage, ticketNumber } from "./dialog-parts.jsx";
 import { InboxView } from "./inbox-view.jsx";
+import { buildMainEntries } from "./messages-model.mjs";
 import { ThreadView } from "./thread-view.jsx";
 
 function Brief({ entry, openInbox, openRuns }) {
@@ -38,6 +39,7 @@ function Brief({ entry, openInbox, openRuns }) {
       )}
       <div className="wrap card-actions">
         <span className="chip green">只读简报 · 未开单</span>
+        {counts?.issueBacklog > 0 && <span className="chip amber">外部 Issue 积压 {counts.issueBacklog}</span>}
         {counts?.running > 0 && (
           <button type="button" className="link" onClick={openRuns}>
             查看运行 ›
@@ -92,35 +94,7 @@ export function MainChat({ entries, openInbox, openRuns, receiptProps, chief, on
 }
 
 export function mainEntries(history, plans, receipts, conversations) {
-  const plansById = new Map(plans.map((plan) => [plan.id, plan]));
-  const entries = history.map((item) => ({
-    ...item,
-    key: `history:${item.id}`,
-    ...(item.plan && { plan: plansById.get(item.plan.id) || item.plan }),
-  }));
-  const historyPlans = new Set(history.flatMap((item) => (item.plan ? [item.plan.id] : [])));
-  for (const plan of plans) {
-    if (!historyPlans.has(plan.id) && ["running", "draft"].includes(plan.status))
-      entries.push({ key: `plan:${plan.id}`, kind: "plan", plan, at: plan.createdAt, text: plan.goal });
-  }
-  const topics = new Map(conversations.filter((item) => item.kind === "topic").map((item) => [item.topic, item]));
-  // Closed tickets stay in the board and thread history; keeping them in the chief feed drowns the open work.
-  const recent = receipts
-    .filter((task) => (task.topic || ticketNumber(task)) && task.workflow?.status !== "closed")
-    .slice(0, 8);
-  for (const task of recent) {
-    const original = topics.get(task.topic)?.items.find((item) => item.type === "user_message")?.message;
-    entries.push({
-      key: `task:${task.key}`,
-      kind: "task",
-      task,
-      at: task.updatedAt,
-      text: original?.text,
-      sentAt: original?.at,
-      attachments: original?.attachments,
-    });
-  }
-  return entries.sort((a, b) => Date.parse(a.at || "") - Date.parse(b.at || ""));
+  return buildMainEntries({ history, plans, receipts, conversations });
 }
 
 export function MessageCenter({

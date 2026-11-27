@@ -22,6 +22,7 @@ type RuleWords = { skill?: string; prompt?: string };
  * required step has passed in the latest report. */
 type RuleOptions = RuleWords & {
   parallel?: number;
+  priority?: number;
   resume?: boolean;
   emits?: EventFilter;
   flow?: FlowStep[];

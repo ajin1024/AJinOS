@@ -31,6 +31,7 @@ const isWords: Check = (value) => Array.isArray(value) && value.every(isText);
 const isSomeWords: Check = (value) => isWords(value) && (value as string[]).length > 0;
 const isId: Check = (value) => typeof value === "string" && ID.test(value);
 const isCount: Check = (value) => Number.isInteger(value) && (value as number) > 0;
+const isPriority: Check = (value) => Number.isInteger(value) && (value as number) >= -100 && (value as number) <= 100;
 /** A step is either its name or an object saying whether it is required: the short form says required. */
 const isFlowStep: Check = (value) =>
   (isText(value) && [...(value as string)].length <= 100) ||
@@ -91,6 +92,7 @@ function checkRule(issues: string[], rules: Rules, rule: Rule, names: Set<string
     ["prompt", isText, NOT_EMPTY, true],
     ["group", isText, NOT_EMPTY, true],
     ["parallel", isCount, "要是正整数", true],
+    ["priority", isPriority, "要是 -100 到 100 的整数", true],
     ["resume", (value) => typeof value === "boolean", "只能是 true 或 false", true],
     ["tell", (value) => TELLS.includes(value as string), `只能是 ${TELLS.join("、")}`, true],
     ["emits", isObject, "要是一个对象", true],

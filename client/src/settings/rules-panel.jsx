@@ -71,6 +71,7 @@ function RuleEditorSheet({ ruleName, isNew, config, onSaveConfig, onClose }) {
       if (existing?.model) nextRule.model = existing.model;
       if (existing?.effort) nextRule.effort = existing.effort;
       if (existing?.speed) nextRule.speed = existing.speed;
+      if (existing?.priority !== undefined) nextRule.priority = existing.priority;
       if (v.parallel !== "" && v.parallel != null) nextRule.parallel = Number(v.parallel);
       if (v.emitSource) nextRule.emits = { source: v.emitSource, types: parseList(v.emitTypes) };
       if (String(v.channels || "").trim()) nextRule.channels = parseList(v.channels);

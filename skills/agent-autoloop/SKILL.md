@@ -33,7 +33,7 @@ Studio 日夜主题、刷新与桌面发布管理见 [客户端说明](../../cli
 ```
 
 - 同一个对象的事件要分开处理、互不等待，就写 `parallel`。一台接单程序同时跑几轮还受 `config.json` 的 `worker.capacity` 限制，默认 2，要多跑就一起调大。
-- 对话这类要马上回的活，不想排在批量的长任务后面：把批量的规则都写进同一个 `group`，`parallel` 写得比 `worker.capacity` 小，留下的名额长任务占不了，对话来了直接领。比如 `capacity` 是 4，批量那组写 `"group": "batch", "parallel": 3`。同一组的规则 `parallel` 写成一样的。
+- 对话这类要马上回的活，不想排在批量的长任务后面：把批量的规则都写进同一个 `group`，`parallel` 写得比 `worker.capacity` 小，留下的名额长任务占不了，对话来了直接领；如果和批量任务共享同一个 `group`（例如保护同一工作目录），给批量规则写较低的 `"priority": -10`（`-100` 到 `100`，默认 `0`），高优先级任务会在排队时插到前面。同一组的规则 `parallel` 写成一样的。
 - 同一个对象的新事件要接着上一轮的会话（比如同一个对话的后续消息），就写 `"resume": true`；默认每次开新会话。上一轮被停掉、可能还在跑或者换了 Agent 时开新的。不写 `parallel` 时整条规则的事件都接同一个会话。
 - 这类活要按固定步骤走，就写 `flow`，比如 `"flow": ["受理", "定位", "修复", "验证"]`；某步不是每次都做，写成 `{ "name": "验证", "required": false }`。Agent 每轮在回执 `task.steps` 里按名字报告过没过和依据，必做步骤没全过时工单进不了待验收。
 - 同一事项的每一轮挂在同一张工单上，号码形如 `T-000123`；定时规则每个时刻的任务各是一张工单。只有本人能关：`agent-autoloop tickets` 列开着的工单，`agent-autoloop ticket <号>` 看过程，`agent-autoloop ticket close <号> --outcome completed|unnecessary|cancelled [--reason …]` 验收或取消，`agent-autoloop ticket reopen <号>` 重开。关单前不能有没结束的执行、待答问题或没到期的复查。

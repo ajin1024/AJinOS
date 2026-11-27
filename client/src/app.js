@@ -218,11 +218,16 @@ async function saveProjectValues(id, v) {
   };
   const repo = String(v.openSourceRepo || "").trim();
   if (p && repo) {
+    const maxIssues = v.maxIssues === "" || v.maxIssues === undefined || v.maxIssues === null ? undefined : Number(v.maxIssues);
+    const excludeLabels = parseList(String(v.excludeLabels || "").replaceAll("、", "，"));
     project.openSource = {
       enabled: true,
       repo,
       autoHandleIssues: Boolean(v.autoHandleIssues),
+      ...(v.issueMode ? { issueMode: v.issueMode } : {}),
       pollMinutes: Number(v.pollMinutes || 5),
+      ...(maxIssues !== undefined && Number.isFinite(maxIssues) ? { maxIssues } : {}),
+      ...(excludeLabels.length ? { excludeLabels } : {}),
       ...(String(v.issueSince || "").trim() ? { since: String(v.issueSince).trim() } : {}),
     };
   } else {

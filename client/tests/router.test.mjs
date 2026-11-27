@@ -16,8 +16,22 @@ function fixture(t) {
     ],
   };
   const chief = new ChiefOfStaff(db, {
-    model: async (kind) => {
-      calls.push(kind);
+    model: async (kind, payload) => {
+      calls.push({ kind, payload });
+      if (kind === "discuss") {
+        return {
+          reply: `收到，我们来讨论：${payload.message}`,
+          questions: ["希望优先解决哪一块？"],
+          ready: false,
+          suggestedAction: "discuss",
+          draft: {
+            title: "梳理后的需求",
+            project: payload.focusProject || "orders",
+            summary: `落地：${payload.message}`,
+            complexity: "simple",
+          },
+        };
+      }
       return { steps: [{ project: "orders", instruction: "整理订单" }] };
     },
   });
@@ -86,7 +100,50 @@ test("explicit or clearly cross-project plans remain drafts until separately sta
     assert.equal(result.kind, "plan");
     assert.equal(result.plan.status, "draft");
   }
-  assert.deepEqual(calls, ["plan", "plan"]);
+  assert.deepEqual(
+    calls.map((c) => c.kind),
+    ["plan", "plan"],
+  );
+});
+
+test("requirement discussions classify as discuss without dispatching tasks and preserve multi-turn discussion context", async (t) => {
+  const { router, calls, deps } = fixture(t);
+  for (const text of [
+    "现在的issue出现了积压情况 我找你直接沟通需求也出现了问题 你现在怎么对进入的消息进行分类的",
+    "先别开工，我想聊聊订单导出怎么设计比较好",
+    "/discuss 我们要不要支持多租户",
+  ]) {
+    const result = await router.message({ text });
+    assert.equal(result.kind, "discuss");
+    assert.ok(result.discussionId);
+    assert.match(result.reply, /收到/);
+  }
+  assert.equal(
+    calls.every((call) => call.kind === "discuss"),
+    true,
+    "discussion messages must not trigger task submission",
+  );
+
+  // Follow-up turn referencing discussionId stays in discuss and receives prior turns even with short text
+  const first = await router.message({ id: "disc-1", text: "聊聊通知免打扰怎么设计" });
+  const second = await router.message({ id: "disc-2", text: "先按晚上 10 点到早上 8 点", discussionId: first.discussionId });
+  assert.equal(second.kind, "discuss");
+  assert.equal(second.discussionId, first.discussionId);
+  const lastCall = calls.at(-1);
+  assert.equal(lastCall.kind, "discuss");
+  assert.equal(lastCall.payload.conversation.length, 1);
+  assert.equal(lastCall.payload.conversation[0].user, "聊聊通知免打扰怎么设计");
+  assert.deepEqual(new MessageRouter(deps).history().at(-1), second);
+
+  // Explicit mode="discuss" with a selected project discusses that project instead of dispatching
+  const scoped = await router.message({ text: "评估一下导出重构的风险", mode: "discuss", project: "orders" });
+  assert.equal(scoped.kind, "discuss");
+  assert.equal(calls.at(-1).payload.focusProject, "orders");
+
+  // Explicit /task prefix forces dispatch even when phrased as a question
+  const forced = await router.message({ text: "/task 怎么修复订单导出？" });
+  assert.equal(forced.kind, "task");
+  assert.equal(calls.at(-1).text, "怎么修复订单导出？");
 });
 
 test("single project work skips default confirmation while explicit confirmation is honored", async (t) => {
