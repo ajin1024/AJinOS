@@ -115,6 +115,7 @@ function StudioShell({
   onEngineControl,
   onRestartRequired,
   onEditingChange,
+  onOpenTicket,
   hasUnsavedForm,
 }) {
   const [tracked, setTracked] = useState(null);
@@ -602,6 +603,7 @@ function StudioShell({
               windowsUpdate={windowsUpdate}
               versionProgress={versionProgress}
               onEditingChange={onEditingChange}
+              onOpenTicket={onOpenTicket}
             />
           )}
         </main>

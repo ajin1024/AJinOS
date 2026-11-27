@@ -388,6 +388,21 @@ function currentTickets() {
   return [...tickets.values()];
 }
 
+// Jump to the source task of a memory entry; the task center keeps loading history after navigation.
+function openTicketSource(number, runId) {
+  if (!number) return;
+  const known = Number.isInteger(runId) ? allTaskRuns().find((run) => run.id === runId) : null;
+  const kind = known
+    ? taskKind(config, known, { topics: snapshot.topics || [], routes: snapshot.workbench?.routes })
+    : "business";
+  taskScope = kind === "background" ? "background" : "business";
+  taskFilter = "all";
+  projectFilter = "all";
+  taskSearch = number;
+  selectedTaskKey = null;
+  navigate({ view: "tasks", tasksTab: "list" });
+}
+
 const canHaveOlderTickets = () => (state().tickets || []).filter((ticket) => ticket.state === "closed").length >= 20;
 
 function unreadTickets() {
@@ -729,6 +744,7 @@ function render() {
       }
       navigate(next);
     },
+    onOpenTicket: openTicketSource,
     onSaveConfig: save,
     onSavedConfig: applySavedConfiguration,
     onImportExecutor: importExecutor,

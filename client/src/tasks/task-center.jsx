@@ -144,6 +144,7 @@ export function TaskCenter({
     const text = [
       entry.title,
       entry.projectName,
+      entry.ticket?.number,
       entry.intake?.text,
       entry.standaloneCard?.title,
       entry.standaloneCard?.text,
