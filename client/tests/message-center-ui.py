@@ -18,7 +18,7 @@ with running_studio("studio-messages-ui-") as url, sync_playwright() as playwrig
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.goto(url)
     wait_online(page)
-    expect(page.get_by_role("heading", name="任务流转")).to_be_visible()
+    expect(page.get_by_role("heading", name="任务处理流程")).to_be_visible()
     page.get_by_role("navigation", name="主导航").get_by_role("button", name="对话").click()
     expect(page.get_by_role("heading", name="AJinOS 总管", exact=True)).to_be_visible()
     sidebar = page.get_by_role("complementary", name="对话列表")
@@ -35,7 +35,14 @@ with running_studio("studio-messages-ui-") as url, sync_playwright() as playwrig
     page.reload()
     expect(page.get_by_text("只读简报 · 未开单", exact=True)).to_be_visible()
 
-    composer.get_by_role("button", name="高级覆盖").click()
+    field.fill("先别开工，聊聊怎么优化订单核对")
+    field.press("Enter")
+    expect(page.get_by_text("需求沟通 · 未开单", exact=True)).to_be_visible()
+    assert before == state(page)["state"].get("tickets", [])
+    expect(page.get_by_role("button", name="按此派发任务")).to_be_visible()
+    composer.get_by_role("button", name="结束需求沟通").click()
+
+    composer.get_by_role("button", name="指定选项").click()
     composer.get_by_label("项目", exact=True).select_option("orders")
     composer.locator('input[type="file"]').set_input_files({"name": "proof.png", "mimeType": "image/png", "buffer": PNG})
     field.evaluate("""(input, bytes) => {
@@ -56,20 +63,23 @@ with running_studio("studio-messages-ui-") as url, sync_playwright() as playwrig
 
     page.route("**/api/router/message", hold)
     send.click()
-    expect(field).not_to_be_editable()
-    expect(send).to_be_disabled()
+    expect(field).to_be_editable()
+    expect(field).to_have_value("")
+    expect(composer.locator(".attachments img")).to_have_count(0)
+    exchange = page.locator(".exchange").filter(has_text=title).last
+    expect(exchange.locator(".user-message .attachments img")).to_have_count(2)
+    expect(exchange.get_by_role("status")).to_contain_text("正在发送")
     field.press("Enter")
     assert len(pending) == 1
     failed = pending.pop()
     failed_id = failed.request.post_data_json["id"]
     failed.fulfill(status=503, json={"error": "测试连接暂时中断"})
-    expect(composer.get_by_role("alert")).to_contain_text("测试连接暂时中断")
-    expect(field).to_have_value(title + "\n")
-    expect(composer.locator(".attachments img")).to_have_count(2)
+    expect(exchange.get_by_role("alert")).to_contain_text("测试连接暂时中断")
+    expect(exchange.locator(".user-message .attachments img")).to_have_count(2)
     page.unroute("**/api/router/message", hold)
 
     with page.expect_response(lambda response: response.url.endswith("/api/router/message") and response.request.method == "POST") as sent:
-        send.click()
+        exchange.get_by_role("button", name="重试").click()
     assert failed_id == sent.value.request.post_data_json["id"]
     receipt = sent.value.json()
     assert receipt["kind"] == "task" and receipt["project"] == "orders", receipt

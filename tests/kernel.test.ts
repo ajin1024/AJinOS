@@ -67,6 +67,61 @@ test("rule-level access, model, effort and speed override the target agent in cl
   }
 });
 
+test("claimNext claims higher-priority queued runs ahead of earlier lower-priority backlog in the same group", () => {
+  const prioritized = parseRules(
+    JSON.stringify({
+      sources: { app: { name: "app" }, ext: { name: "ext" } },
+      agents: { a1: { name: "A1", worker: "w1", use: "command", command: ["echo"] } },
+      rules: [
+        {
+          name: "低优积压",
+          when: { source: "ext", types: ["ext.*"] },
+          to: "a1",
+          cwd: "/repo",
+          group: "proj",
+          parallel: 1,
+          priority: -10,
+        },
+        {
+          name: "直接需求",
+          when: { source: "app", types: ["app.*"] },
+          to: "a1",
+          cwd: "/repo",
+          group: "proj",
+          parallel: 1,
+        },
+      ],
+    }),
+    0,
+    "UTC",
+  );
+  let view = evolve(empty(), decide(empty(), { type: "rules", args: [prioritized] }, 1, environment).facts);
+  const act = (type: string, ...args: unknown[]) => {
+    const decided = decide(view, { type, args }, 1000, environment);
+    view = evolve(view, decided.facts);
+    return decided.value;
+  };
+  try {
+    act("ingest", "ext", { id: "e1", type: "ext.issue", subject: "#1" });
+    act("ingest", "ext", { id: "e2", type: "ext.issue", subject: "#2" });
+    act("ingest", "app", { id: "d1", type: "app.direct", subject: "topic-1" });
+    const first = act("claimNext", "w1", "c1");
+    assert.equal(first.rule.name, "直接需求", "direct rule (priority 0) must preempt lower-priority backlog (-10)");
+    // Repeated claim with the same claim ID returns the held run even if another high-priority event arrived.
+    act("ingest", "app", { id: "d2", type: "app.direct", subject: "topic-2" });
+    const repeat = act("claimNext", "w1", "c1");
+    assert.equal(repeat.run, first.run);
+    act("finish", repeat.run, repeat.token, { outcome: "done", summary: "ok" });
+    // Pausing the high-priority rule must not block lower-priority queued work from being claimed.
+    act("pauseRule", "直接需求", { by: "owner" });
+    const second = act("claimNext", "w1", "c2");
+    assert.equal(second.rule.name, "低优积压");
+    assert.equal(second.context.events[0].id, "e1", "equal-priority backlog preserves FIFO order");
+  } finally {
+    view.close();
+  }
+});
+
 test("rules, receipt replay and rebuild retain the exact acknowledgment", async () => {
   const { DatabaseSync } = await import("node:sqlite");
   const { commit, iterateLog } = await import("../kernel/store.ts");

@@ -52,13 +52,24 @@ test("the fixture loads, with defaults filled in", () => {
   overridden.rules[0].model = "deepseek-v4.1-flash";
   overridden.rules[0].effort = "low";
   overridden.rules[0].speed = "fast";
+  overridden.rules[0].priority = -10;
   overridden.agents.a1.speed = "standard";
   const parsedOverridden = parseRules(JSON.stringify(overridden));
   assert.equal(parsedOverridden.rules[0].access, "read");
   assert.equal(parsedOverridden.rules[0].model, "deepseek-v4.1-flash");
   assert.equal(parsedOverridden.rules[0].effort, "low");
   assert.equal(parsedOverridden.rules[0].speed, "fast");
+  assert.equal(parsedOverridden.rules[0].priority, -10);
   assert.equal(parsedOverridden.agents.a1.speed, "standard");
+  problem((r) => {
+    r.rules[0].priority = 101;
+  }, /规则「意见」.*priority/);
+  problem((r) => {
+    r.rules[0].priority = -101;
+  }, /规则「意见」.*priority/);
+  problem((r) => {
+    r.rules[0].priority = 1.5;
+  }, /规则「意见」.*priority/);
   problem((r) => {
     r.rules[0].access = "root";
   }, /规则「意见」.*access/);

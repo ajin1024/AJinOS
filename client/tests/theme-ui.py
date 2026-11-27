@@ -1,4 +1,4 @@
-# Prevent mixed light/dark surfaces, lost theme preferences, and a refresh button that only redraws cached state.
+# Prevent mixed light/dark surfaces, lost theme preferences, or regressions in sidebar logo, theme cycle, and version footer.
 # Prevent the global accent from replacing the independent online status color.
 # A real isolated Studio serves these pages. SSE keeps the network open; wait for the rendered canvas instead of networkidle.
 import json
@@ -82,15 +82,18 @@ with studio_home("studio-theme-ui-") as temp:
                 page.locator('#nav [data-view="settings"]').click()
                 expect(page.get_by_role("region", name="项目卡片")).to_be_visible()
                 if artifacts: page.screenshot(path=str(artifacts / f"{theme}-projects.png"), full_page=True)
-                page.get_by_role("button", name="添加项目", exact=True).click()
-                field = page.locator('input[name="cwd"]')
-                field.fill("尚未保存的输入")
-                page.locator("#refresh-app").click()
-                expect(field).to_have_value("尚未保存的输入")
-                page.keyboard.press("Escape")
-                expect(page.locator(".ps-editor")).not_to_be_visible()
 
-                page.locator("#open-versions").click()
+                expect(page.locator("#refresh-app")).to_have_count(0)
+                logo = page.locator(".studio-brand img.studio-brand-logo")
+                expect(logo).to_be_visible()
+                expect(logo).to_have_attribute("src", "/icon.png")
+                assert logo.evaluate("img => img.complete && img.naturalWidth > 0")
+
+                version_btn = page.locator("#open-versions")
+                expect(version_btn).to_be_visible()
+                expect(version_btn.locator(".semi-icon")).to_have_count(0)
+                assert version_btn.inner_text().strip() != ""
+                version_btn.click()
                 expect(page.locator(".version-current")).to_be_visible()
                 expect(page.locator("#versions-body")).to_contain_text("浏览器中查看")
                 if artifacts: page.screenshot(path=str(artifacts / f"{theme}-versions.png"), full_page=True)
@@ -98,10 +101,8 @@ with studio_home("studio-theme-ui-") as temp:
 
                 page.goto(url + "/#overview")
                 page.wait_for_selector(".super-agent-flow .canvas")
-                page.evaluate("window.refreshProof = 1")
-                page.locator("#refresh-app").click()
+                page.reload()
                 page.wait_for_selector(".super-agent-flow .canvas")
-                assert page.evaluate("window.refreshProof") is None
                 expect(page.locator("html")).to_have_attribute("data-theme", theme)
 
                 page.get_by_role("button", name="工单看板", exact=True).click()
@@ -137,11 +138,21 @@ with studio_home("studio-theme-ui-") as temp:
                     if artifacts: page.screenshot(path=str(artifacts / f"{theme}-390-{view}.png"))
                 page.set_viewport_size({"width": 1600, "height": 1000})
 
-            toggle = page.get_by_role("button", name="切换外观主题", exact=True)
+            toggle = page.locator("#rail-theme")
+            expect(toggle).to_have_attribute("data-theme-mode", "dark")
             toggle.click()
-            page.locator("#rail-theme-picker").get_by_role("radio", name="白天").click()
+            expect(page.locator("#rail-theme-picker")).to_have_count(0)
+            expect(page.locator("html")).to_have_attribute("data-theme-mode", "system")
+            expect(toggle).to_have_attribute("data-theme-mode", "system")
+            toggle.click()
+            expect(page.locator("#rail-theme-picker")).to_have_count(0)
+            expect(page.locator("html")).to_have_attribute("data-theme-mode", "light")
+            expect(toggle).to_have_attribute("data-theme-mode", "light")
             page.reload()
             expect(page.locator("html")).to_have_attribute("data-theme-mode", "light")
+            toggle.click()
+            expect(page.locator("html")).to_have_attribute("data-theme-mode", "dark")
+            expect(toggle).to_have_attribute("data-theme-mode", "dark")
             page.goto(url + "/#settings/runtime")
             page.get_by_role("radio", name="跟随系统").click()
             for theme in ["dark", "light"]:
@@ -153,7 +164,7 @@ with studio_home("studio-theme-ui-") as temp:
             }""", timeout=60000)
             assert not errors, errors
             browser.close()
-        print("PASS: both themes, all surfaces, unsaved guard, system theme and real reload")
+        print("PASS: both themes, all surfaces, logo, direct theme cycle, version footer and real reload")
     finally:
         if process.poll() is None:
             process.stdin.write("stop\n"); process.stdin.flush()

@@ -1,10 +1,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Modal } from "@douyinfe/semi-ui";
-import { IconInbox, IconSidebar } from "@douyinfe/semi-icons";
-import { Composer, hasComposerDraft, initialComposerDraft, originalAttachmentIds } from "./composer.jsx";
+import { IconInbox, IconLoading, IconSidebar } from "@douyinfe/semi-icons";
+import { Composer, hasComposerDraft, initialComposerDraft } from "./composer.jsx";
 import { DialogSidebar } from "./dialog-sidebar.jsx";
 import { AgentMessage, Avatar, DayDivider, PlanCard, ReceiptCard, UserMessage, ticketNumber } from "./dialog-parts.jsx";
 import { InboxView } from "./inbox-view.jsx";
+import { IntakeBubble } from "./intake-bubble.jsx";
+import { buildMainEntries, buildThreadItems, outboxProgressLabel } from "./messages-model.mjs";
 import { ThreadView } from "./thread-view.jsx";
 
 function Brief({ entry, openInbox, openRuns }) {
@@ -39,6 +41,7 @@ function Brief({ entry, openInbox, openRuns }) {
       )}
       <div className="wrap card-actions">
         <span className="chip green">只读简报 · 未开单</span>
+        {counts?.issueBacklog > 0 && <span className="chip amber">外部 Issue 积压 {counts.issueBacklog}</span>}
         {counts?.running > 0 && (
           <button type="button" className="link" onClick={openRuns}>
             查看运行 ›
@@ -49,7 +52,128 @@ function Brief({ entry, openInbox, openRuns }) {
   );
 }
 
-export function MainChat({ entries, openInbox, openRuns, receiptProps, chief, onPreview, connected }) {
+function DiscussionBubble({ entry, connected, discussActions }) {
+  const draft = entry.draft;
+  const questions = entry.questions || [];
+  return (
+    <div className="discuss-bubble">
+      <p className="mc-prose">{entry.reply}</p>
+      {questions.length > 0 && (
+        <ul className="discuss-questions">
+          {questions.map((question, index) => (
+            <li key={index}>{question}</li>
+          ))}
+        </ul>
+      )}
+      {draft?.summary && (
+        <div className="discuss-draft">
+          <div className="wrap card-meta">
+            <strong>{draft.title || "整理后的需求草案"}</strong>
+            {draft.projectName && <span className="chip blue">{draft.projectName}</span>}
+            {draft.complexity && (
+              <span className="chip neutral">{draft.complexity === "complex" ? "复杂" : "简单"}</span>
+            )}
+          </div>
+          <p className="mc-prose">{draft.summary}</p>
+        </div>
+      )}
+      <div className="wrap card-actions">
+        <span className="chip green">需求沟通 · 未开单</span>
+        {discussActions?.onContinue && (
+          <button type="button" className="btn ghost" onClick={() => discussActions.onContinue(entry)}>
+            继续讨论
+          </button>
+        )}
+        {draft?.summary && discussActions?.onDispatch && (
+          <>
+            <button
+              type="button"
+              className={entry.ready && entry.suggestedAction !== "plan" ? "btn primary" : "btn"}
+              disabled={!connected}
+              onClick={() => discussActions.onDispatch(entry, "task")}
+            >
+              按此派发任务
+            </button>
+            {entry.suggestedAction === "plan" && (
+              <button
+                type="button"
+                className={entry.ready ? "btn primary" : "btn"}
+                disabled={!connected}
+                onClick={() => discussActions.onDispatch(entry, "plan")}
+              >
+                生成协作计划
+              </button>
+            )}
+          </>
+        )}
+        {draft?.summary && discussActions?.onFill && (
+          <button type="button" className="btn ghost" onClick={() => discussActions.onFill(entry)}>
+            填入输入框
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OutboxStatus({ entry, intake, config, receiptProps, outboxActions }) {
+  const projectName =
+    entry.result?.project &&
+    (config?.projects?.find((project) => project.id === entry.result.project)?.name || entry.result.project);
+  if (entry.status === "failed") {
+    return (
+      <section className="record mc-outbox-card failed">
+        <p className="mc-error" role="alert">
+          {entry.error || "发送失败"}
+        </p>
+        <div className="wrap card-actions">
+          <button type="button" className="btn" onClick={() => outboxActions?.onRetry(entry.id)}>
+            重试
+          </button>
+          <button type="button" className="btn ghost" onClick={() => outboxActions?.onRestore(entry.id)}>
+            填回输入框
+          </button>
+          <button type="button" className="btn ghost" onClick={() => outboxActions?.onDismiss(entry.id)}>
+            移除
+          </button>
+        </div>
+      </section>
+    );
+  }
+  const label =
+    entry.status === "sent" && entry.result?.kind === "task" && projectName
+      ? `已分配到 ${projectName}，正在派发…`
+      : outboxProgressLabel(entry, intake);
+  return (
+    <section className="record mc-outbox-card" role="status">
+      <div className="mc-progress">
+        <IconLoading spin size="small" aria-hidden="true" />
+        <span>{label}</span>
+      </div>
+      {entry.status === "sent" && entry.result?.kind === "task" && entry.result.topic && (
+        <div className="wrap card-actions">
+          <button type="button" className="link" onClick={() => receiptProps.onThread(entry.result.topic)}>
+            {receiptProps.threadLabel || "进入 Thread ›"}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function MainChat({
+  entries,
+  config,
+  openInbox,
+  openRuns,
+  receiptProps,
+  intakeProps,
+  outboxActions,
+  discussActions,
+  chief,
+  onPreview,
+  connected,
+}) {
   if (!entries.length)
     return (
       <div className="empty main-empty">
@@ -76,6 +200,9 @@ export function MainChat({ entries, openInbox, openRuns, receiptProps, chief, on
       )}
       <AgentMessage at={entry.at}>
         {entry.kind === "answer" && <Brief entry={entry} openInbox={openInbox} openRuns={openRuns} />}
+        {entry.kind === "discuss" && (
+          <DiscussionBubble entry={entry} connected={connected} discussActions={discussActions} />
+        )}
         {entry.kind === "task" && <ReceiptCard task={entry.task} {...receiptProps} />}
         {entry.kind === "plan" && (
           <PlanCard
@@ -86,38 +213,39 @@ export function MainChat({ entries, openInbox, openRuns, receiptProps, chief, on
             onThread={receiptProps.onThread}
           />
         )}
+        {entry.kind === "outbox" && (
+          <OutboxStatus
+            entry={entry.entry}
+            intake={entry.intake}
+            config={config}
+            receiptProps={receiptProps}
+            outboxActions={outboxActions}
+          />
+        )}
+        {entry.kind === "intake" &&
+          (["confirming", "routing", "pending"].includes(entry.intake?.state) ? (
+            <section className="record mc-outbox-card" role="status">
+              <div className="mc-progress">
+                <IconLoading spin size="small" aria-hidden="true" />
+                <span>
+                  {entry.intake.state === "confirming"
+                    ? "正在确认需求…"
+                    : entry.intake.state === "routing"
+                      ? "正在分配项目…"
+                      : "正在识别需求与项目…"}
+                </span>
+              </div>
+            </section>
+          ) : (
+            <IntakeBubble intake={entry.intake} showText={false} {...intakeProps} />
+          ))}
       </AgentMessage>
     </div>
   ));
 }
 
-export function mainEntries(history, plans, receipts, conversations) {
-  const plansById = new Map(plans.map((plan) => [plan.id, plan]));
-  const entries = history.map((item) => ({
-    ...item,
-    key: `history:${item.id}`,
-    ...(item.plan && { plan: plansById.get(item.plan.id) || item.plan }),
-  }));
-  const historyPlans = new Set(history.flatMap((item) => (item.plan ? [item.plan.id] : [])));
-  for (const plan of plans) {
-    if (!historyPlans.has(plan.id) && ["running", "draft"].includes(plan.status))
-      entries.push({ key: `plan:${plan.id}`, kind: "plan", plan, at: plan.createdAt, text: plan.goal });
-  }
-  const topics = new Map(conversations.filter((item) => item.kind === "topic").map((item) => [item.topic, item]));
-  const recent = receipts.filter((task) => task.topic || ticketNumber(task)).slice(0, 8);
-  for (const task of recent) {
-    const original = topics.get(task.topic)?.items.find((item) => item.type === "user_message")?.message;
-    entries.push({
-      key: `task:${task.key}`,
-      kind: "task",
-      task,
-      at: task.updatedAt,
-      text: original?.text,
-      sentAt: original?.at,
-      attachments: original?.attachments,
-    });
-  }
-  return entries.sort((a, b) => Date.parse(a.at || "") - Date.parse(b.at || ""));
+export function mainEntries(history, plans, receipts, conversations, intakes = [], outbox = []) {
+  return buildMainEntries({ history, plans, receipts, conversations, intakes, outbox });
 }
 
 export function MessageCenter({
@@ -128,6 +256,10 @@ export function MessageCenter({
   conversations,
   receipts,
   inbox,
+  outbox = [],
+  outboxActions,
+  discussActions,
+  onResubmitIntake,
   route,
   api,
   toast,
@@ -143,7 +275,6 @@ export function MessageCenter({
   onInspectRun,
   onNavigate,
   onIntakeDismiss,
-  onMessagesRefresh,
   drawer,
   onCloseDrawer,
 }) {
@@ -165,8 +296,19 @@ export function MessageCenter({
   const receipt = isThread ? receipts.find((task) => task.topic === id) : null;
   const threadRun = receipt?.runs.at(-1) || active?.latestRun;
   const draft = composerDrafts.get(id) || initialComposerDraft(active);
-  const entries = id || inInbox ? [] : mainEntries(chief.history, chief.plans, receipts, conversations);
-  const last = active?.items.at(-1)?.key || entries.at(-1)?.key;
+  const entries =
+    id || inInbox
+      ? []
+      : buildMainEntries({
+          history: chief.history,
+          plans: chief.plans,
+          receipts,
+          conversations,
+          intakes: snapshot.taskIntakes,
+          outbox,
+        });
+  const threadItems = isThread ? buildThreadItems(active, outbox) : active?.items || [];
+  const last = id ? threadItems.at(-1)?.key : entries.at(-1)?.key;
 
   function open(topic = null, section = null) {
     setSidebarOpen(false);
@@ -229,51 +371,9 @@ export function MessageCenter({
     setInboxSection("");
   }, [inboxSection, inInbox]);
 
-  async function submitted(result, current, keepMain = true) {
-    if (current && result.kind === "intake") openInbox("待澄清与失败请求");
-    if (current && !keepMain && result.topic) open(result.topic);
-    if (result.kind === "answer" || result.kind === "plan") await chief.reload();
-    else await onMessagesRefresh();
-  }
-
-  async function resubmit(intake, patch) {
-    const {
-      text = intake.text,
-      topic,
-      conversation,
-      task,
-      session,
-      agent,
-      project,
-      flow,
-      executor,
-      complexity,
-      requirementsConfirmed,
-      viaRouter,
-    } = intake.input || {};
-    const attachments = originalAttachmentIds(intake);
-    const same = Object.keys(patch).length === 0 && ["failed", "interrupted"].includes(intake.state);
-    const legacyRetry = same && !viaRouter;
-    const result = await api(legacyRetry ? "/messages" : "/router/message", "POST", {
-      id: same ? intake.id : crypto.randomUUID(),
-      text,
-      project,
-      flow,
-      executor,
-      complexity,
-      conversation,
-      task,
-      session,
-      agent,
-      ...(topic && topic !== "new" && { topic }),
-      ...(attachments.length && { attachments }),
-      ...(same && { requirementsConfirmed }),
-      ...(!legacyRetry && { mode: "task" }),
-      ...patch,
-    });
-    if (result.needsProject || result.needsConfirmation) result.kind = "intake";
-    if (!same) await onIntakeDismiss(intake.id, { silent: true });
-    await submitted(result, true, false);
+  function handleSend(entry) {
+    follow.current = true;
+    outboxActions.onSend(entry);
   }
 
   const replyProps = (card) => ({
@@ -284,7 +384,20 @@ export function MessageCenter({
     onSubmit: onCardSubmit,
   });
   const receiptProps = { snapshot, onInspect: onInspectRun, onThread: open, onAction: onWorkflowAction };
-  const intakeProps = { config, toast, onResubmit: resubmit, onDismiss: onIntakeDismiss };
+  const mainIntakeProps = {
+    config,
+    toast,
+    onResubmit: (intake, patch) => onResubmitIntake(intake, patch, { openThread: false }),
+    onDismiss: onIntakeDismiss,
+    onDiscuss: discussActions?.onDiscussIntake,
+  };
+  const inboxIntakeProps = {
+    config,
+    toast,
+    onResubmit: (intake, patch) => onResubmitIntake(intake, patch, { openThread: true }),
+    onDismiss: onIntakeDismiss,
+    onDiscuss: discussActions?.onDiscussIntake,
+  };
   const title = inInbox ? "待我处理" : id ? active?.title || draft.title : "AJinOS 总管";
 
   return (
@@ -369,7 +482,7 @@ export function MessageCenter({
         </header>
         <div className="conversation-notice" ref={noticeSlot} />
         {inInbox ? (
-          <InboxView inbox={inbox} receiptProps={receiptProps} replyProps={replyProps} intakeProps={intakeProps} />
+          <InboxView inbox={inbox} receiptProps={receiptProps} replyProps={replyProps} intakeProps={inboxIntakeProps} />
         ) : (
           <>
             <div
@@ -388,17 +501,23 @@ export function MessageCenter({
                     receipt={receipt}
                     config={config}
                     snapshot={snapshot}
+                    outbox={outbox}
+                    outboxActions={outboxActions}
                     onInspect={onInspectRun}
                     onPreview={setLightbox}
                     replyProps={replyProps}
-                    intakeProps={intakeProps}
+                    intakeProps={inboxIntakeProps}
                   />
                 ) : (
                   <MainChat
                     entries={entries}
+                    config={config}
                     openInbox={openInbox}
                     openRuns={openRuns}
                     receiptProps={receiptProps}
+                    intakeProps={mainIntakeProps}
+                    outboxActions={outboxActions}
+                    discussActions={discussActions}
                     chief={chief}
                     onPreview={setLightbox}
                     connected={snapshot.connected}
@@ -428,8 +547,7 @@ export function MessageCenter({
               api={api}
               toast={toast}
               connected={snapshot.connected}
-              intakes={snapshot.taskIntakes}
-              onResult={submitted}
+              onSend={handleSend}
             />
           </>
         )}

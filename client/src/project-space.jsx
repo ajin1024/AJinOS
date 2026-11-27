@@ -62,10 +62,15 @@ function ProjectEditor({ project, actions, children, overlayOpen, onEditingChang
     resume: Boolean(project?.baseRule.resume),
     openSourceRepo: project?.openSource?.repo || "",
     pollMinutes: project?.openSource?.pollMinutes || 5,
+    maxIssues: project?.openSource?.maxIssues ?? (project?.openSource?.autoHandleIssues ? "" : 5),
+    excludeLabels: (project?.openSource?.excludeLabels || []).join("、"),
   });
   const savedSince = project?.openSource?.since || "";
   const [autoHandleIssues, setAutoHandleIssues] = useState(
     Boolean(project?.openSource?.enabled && project.openSource.autoHandleIssues),
+  );
+  const [issueMode, setIssueMode] = useState(
+    project?.openSource?.issueMode || (project?.openSource?.autoHandleIssues ? "auto" : "triage"),
   );
   const [todayStart] = useState(() => {
     const now = new Date();
@@ -107,7 +112,7 @@ function ProjectEditor({ project, actions, children, overlayOpen, onEditingChang
         else if (issueRange === "custom") issueSince = customSince;
         else issueSince = "";
       }
-      const merged = { ...initial.current, ...values, autoHandleIssues, issueSince };
+      const merged = { ...initial.current, ...values, autoHandleIssues, issueMode, issueSince };
       await onSave(project?.id, merged);
       if (project) onReset();
       else onBack();
@@ -233,6 +238,27 @@ function ProjectEditor({ project, actions, children, overlayOpen, onEditingChang
                     </div>
                     {autoHandleIssues && (
                       <div className="ps-issue-fields">
+                        <div className="ps-issue-range ps-issue-mode">
+                          <span id="ps-issue-mode">处理策略</span>
+                          <RadioGroup
+                            aria-labelledby="ps-issue-mode"
+                            type="button"
+                            value={issueMode}
+                            onChange={(event) => {
+                              setDirty(true);
+                              setIssueMode(event.target.value);
+                            }}
+                            options={[
+                              { value: "triage", label: "先分诊再修复（推荐）" },
+                              { value: "auto", label: "直接自动修复" },
+                            ]}
+                          />
+                          <p className="ps-muted">
+                            {issueMode === "triage"
+                              ? "只读分诊在独立队列中先分类定级，经你确认后再进入编码队列，不阻塞直接需求。"
+                              : "直接进入项目编码队列（优先级低于本人直接任务，防止积压卡住直接派单）。"}
+                          </p>
+                        </div>
                         <Form.Select
                           field="pollMinutes"
                           label="检查频率"
@@ -282,6 +308,29 @@ function ProjectEditor({ project, actions, children, overlayOpen, onEditingChang
                                 : "包含仍开放的历史 Issue。"}
                             </p>
                           )}
+                        </div>
+                        <div className="ps-issue-filter">
+                          <Form.Select
+                            field="maxIssues"
+                            label="单次拉取上限"
+                            keepState
+                            style={{ width: "100%" }}
+                            optionList={[
+                              { value: "", label: "不限（最多 30 条）" },
+                              { value: 3, label: "最多 3 条" },
+                              { value: 5, label: "最多 5 条" },
+                              { value: 10, label: "最多 10 条" },
+                              { value: 20, label: "最多 20 条" },
+                              { value: 30, label: "最多 30 条" },
+                            ]}
+                          />
+                          <Form.Input
+                            field="excludeLabels"
+                            name="excludeLabels"
+                            label="排除标签"
+                            placeholder="例如：duplicate、wontfix、invalid"
+                            keepState
+                          />
                         </div>
                       </div>
                     )}

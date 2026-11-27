@@ -37,7 +37,7 @@ Studio 的「执行器与模型」提供 CLI 导入模板。每次导入把名�
 
 ## 首次会话与后续消息
 
-桌面主私聊通过 `client/router.mjs` 进入总管路由。已有话题沿用原绑定，显式选择项目后由项目可信规则确定默认流程和执行器。没有绑定时，固定的全局进度问询直接读取状态快照，`/plan` 或明确的跨项目依赖目标生成待确认的 DAG 草案，其余任务交给项目网关识别。新任务默认跳过独立的需求确认，项目或交付目标不明确时仍会返回澄清结果。界面与路由分层见 [Studio 总管架构图](super-agent-architecture.svg)。
+桌面主私聊通过 `client/router.mjs` 进入总管路由。已有话题沿用原绑定，显式选择项目后由项目可信规则确定默认流程和执行器（显式 `mode: "discuss"` 或 `/discuss` 例外，用于围绕该项目只读沟通需求）。没有绑定时，固定的全局进度问询直接读取状态快照，`/plan` 或明确的跨项目依赖目标生成待确认的 DAG 草案，需求讨论、方案评估、咨询探讨或 `/discuss`、`/chat`（以及沿 `discussionId` 续聊）进入只读的多轮需求沟通（不直接开单或派发编码），收敛后可一键按整理草案转为任务或计划；其余明确执行任务（或 `/task`）交给项目网关识别。新任务默认跳过独立的需求确认，项目或交付目标不明确时仍会返回澄清结果，也可从待澄清卡片一键转入总管需求沟通。界面与路由分层见 [Studio 总管架构图](super-agent-architecture.svg)。
 
 飞书私聊插件也可通过 `/api/messages` 使用这条识别链路：自然语言首条消息无需项目前缀；回复原消息、接收确认或结果卡片时沿用已保存的话题。未入队消息的补充说明保留原始资料。旧的明确项目前缀仍兼容；首次输入先自动识别，不默认展示项目菜单。识别失败或歧义时可返回项目选择卡片（共享逻辑在 `client/feishu-project-picker.mjs`）：有效候选优先，保留全部业务项目选项；必要时再选择流程与等级，复用原消息和图片提交。回调核对本人、私聊和卡片编号，选择只接受可信配置，不代替业务审批。
 
@@ -72,7 +72,7 @@ Electron 主进程提供系统通知与托盘状态：首次实时快照只记�
 | Hub 内核 | 收事件、按规则派发、并发与跳数控制、记录事实、原生工单管理、处理回答和复查 |
 | Worker / Agent | 执行任务、管理进程与会话、提交结构化验收回执 |
 
-模型只返回登记范围内的项目 ID、流程 ID 和 `simple` / `complex`，不能指定目录、Agent、命令、Skill 或权限。派生执行规则和 GitHub Issue 处理沿用项目的并发组和上限。所有基础和分档事件都必须唯一匹配自己的规则。项目详情可修改工作目录、名称、识别别名、权限、并发、话题上下文和 GitHub 集成，执行器在系统配置集中管理。
+模型只返回登记范围内的项目 ID、流程 ID 和 `simple` / `complex`，不能指定目录、Agent、命令、Skill 或权限。派生执行规则和 GitHub Issue 编码处理沿用项目的并发组和上限，并把外部 Issue 编码规则的 `priority` 设为 `-10`，确保同组内本人直接派发的任务优先于积压的外部 Issue。项目的开源 Issue 自动处理另支持先分诊再修复（`issueMode: "triage"`）以及批量上限（`maxIssues`）与标签过滤（`includeLabels` / `excludeLabels`）：只读分诊规则在独立并发组中先分类定级（`access: "read"`、`priority: -5`），咨询/重复/无效 Issue 直接给出只读结论，确认需要改代码的 Issue 发 `ask` 卡片由本人拍板后再发出 `issues.approved.<项目>` 进入编码队列。所有基础和分档事件都必须唯一匹配自己的规则。项目详情可修改工作目录、名称、识别别名、权限、并发、话题上下文和 GitHub 集成，执行器在系统配置集中管理。
 
 暂停或恢复基础流程会同时暂停或恢复它的分档规则；提交前还核对基础与分档规则的载入和暂停状态。改变目录或基础规则会改变派生规则身份，已有新式绑定拒绝跨目录续接，避免把旧 CLI 会话带到另一个项目目录。
 
@@ -109,7 +109,7 @@ Studio 同源接口沿用 Cookie、Host / Origin 和修改请求头校验：
 - `POST /api/projects/:id/analyze`：分析或更新画像；`GET /api/projects/:id/profile`：读取有效画像。
 - `POST /api/route`：只预览识别，不绑定、不派发。
 - `POST /api/messages`：提交消息。兼容 `id`、`topic`、`project`、`text`；可选 `conversation`、`task`、`session` + `agent`、`flow`、`complexity`。新消息可省略 `id` 与 `topic`，服务端生成；需要可靠重试时沿用同一个消息 ID。
-- `POST /api/router/message`：桌面总管统一入口，接受原消息字段和可选 `mode`（`auto`、`ask`、`plan`、`task`、`confirm`），返回 `kind` 为 `answer`、`plan`、`task` 或 `intake`。简报和计划卡的交互记录保存在 Studio 的 `gateway_facts` 中，用 `GET /api/router/history` 读取。旧版消息提交端继续通过原有入口和流程运行。
+- `POST /api/router/message`：桌面总管统一入口，接受原消息字段、可选 `mode`（`auto`、`ask`、`discuss`、`plan`、`task`、`confirm`）与多轮讨论标识 `discussionId`，返回 `kind` 为 `answer`、`discuss`、`plan`、`task` 或 `intake`。简报、需求沟通与计划卡的交互记录保存在 Studio 的 `gateway_facts` 中，用 `GET /api/router/history` 读取。旧版消息提交端继续通过原有入口和流程运行。
 - `GET /api/memories`、`POST /api/memories`、`POST /api/memories/:id`、`DELETE /api/memories/:id`、`POST /api/tasks/:run/memory-drafts`：管理长期记忆档案（`global` / `project`，分 `preference` / `decision` / `experience`，状态 `draft` / `active` / `archived`）。AI 提炼结果默认仅存为 `draft`，经本人确认后变为 `active`；仅在新话题首次派发时按预算作为只读参考块附在事件 `detail` 末尾，不挤占用户原话，不修改规则、目录或权限。
 - `GET /api/chief/brief`、`POST /api/chief/ask`、`GET /api/chief/plans`、`POST /api/chief/plans`、`POST /api/chief/plans/:id/start`、`POST /api/chief/plans/:id/cancel`：总管统筹层。提供零 Token 全局状态简报、只读进度问答，以及把复合目标拆解为无环多步骤协作计划（DAG，默认 `draft`，本人确认启动后按前置依赖自动派发并只读交接上游结论摘要；所有执行仍严格经过既有项目规则与验收红线）。
 

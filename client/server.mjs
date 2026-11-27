@@ -1060,6 +1060,11 @@ export async function startStudio({
       );
       const url = new URL(req.url, origin),
         route = url.pathname;
+      if (req.method === "GET" && route === "/icon.png") {
+        res.setHeader("content-type", "image/png");
+        res.end(readFileSync(path.join(import.meta.dirname, "assets", "icon.png")));
+        return;
+      }
       if (req.method === "GET" && staticFiles.has(route)) {
         if (route === "/") res.setHeader("set-cookie", `studio=${session}; HttpOnly; SameSite=Strict; Path=/`);
         res.setHeader("content-type", mime[path.extname(staticFiles.get(route))]);

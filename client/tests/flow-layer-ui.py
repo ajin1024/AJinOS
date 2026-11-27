@@ -14,7 +14,7 @@ with (nullcontext(target) if target else running_studio("studio-flow-geometry-")
     wait_online(page)
     if not target:
         submit(page, "核对画布连接并直接完成", project="orders")
-    flow = page.get_by_role("region", name="任务流转画布")
+    flow = page.get_by_role("region", name="任务处理流程图")
     inspectable = flow.locator(".ticket-row").first
     expect(inspectable).to_be_visible(timeout=30000)
     inspectable.click()

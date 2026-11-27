@@ -381,7 +381,24 @@ function claimNext(draft: Draft, worker: string, claim: string) {
     claimed.filter((other) => other.grp === run.grp).length < groupLimit(run.grp);
   // The same claim again means the answer got lost: it gets back the run it already has.
   const held = claimed.find((run) => run.claim === claim && workerOf(draft.view, run) === worker);
-  const run = held ?? runs.find(claimable);
+  let run = held;
+  if (!run) {
+    const priorityOf = (candidate: Row) => ruleNamed(draft, candidate.rule)?.priority ?? 0;
+    const maxPriority = Math.max(
+      0,
+      ...draft.rules.rules.filter((rule) => agents.includes(rule.to)).map((rule) => rule.priority ?? 0),
+    );
+    let bestPriority = -Infinity;
+    for (const candidate of runs) {
+      if (candidate.state !== "queued") continue;
+      const priority = priorityOf(candidate);
+      if (run && priority <= bestPriority) continue;
+      if (!claimable(candidate)) continue;
+      run = candidate;
+      bestPriority = priority;
+      if (bestPriority >= maxPriority) break;
+    }
+  }
   if (!run) return null;
   if (!held) {
     assignQueued(draft, run);

@@ -14,14 +14,17 @@
   inset: 0 auto auto 0;
   z-index: 12;
   width: 52px;
-  height: 62px;
-  font-size: 16px;
+  height: 56px;
   display: grid;
   place-items: center;
 }
-#app .studio-brand > span {
-  font-size: 34px;
-  color: var(--ui-accent);
+#app .studio-brand-logo {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  object-fit: cover;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--ui-shadow) 14%, transparent);
 }
 #app .studio-header #nav {
   position: fixed;
@@ -31,7 +34,7 @@
   display: flex;
   flex-flow: column nowrap;
   align-items: center;
-  padding: 68px 6px 18px;
+  padding: 64px 4px 12px;
   gap: 9px;
   border-right: 1px solid var(--ui-line);
   background: var(--ui-rail);
@@ -51,10 +54,12 @@
 }
 #app .rail-controls {
   display: grid;
+  justify-items: center;
   gap: 4px;
   margin-top: auto;
   padding-top: 8px;
   border-top: 1px solid var(--ui-line);
+  width: 100%;
 }
 #app .studio-header #nav .nav-item.active {
   background: var(--ui-soft);
@@ -68,8 +73,7 @@
   border-radius: 0 2px 2px 0;
   background: var(--ui-accent);
 }
-#app .studio-header #nav :is(.nav-item, .rail-control:not(:disabled)):hover,
-#app .studio-header #nav .rail-control[aria-expanded="true"] {
+#app .studio-header #nav :is(.nav-item, .rail-control:not(:disabled)):hover {
   background: var(--ui-panel);
 }
 #app .studio-header #nav .nav-item > span:not(.semi-icon):not(.nav-count) {
@@ -99,27 +103,35 @@
 #app #nav .rail-control:disabled {
   cursor: default;
 }
-.rail-theme-wrap {
-  position: relative;
+#app .studio-header #nav .rail-control.rail-version {
+  width: 100%;
+  height: 24px;
+  margin-top: 2px;
+  padding: 0 2px;
+  border-radius: 6px;
+  color: var(--ui-muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
-#rail-theme-picker {
-  position: absolute;
-  z-index: 1;
-  bottom: 0;
-  left: calc(100% + 10px);
-  width: min(230px, calc(100vw - 64px));
-  padding: 8px;
-  border: 1px solid var(--ui-line);
-  border-radius: 10px;
-  background: var(--ui-panel);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--ui-shadow) 16%, transparent);
+#app .studio-header #nav .rail-control.rail-version:hover {
+  color: var(--ui-text);
+}
+#app .studio-header #nav .rail-version-text {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .studio-update-dot {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 7px;
-  height: 7px;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--ui-warn);
 }

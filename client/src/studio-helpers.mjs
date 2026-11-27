@@ -224,6 +224,24 @@ export function formatDate(value) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
 }
 
+export const THEME_MODES = ["light", "dark", "system"];
+
+export function nextThemeMode(mode) {
+  const index = THEME_MODES.indexOf(mode);
+  return THEME_MODES[(index + 1) % THEME_MODES.length];
+}
+
+export function formatRailVersion(current) {
+  const tag = typeof current?.tag === "string" ? current.tag.trim() : "";
+  if (tag) return tag;
+  const label = typeof current?.label === "string" ? current.label.trim() : "";
+  const semver = /^v\d+(?:\.\d+)+/.exec(label);
+  if (semver) return semver[0];
+  if (label.includes("开发版") || current?.commit) return "开发版";
+  if (label) return "本地版";
+  return "版本";
+}
+
 export const ACCESS_NAMES = {
   read: "只读",
   edit: "工作区编辑",

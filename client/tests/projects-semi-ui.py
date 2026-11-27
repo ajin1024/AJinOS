@@ -72,8 +72,7 @@ def run_test(url):
         page.get_by_role("button", name="取消修改", exact=True).click()
         expect(page.locator('input[name="name"]')).to_have_value(first_project["name"])
         page.locator('input[name="name"]').fill("Semi 界面测试")
-        page.locator("#refresh-app").click()
-        page.wait_for_timeout(500)
+        expect(page.locator("#refresh-app")).to_have_count(0)
         expect(page.locator('input[name="name"]')).to_have_value("Semi 界面测试")
         page.get_by_role("button", name="保存项目", exact=True).click()
         expect(page.get_by_role("region", name="Semi 界面测试", exact=True)).to_be_visible()
@@ -123,8 +122,10 @@ def run_test(url):
         expect(page.locator(".ps-editor")).not_to_be_visible()
 
         for theme in ("dark", "light"):
-            page.locator("#rail-theme").click()
-            page.locator(f'[data-theme-choice="{theme}"]').click()
+            for _ in range(3):
+                if page.locator("html").get_attribute("data-theme-mode") == theme:
+                    break
+                page.locator("#rail-theme").click()
             expect(page.locator("html")).to_have_attribute("data-theme", theme)
         for width in (1280, 640, 390):
             page.set_viewport_size({"width": width, "height": 850})

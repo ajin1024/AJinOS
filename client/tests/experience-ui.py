@@ -58,8 +58,8 @@ with studio_home('studio-experience-') as home:
                 page.goto(url)
                 expect(page.locator("#nav").get_by_role("button", name="工作台", exact=True)).to_be_visible(timeout=3000)
                 navigate(page, "tasks")
-                page.get_by_role("button", name="流转概览").click()
-                expect(page.get_by_role("region", name="流转概览", exact=True)).to_be_visible()
+                page.get_by_role("button", name="任务总览").click()
+                expect(page.get_by_role("region", name="任务总览", exact=True)).to_be_visible()
                 expect(page.locator(".super-agent-flow .canvas")).to_be_visible()
                 gateway = page.locator('[data-node="hub"]')
                 gateway.focus()
@@ -79,10 +79,9 @@ with studio_home('studio-experience-') as home:
                 navigate(page, "messages")
                 expect(composer).to_have_value("还没发出的任务说明")
                 expect(page.locator(".composer .attachments img")).to_be_visible()
-                page.locator("#refresh-app").click()
-                expect(page.locator("#toast")).to_contain_text("未发送的草稿")
+                expect(page.locator("#refresh-app")).to_have_count(0)
                 page.emulate_media(reduced_motion="reduce")
-                assert page.locator("#refresh-app").evaluate(
+                assert page.locator("#rail-theme").evaluate(
                     "(button) => getComputedStyle(button).transitionDuration.split(',').every(t => parseFloat(t) === 0)"
                 )
                 page.locator("#rail-new-task").click()

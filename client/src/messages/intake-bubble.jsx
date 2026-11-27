@@ -5,7 +5,7 @@ import { businessProjects } from "../gateway-config.mjs";
 
 const projectName = (config, id) => config?.projects?.find((project) => project.id === id)?.name || id;
 
-export function IntakeBubble({ intake, config, toast, onResubmit, onDismiss }) {
+export function IntakeBubble({ intake, config, toast, onResubmit, onDismiss, onDiscuss, showText = true }) {
   const [busy, setBusy] = useState(false);
   const [pickedProject, setPickedProject] = useState(intake?.input?.project || "");
   const [editing, setEditing] = useState(false);
@@ -58,13 +58,19 @@ export function IntakeBubble({ intake, config, toast, onResubmit, onDismiss }) {
                   : "正在识别"}
           </Tag>
         </div>
-        {intake.text && <p className="mc-intake-text">{intake.text}</p>}
+        {showText && intake.text && <p className="mc-intake-text">{intake.text}</p>}
         {intake.reason && <p className="mc-intake-reason">{intake.reason}</p>}
 
         {(state === "confirming" || state === "routing" || state === "pending") && (
-          <div className="mc-progress">
-            <IconLoading size="small" aria-hidden="true" />
-            <span>正在识别需求与项目，请稍候…</span>
+          <div className="mc-progress" role="status">
+            <IconLoading spin size="small" aria-hidden="true" />
+            <span>
+              {state === "confirming"
+                ? "正在确认需求，请稍候…"
+                : state === "routing"
+                  ? "正在分配项目，请稍候…"
+                  : "正在识别需求与项目，请稍候…"}
+            </span>
           </div>
         )}
 
@@ -72,11 +78,21 @@ export function IntakeBubble({ intake, config, toast, onResubmit, onDismiss }) {
           <div className="mc-intake-actions">
             <div className="mc-actions-row">
               <Button size="small" theme="solid" loading={busy} onClick={() => run({ requirementsConfirmed: true })}>
-                按原意确认并直接派发
+                按原意直接执行
               </Button>
               <Button size="small" aria-expanded={editing} onClick={() => setEditing(!editing)}>
                 补充说明
               </Button>
+              {onDiscuss && (
+                <Button
+                  size="small"
+                  theme="borderless"
+                  disabled={busy}
+                  onClick={() => onDiscuss(intake)}
+                >
+                  先和总管聊聊需求
+                </Button>
+              )}
             </div>
             {editing && (
               <div className="mc-intake-addition">
@@ -130,7 +146,7 @@ export function IntakeBubble({ intake, config, toast, onResubmit, onDismiss }) {
                   { value: "", label: "选择项目…" },
                   ...projects.map((project) => ({ value: project.id, label: project.name })),
                 ]}
-                style={{ width: 220 }}
+                style={{ width: "min(220px, 100%)" }}
               />
               <Button
                 size="small"
@@ -141,6 +157,11 @@ export function IntakeBubble({ intake, config, toast, onResubmit, onDismiss }) {
               >
                 用这个项目重新提交
               </Button>
+              {onDiscuss && (
+                <Button size="small" theme="borderless" disabled={busy} onClick={() => onDiscuss(intake)}>
+                  先和总管聊聊需求
+                </Button>
+              )}
             </div>
             <p className="mc-quiet">会复用原来的消息和图片重新提交。</p>
           </div>

@@ -1,4 +1,5 @@
 import React, { useLayoutEffect, useRef, useState } from "react";
+import { ACCESS_NAMES } from "../studio-helpers.mjs";
 import { buildFlowModel, traceFlow } from "./flow-model.mjs";
 
 const glyphs = {
@@ -41,10 +42,10 @@ export function FlowIcon({ name, className = "" }) {
 }
 
 const lanes = [
-  ["plug", "入口触发", "Triggers"],
-  ["route", "总管路由", "AJinOS Router"],
-  ["folder", "项目领地与执行器", "Sandboxes & Workers"],
-  ["inbox", "结果与本人介入", "Results & Human in the Loop"],
+  ["plug", "任务入口", "Triggers"],
+  ["route", "消息分派", "AJinOS Router"],
+  ["folder", "项目与执行器", "Sandboxes & Workers"],
+  ["inbox", "待我处理与完成", "Results & Human in the Loop"],
 ];
 const edgeKey = ({ from, to }) => `${from} → ${to}`;
 const itemNumber = (item) =>
@@ -264,12 +265,12 @@ export function SuperAgentFlow({
 
   return (
     <div className="studio-flow-scroll">
-      <section className="super-agent-flow" aria-label="流转概览">
+      <section className="super-agent-flow" aria-label="任务总览">
         <header className="overview-heading">
           <div>
-            <h2>任务流转</h2>
+            <h2>任务处理流程</h2>
             <p>
-              {model.sources.filter((source) => source.enabled).length} 个触发来源 · {model.projects.length} 个项目领地
+              {model.sources.filter((source) => source.enabled).length} 个任务入口 · {model.projects.length} 个项目
             </p>
           </div>
           <div className="row overview-stats">
@@ -283,7 +284,7 @@ export function SuperAgentFlow({
             </button>
           </div>
         </header>
-        <section className={`canvas${target ? " tracking" : ""}`} aria-label="任务流转画布">
+        <section className={`canvas${target ? " tracking" : ""}`} aria-label="任务处理流程图">
           <header className="flow-columns lane-head">
             {lanes.map(([icon], index) => (
               <LaneTitle key={icon} index={index} />
@@ -306,7 +307,7 @@ export function SuperAgentFlow({
                     <strong>{title}</strong>
                     <small className="node-meta">
                       <span className={`dot${enabled && model.connected ? " live" : ""}`} />
-                      {!enabled ? "未接入" : !model.connected ? "离线快照" : "活跃轮次"}
+                      {!enabled ? "未开启" : !model.connected ? "引擎离线" : active ? "进行中" : "已开启"}
                     </small>
                   </span>
                   <span className={`count${active ? "" : " idle"}`}>{active}</span>
@@ -319,8 +320,8 @@ export function SuperAgentFlow({
                 <button type="button" className="router-head node-action" onClick={onChat}>
                   <Avatar icon="brand" />
                   <span className="node-copy">
-                    <strong>AJinOS Router</strong>
-                    <small>总管路由大脑</small>
+                    <strong>AJinOS 总管</strong>
+                    <small>理解需求与分派任务</small>
                   </span>
                   <span className={`dot${model.connected ? " live" : ""}`} />
                 </button>
@@ -328,30 +329,30 @@ export function SuperAgentFlow({
                   <div className="route fast" {...node("fast")}>
                     <span className="row">
                       <FlowIcon name="fast" className="path-icon" />
-                      <strong>Fast Path</strong>
+                      <strong>快速通道</strong>
                     </span>
                     <span className={`chip ${model.connected ? "green" : "neutral"}`}>
-                      {model.connected ? "直通就绪" : "离线"}
+                      {model.connected ? "就绪" : "离线"}
                     </span>
                     <small>
-                      今日 Thread 直通 {model.through} · 零消耗简报 / 问答 {model.answers}
+                      今日续接对话 {model.through} · 快捷问答 {model.answers}
                     </small>
                   </div>
                   <div className="route" {...node("slow")}>
                     <span className="row">
                       <FlowIcon name="route" className="path-icon" />
-                      <strong>Slow Path</strong>
+                      <strong>智能分派</strong>
                     </span>
                     <span className={`chip ${model.connected ? "blue" : "neutral"}`}>
                       {!model.connected
                         ? "离线"
                         : snapshot.workbench?.gateway?.processing > 0
-                          ? "分诊中"
+                          ? "识别中"
                           : config.gateway?.enabled === false
-                            ? "手动分配"
-                            : "分诊就绪"}
+                            ? "手动指定"
+                            : "就绪"}
                     </span>
-                    <small>问答 / 立单 / DAG</small>
+                    <small>直接问答 · 建任务 · 拆解多步计划</small>
                   </div>
                   <button type="button" className="route router-plan node-action" onClick={plans}>
                     <span className="row">
@@ -359,7 +360,7 @@ export function SuperAgentFlow({
                       <strong>跨项目协作</strong>
                     </span>
                     <span className="progress-label">{model.activePlans.length || ""}</span>
-                    {!model.activePlans.length && <small>{chief.error ? "计划暂无法读取" : "暂无活跃计划"}</small>}
+                    {!model.activePlans.length && <small>{chief.error ? "计划暂无法读取" : "暂无进行中的计划"}</small>}
                     {model.activePlans.map((plan) => (
                       <small key={plan.id} className="plan-name">
                         <span>
@@ -379,12 +380,11 @@ export function SuperAgentFlow({
               <button type="button" className="card node-row hub" {...node("hub")} onClick={() => settings("runtime")}>
                 <Avatar icon="hub" tone="plain" />
                 <span className="node-copy grow">
-                  <strong>Hub 确定性内核</strong>
+                  <strong>任务调度引擎</strong>
                   <small>
-                    {model.connected ? "已连接" : "离线"} · 排队 {model.queued} · 派单中 {model.running}
+                    {model.connected ? "运行中" : "已离线"} · 排队 {model.queued} · 执行中 {model.running}
                   </small>
                 </span>
-                <span className="mono">/v1</span>
               </button>
             </div>
             <div className="lane project-lane">
@@ -401,10 +401,12 @@ export function SuperAgentFlow({
                   <span className="node-copy grow">
                     <strong>{project.name || project.id}</strong>
                     <small>
-                      <code className="mono">{project.access || "未配置权限"}</code>
+                      <span className="access-label">
+                        {ACCESS_NAMES[project.access] || project.access || "未配置权限"}
+                      </span>
                       {project.active || project.review ? (
                         <span>
-                          {project.active ? `${project.active} 轮活跃` : ""}
+                          {project.active ? `${project.active} 个进行中` : ""}
                           {project.active && project.review ? " · " : ""}
                           {project.review ? `${project.review} 项待验收` : ""}
                         </span>
@@ -416,11 +418,11 @@ export function SuperAgentFlow({
                   <FlowIcon name="down" className="node-chevron" />
                 </button>
               ))}
-              {!model.projects.length && <p className="empty-row">暂无项目领地</p>}
+              {!model.projects.length && <p className="empty-row">暂无项目</p>}
               <section className="card workers" {...node("workers")}>
                 <button type="button" className="workers-head node-action" onClick={() => settings("agents")}>
                   <FlowIcon name="term" />
-                  共享执行器
+                  可用执行器
                 </button>
                 <div className="worker-list">
                   {model.workers.map((worker) => (
@@ -435,13 +437,13 @@ export function SuperAgentFlow({
                         />
                       )}
                       <span className="meter-label">
-                        {worker.capacity != null ? `${worker.running} / ${worker.capacity}` : `${worker.running} 轮`}
+                        {worker.capacity != null ? `${worker.running} / ${worker.capacity}` : `${worker.running} 个任务`}
                         {!worker.online && " · 离线"}
                       </span>
                     </div>
                   ))}
                   <div className="worker verify">
-                    <span>AI 校验</span>
+                    <span>AI 自动检查</span>
                     <span className={model.verification === "就绪" ? "ready" : "meter-label"}>
                       {model.verification}
                     </span>
@@ -483,8 +485,10 @@ export function SuperAgentFlow({
               >
                 <Avatar icon="signed" tone="checked" />
                 <span className="node-copy">
-                  <strong>今日已本人签收</strong>
-                  <small>{!signoffsPending ? "核对依据后关单" : error ? "部分签收待核实" : "正在读取历史签收"}</small>
+                  <strong>今日已验收</strong>
+                  <small>
+                    {!signoffsPending ? "本人确认后完成的任务" : error ? "部分记录暂未读全" : "正在读取今日记录"}
+                  </small>
                 </span>
                 <span className="count">{model.signed}</span>
               </button>
@@ -496,7 +500,7 @@ export function SuperAgentFlow({
                 <FlowIcon name="track" />
                 <strong>{itemNumber(target)}</strong>
                 <span>{target.title}</span>
-                <button type="button" aria-label="清除跟踪" onClick={onClear}>
+                <button type="button" aria-label="清除路径高亮" onClick={onClear}>
                   <FlowIcon name="close" />
                 </button>
               </div>
@@ -504,15 +508,15 @@ export function SuperAgentFlow({
               <div className="row legend">
                 <span>
                   <i className="legend-line" />
-                  总管路由
+                  总管分派
                 </span>
                 <span>
                   <i className="legend-line direct" />
-                  标准事件直达
+                  外部自动触发
                 </span>
                 <span>
                   <i className="legend-line receipt" />
-                  执行回执与签收
+                  执行结果与验收
                 </span>
               </div>
             )}
@@ -536,14 +540,14 @@ export function SuperAgentFlow({
             }}
           >
             <FlowIcon name="track" />
-            跟踪任务
+            查看任务路径
             <FlowIcon name="down" />
           </button>
           {trackOpen && (
             <section
               id="flow-track-menu"
               className="track-menu"
-              aria-label={onlySigned ? "今日签收工单" : "选择跟踪任务"}
+              aria-label={onlySigned ? "今日已验收任务" : "选择要查看路径的任务"}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.stopPropagation();
@@ -555,8 +559,8 @@ export function SuperAgentFlow({
               <input
                 autoFocus
                 type="search"
-                aria-label="搜索可跟踪工单"
-                placeholder="搜索工单号或标题"
+                aria-label="搜索任务"
+                placeholder="搜索编号或任务标题"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
@@ -571,11 +575,11 @@ export function SuperAgentFlow({
                     </span>
                   </button>
                 ))}
-                {!trackList.length && <p className="empty-row">{loading ? "正在读取工单…" : "没有匹配的工单"}</p>}
+                {!trackList.length && <p className="empty-row">{loading ? "正在读取任务…" : "没有匹配的任务"}</p>}
               </div>
               {error && (
                 <button type="button" onClick={onReload}>
-                  工单读取失败，重试
+                  任务读取失败，重试
                 </button>
               )}
             </section>

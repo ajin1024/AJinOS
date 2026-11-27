@@ -55,7 +55,7 @@ def run_test(url):
             ("timer", "#settings/rules", "规则与定时"),
         ]:
             page.locator('#nav [data-view="tasks"]').click()
-            page.get_by_role("button", name="流转概览").click()
+            page.get_by_role("button", name="任务总览").click()
             page.wait_for_selector(".super-agent-flow .canvas")
             card = page.locator('.project-card').first if node.startswith('project:') else page.locator(f'[data-node="{node}"]')
             if node.startswith("project:"):

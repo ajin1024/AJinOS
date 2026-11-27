@@ -41,14 +41,14 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
     page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
     page.goto(url)
     wait_online(page)
-    expect(page.get_by_role("heading", name="任务流转", exact=True)).to_be_visible()
+    expect(page.get_by_role("heading", name="任务处理流程", exact=True)).to_be_visible()
     rail = page.get_by_role("navigation", name="主导航")
     expect(rail.locator(".nav-item")).to_have_count(3)
     assert rail.locator(".nav-item").evaluate_all("items => items.map(item => item.getAttribute('aria-label'))") == ["工作台", "对话", "能力与沙箱"]
     expect(rail.get_by_role("button", name="工作台")).to_have_attribute("aria-current", "page")
     assert round(rail.bounding_box()["width"]) == 52
     controls = rail.get_by_role("group", name="应用控制")
-    expect(controls.get_by_role("button")).to_have_count(4)
+    expect(controls.get_by_role("button")).to_have_count(3)
     assert controls.bounding_box()["y"] + controls.bounding_box()["height"] >= 870
     expect(page.locator("#status-capsule")).to_have_text("引擎在线")
     capture(page, target, "light-empty")
@@ -94,8 +94,10 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
 
     for theme in ("light", "dark"):
         if theme == "dark":
-            rail.get_by_role("button", name="切换外观主题").click()
-            rail.get_by_role("radio", name="夜间").click()
+            for _ in range(3):
+                if page.locator("html").get_attribute("data-theme-mode") == "dark":
+                    break
+                rail.locator("#rail-theme").click()
         expect(page.locator("html")).to_have_attribute("data-theme", theme)
         page.goto(url + "/#messages")
         expect(page.locator(".composer")).to_be_visible()
@@ -134,12 +136,12 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
         expect(page.locator(".kb-board")).to_be_visible()
         expect(page.locator(".kb-board [data-board-col]")).to_have_count(4)
         capture(page, target, f"{theme}-operations")
-        page.get_by_role("button", name="DAG 协作计划").click()
+        page.get_by_role("button", name="协作计划").click()
         expect(page.locator(".studio-plan-view .plan")).to_be_visible()
         page.goto(url + "/#overview")
-        expect(page.get_by_role("button", name="流转概览")).to_have_attribute("aria-pressed", "true")
-        flow = page.get_by_role("region", name="任务流转画布")
-        expect(flow.locator(".lane-head h3")).to_have_text(["入口触发", "总管路由", "项目领地与执行器", "结果与本人介入"])
+        expect(page.get_by_role("button", name="任务总览")).to_have_attribute("aria-pressed", "true")
+        flow = page.get_by_role("region", name="任务处理流程图")
+        expect(flow.locator(".lane-head h3")).to_have_text(["任务入口", "消息分派", "项目与执行器", "待我处理与完成"])
         expect(flow.locator(".wires path").first).to_be_visible()
         expect(page.locator(".composer")).to_have_count(0)
         pending = flow.get_by_role("region", name="待验收").get_by_role("button", name=re.compile(title))
@@ -150,7 +152,7 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
         expect(drawer.get_by_text("验收标准逐项依据")).to_be_visible()
         expect(drawer.locator(".drawer-head h2")).to_have_text(title)
         assert drawer.locator(".drawer-head h2").evaluate("el => el.scrollHeight <= el.clientHeight + 1")
-        expect(drawer.get_by_role("button", name="进入原 Thread")).to_be_visible()
+        expect(drawer.get_by_role("button", name="查看原对话")).to_be_visible()
         expect(drawer.get_by_role("button", name="通过验收")).to_be_enabled()
         expect(flow.locator(".wire-group.hot").first).to_be_visible()
         expect(flow.locator('[data-node="chat"]')).to_have_attribute("data-on-path", "true")
@@ -168,8 +170,8 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
         expect(chat).to_have_count(0)
         expect(drawer).to_be_visible()
         drawer.get_by_role("button", name="关闭详情").click()
-        page.get_by_role("button", name="跟踪任务", exact=True).click()
-        menu = page.get_by_role("region", name="选择跟踪任务")
+        page.get_by_role("button", name="查看任务路径", exact=True).click()
+        menu = page.get_by_role("region", name="选择要查看路径的任务")
         menu.get_by_role("searchbox").fill(title)
         menu.get_by_role("button", name=re.compile(title)).click()
         expect(drawer).to_be_visible()
@@ -204,22 +206,11 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
         page.set_viewport_size({"width": 1440, "height": 900})
 
         page.goto(url + "/#messages")
-        field = page.get_by_role("textbox", name="任务说明")
-        field.fill("验证刷新保护")
-        page.locator("#refresh-app").click()
-        toast = page.locator("#toast")
-        expect(toast).to_contain_text("未发送的草稿")
-        expect(field).to_have_value("验证刷新保护")
-        for width in (1440, 390):
-            page.set_viewport_size({"width": width, "height": 900})
-            assert toast.bounding_box()["y"] + toast.bounding_box()["height"] <= field.bounding_box()["y"]
-        page.set_viewport_size({"width": 1440, "height": 900})
-        field.fill("")
-        expect(toast).to_be_hidden(timeout=7000)
+        expect(page.locator("#refresh-app")).to_have_count(0)
 
     page.set_viewport_size({"width": 1280, "height": 720})
     page.goto(url + "/")
-    expect(page.get_by_role("heading", name="任务流转")).to_be_visible()
+    expect(page.get_by_role("heading", name="任务处理流程")).to_be_visible()
     capture(page, target, "1280-flow")
     page.keyboard.press("Alt+Shift+A")
     expect(chat).to_be_visible()
@@ -232,7 +223,7 @@ with running_studio("studio-control-layout-") as url, TemporaryDirectory(prefix=
     assert reply.value.ok and reply.value.json()["kind"] == "answer"
     expect(chat.get_by_text("只读简报 · 未开单")).to_have_count(2)
     assert before == state(page)["state"].get("tickets", [])
-    expect(page.get_by_text(re.compile("零消耗简报 / 问答 2"))).to_be_visible()
+    expect(page.get_by_text(re.compile("快捷问答 2"))).to_be_visible()
     capture(page, target, "1280-chat")
     chat.get_by_role("button", name="打开完整对话").click()
     expect(page).to_have_url(url + "/#messages")

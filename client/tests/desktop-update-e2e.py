@@ -77,8 +77,10 @@ with tempfile.TemporaryDirectory(prefix="studio-desktop-e2e-") as temp:
             page = desktop_page(browser, port)
             page.wait_for_selector(".mc-stage, .super-agent-flow .canvas")
             print("Canvas ready", flush=True)
-            page.locator("#rail-theme").click()
-            page.locator('#rail-theme-picker [data-theme-choice="dark"]').click()
+            for _ in range(3):
+                if page.locator("html").get_attribute("data-theme-mode") == "dark":
+                    break
+                page.locator("#rail-theme").click()
             config = page.request.get(f"http://127.0.0.1:{port}/api/config").json()
             config["value"]["projects"][0]["aliases"].append("更新后必须保留")
             assert page.request.put(f"http://127.0.0.1:{port}/api/config", headers={"x-studio-action":"1"}, data={"value":config["value"], "revision":config["revision"]}).ok

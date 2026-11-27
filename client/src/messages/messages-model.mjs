@@ -424,6 +424,189 @@ export function buildConversations({
 const hasTicketNumber = (task) =>
   Boolean(task?.ticket?.number || task?.runs?.findLast((run) => run.ticketNumber)?.ticketNumber);
 
+const ACTIVE_INTAKE_STATES = new Set([
+  "confirming",
+  "routing",
+  "needsProject",
+  "needsConfirmation",
+  "failed",
+  "interrupted",
+]);
+
+function isStandaloneMainIntake(intake) {
+  if (!intake || !ACTIVE_INTAKE_STATES.has(intake.state)) return false;
+  if (intake.input?.conversation) return false;
+  if (intake.input?.topic && intake.input.topic !== "new") return false;
+  return true;
+}
+
+/** Human-readable progress label for an in-flight outbox message. */
+export function outboxProgressLabel(entry, intake = null) {
+  const stage = intake?.state || entry?.intakeState || "";
+  if (stage === "confirming") return "正在确认需求…";
+  if (stage === "routing") return "正在分配项目…";
+  if (entry?.status === "sent" && entry?.result?.kind === "task") return "已分配项目，正在派发…";
+  if (entry?.payload?.mode === "plan" || /^\/plan(?:\s+|$)/u.test(entry?.text || "")) return "正在生成协作计划…";
+  if (
+    entry?.payload?.mode === "discuss" ||
+    entry?.payload?.discussionId ||
+    /^\/(?:discuss|chat)(?:\s+|$)/u.test(entry?.text || "")
+  )
+    return "正在和总管沟通需求…";
+  if (entry?.payload?.mode === "ask" || /^\/ask(?:\s+|$)/u.test(entry?.text || "")) return "正在查询简报…";
+  return "正在发送…";
+}
+
+/** Whether a local optimistic outbox entry has been superseded by durable server state. */
+export function isOutboxSettled(entry, { history = [], plans = [], receipts = [], messages = [], intakes = [] } = {}) {
+  if (!entry || entry.status === "sending") return false;
+  if (entry.status === "failed") {
+    return (intakes || []).some((intake) => intake?.id === entry.id && intake.state === "failed");
+  }
+  if (entry.pane != null) {
+    return (messages || []).some((message) => message?.id === entry.id);
+  }
+  const kind = entry.result?.kind;
+  if (kind === "answer" || kind === "discuss") return (history || []).some((item) => item?.id === entry.id);
+  if (kind === "plan") {
+    return (
+      (history || []).some((item) => item?.id === entry.id) ||
+      Boolean(entry.result?.plan?.id && (plans || []).some((plan) => plan?.id === entry.result.plan.id))
+    );
+  }
+  if (kind === "intake") return (intakes || []).some((intake) => intake?.id === entry.id);
+  if (kind === "task") return (receipts || []).some((task) => task?.topic && task.topic === entry.result?.topic);
+  return false;
+}
+
+/**
+ * Build the main chief-chat timeline, blending durable answers/plans/receipts with
+ * standalone unresolved intakes and optimistic local outbox messages without duplicates.
+ */
+export function buildMainEntries({
+  history = [],
+  plans = [],
+  receipts = [],
+  conversations = [],
+  intakes = [],
+  outbox = [],
+} = {}) {
+  const plansById = new Map((plans || []).map((plan) => [plan.id, plan]));
+  const historyIds = new Set();
+  const entries = (history || []).map((item) => {
+    historyIds.add(item.id);
+    return {
+      ...item,
+      key: `history:${item.id}`,
+      ...(item.plan && { plan: plansById.get(item.plan.id) || item.plan }),
+    };
+  });
+  const historyPlans = new Set((history || []).flatMap((item) => (item.plan ? [item.plan.id] : [])));
+  const visiblePlanIds = new Set(historyPlans);
+  for (const plan of plans || []) {
+    if (!historyPlans.has(plan.id) && ["running", "draft"].includes(plan.status)) {
+      visiblePlanIds.add(plan.id);
+      entries.push({ key: `plan:${plan.id}`, kind: "plan", plan, at: plan.createdAt, text: plan.goal });
+    }
+  }
+  const topics = new Map((conversations || []).filter((item) => item.kind === "topic").map((item) => [item.topic, item]));
+  const recent = (receipts || []).filter((task) => task?.topic || hasTicketNumber(task)).slice(0, 8);
+  const recentTopics = new Set();
+  for (const task of recent) {
+    if (task.topic) recentTopics.add(task.topic);
+    const original = topics.get(task.topic)?.items.find((item) => item.type === "user_message")?.message;
+    entries.push({
+      key: `task:${task.key}`,
+      kind: "task",
+      task,
+      at: task.updatedAt,
+      text: original?.text,
+      sentAt: original?.at,
+      attachments: original?.attachments,
+    });
+  }
+
+  const standaloneIntakes = (intakes || []).filter(isStandaloneMainIntake);
+  const intakeById = new Map(standaloneIntakes.map((intake) => [intake.id, intake]));
+  const coveredIntakeIds = new Set();
+  const outboxAttachmentsById = new Map();
+
+  for (const entry of outbox || []) {
+    if (!entry || entry.pane != null) continue;
+    if (entry.attachments?.length) outboxAttachmentsById.set(entry.id, entry.attachments);
+    if (entry.status === "sent") {
+      const kind = entry.result?.kind;
+      if ((kind === "answer" || kind === "discuss") && historyIds.has(entry.id)) continue;
+      if (kind === "plan" && (historyIds.has(entry.id) || visiblePlanIds.has(entry.result?.plan?.id))) continue;
+      if (kind === "task" && entry.result?.topic && recentTopics.has(entry.result.topic)) continue;
+    }
+    const linkedIntake = intakeById.get(entry.id) || null;
+    if (linkedIntake) {
+      if (entry.status === "sending" && ["confirming", "routing"].includes(linkedIntake.state)) {
+        coveredIntakeIds.add(linkedIntake.id);
+        entries.push({
+          key: `outbox:${entry.id}`,
+          kind: "outbox",
+          entry,
+          intake: linkedIntake,
+          intakeState: linkedIntake.state,
+          text: entry.text,
+          sentAt: entry.at,
+          at: entry.at,
+          attachments: entry.attachments || linkedIntake.input?.attachments || [],
+        });
+      }
+      // Terminal/actionable intakes (needsProject, needsConfirmation, failed, interrupted) are rendered via the intake card.
+      continue;
+    }
+    entries.push({
+      key: `outbox:${entry.id}`,
+      kind: "outbox",
+      entry,
+      intake: null,
+      intakeState: null,
+      text: entry.text,
+      sentAt: entry.at,
+      at: entry.at,
+      attachments: entry.attachments || [],
+    });
+  }
+
+  for (const intake of standaloneIntakes) {
+    if (coveredIntakeIds.has(intake.id)) continue;
+    entries.push({
+      key: `intake:${intake.id}`,
+      kind: "intake",
+      intake,
+      text: intake.text || intake.input?.text || "",
+      sentAt: intake.at,
+      at: intake.at,
+      attachments: intake.input?.attachments || outboxAttachmentsById.get(intake.id) || [],
+    });
+  }
+
+  return entries.sort((a, b) => timeOf(a.at) - timeOf(b.at));
+}
+
+/** Merge optimistic outbox replies into a single topic thread without duplicating stored messages. */
+export function buildThreadItems(conversation, outbox = []) {
+  const base = [...(conversation?.items || [])];
+  if (!conversation || conversation.kind !== "topic" || !conversation.topic) return base;
+  const storedIds = new Set(
+    base.filter((item) => item.type === "user_message" && item.message?.id).map((item) => item.message.id),
+  );
+  const pending = (outbox || [])
+    .filter((entry) => entry && entry.pane === conversation.topic && !storedIds.has(entry.id))
+    .map((entry) => ({
+      type: "outbox",
+      key: `outbox:${entry.id}`,
+      at: entry.at || "",
+      entry,
+    }));
+  if (!pending.length) return base;
+  return sortItems([...base, ...pending]);
+}
+
 /** The receipt cards the total feed shows: current work only, never a ticket the owner already closed. */
 export function recentReceipts(receipts, limit = 8) {
   return (receipts || [])

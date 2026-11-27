@@ -85,7 +85,7 @@ export function VerificationNote({ report }) {
   );
 }
 
-export function ReceiptCard({ task, snapshot, onInspect, onThread, onAction, threadLabel = "进入 Thread ›" }) {
+export function ReceiptCard({ task, snapshot, onInspect, onThread, onAction, threadLabel = "查看对话 ›" }) {
   const run = task.runs.at(-1);
   const [busy, setBusy] = React.useState(false);
   const canAccept = availableTaskActions(task, savedWorkflow(task, snapshot.taskWorkflows)).includes("accept");
@@ -162,7 +162,7 @@ export function PlanCard({ plan, busy, onAction, onThread, connected }) {
             <h2>{plan.title}</h2>
             <div className="wrap">
               <span className="chip blue">跨项目</span>
-              <small className="secondary">DAG 协作计划 · {plan.steps.length} 步</small>
+              <small className="secondary">协作计划 · {plan.steps.length} 步</small>
             </div>
           </div>
         </div>
@@ -190,7 +190,7 @@ export function PlanCard({ plan, busy, onAction, onThread, connected }) {
                 {step.error && <small className="mc-error">{step.error}</small>}
                 {step.topic && onThread && (
                   <button type="button" className="link" onClick={() => onThread(step.topic)}>
-                    进入 Thread ›
+                    查看对话 ›
                   </button>
                 )}
               </div>

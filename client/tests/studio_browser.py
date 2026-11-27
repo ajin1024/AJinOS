@@ -19,6 +19,13 @@ const studio = await startDemoStudio({
     if (kind === 'confirm') throw Error('router should not request model confirmation');
     if (kind === 'message') return { description: 'fixture image' };
     if (kind === 'verify') return { verdict: 'pass', summary: 'fixture verification', findings: [] };
+    if (kind === 'discuss') return {
+      reply: '收到，我们先对齐需求范围，确认后再开单执行。',
+      questions: ['需要先改订单服务吗？'],
+      ready: true,
+      suggestedAction: 'task',
+      draft: { title: '核对订单需求', project: 'orders', summary: '核对订单并直接完成', complexity: 'simple' }
+    };
     if (kind === 'plan') return { title: '跨项目交接', steps: [
       { id: 'orders', title: '核对订单', project: 'orders', instruction: '直接完成订单核对' },
       { id: 'content', title: '整理内容', project: 'content', dependsOn: ['orders'], instruction: '直接完成内容整理' }

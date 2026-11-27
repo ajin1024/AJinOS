@@ -89,6 +89,7 @@ test("nodeExecutors routes chief, memory and profile nodes to their dedicated la
 
   const chiefAgent = resolveGatewayAgent(config, "plan");
   assert.equal(chiefAgent.name, "Codex 深度");
+  assert.equal(resolveGatewayAgent(config, "discuss").name, "Codex 深度");
   const chiefArgv = buildGatewayArgv({ kind: "plan", config, agent: chiefAgent, output: "/tmp/out.json" }).argv;
   assert.equal(chiefArgv[chiefArgv.indexOf("-m") + 1], "gpt-5.4");
   assert.ok(chiefArgv.includes('model_reasoning_effort="high"'));

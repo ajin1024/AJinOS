@@ -1,7 +1,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconExternalOpen, IconMinus } from "@douyinfe/semi-icons";
 import { Composer, initialComposerDraft } from "./composer.jsx";
-import { MainChat, mainEntries } from "./message-center.jsx";
+import { MainChat } from "./message-center.jsx";
+import { buildMainEntries } from "./messages-model.mjs";
 import { FlowIcon } from "../workbench/super-agent-flow.jsx";
 
 export function FloatingChat({
@@ -16,10 +17,14 @@ export function FloatingChat({
   snapshot,
   receipts,
   conversations,
+  outbox = [],
+  outboxActions,
+  discussActions,
+  onResubmitIntake,
+  onIntakeDismiss,
   pendingCount,
   draft,
   onDraft,
-  onRefresh,
   onNavigate,
   onInspect,
   onAction,
@@ -27,17 +32,30 @@ export function FloatingChat({
   const anchor = useRef(null);
   const textarea = useRef(null);
   const scroll = useRef(null);
-  const [sent, setSent] = useState(null);
   const [preview, setPreview] = useState(null);
-  const entries = open ? mainEntries(chief.history, chief.plans, receipts, conversations) : [];
+  const entries = open
+    ? buildMainEntries({
+        history: chief.history,
+        plans: chief.plans,
+        receipts,
+        conversations,
+        intakes: snapshot.taskIntakes,
+        outbox,
+      })
+    : [];
   const visibleEntries = [
     ...entries.slice(0, Math.max(0, entries.length - 20)).filter((entry) => entry.plan?.status === "draft"),
     ...entries.slice(-20),
   ];
-  const awaitingReceipt = sent?.kind === "task" && !receipts.some((task) => task.topic === sent.topic);
-  const unresolved = sent?.kind === "intake" && snapshot.taskIntakes?.some((intake) => intake.id === sent.id);
   const latestKey = visibleEntries.at(-1)?.key;
   const openThread = (topic) => onNavigate({ view: "messages", topic });
+  const intakeProps = {
+    config,
+    toast,
+    onResubmit: (intake, patch) => onResubmitIntake(intake, patch, { openThread: false }),
+    onDismiss: onIntakeDismiss,
+    onDiscuss: discussActions?.onDiscussIntake,
+  };
 
   function collapse() {
     onClose();
@@ -49,7 +67,7 @@ export function FloatingChat({
   }, [open]);
   useLayoutEffect(() => {
     if (open && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
-  }, [open, latestKey, sent?.id]);
+  }, [open, latestKey]);
   useEffect(() => {
     if (!open) return;
     function escape(event) {
@@ -62,11 +80,6 @@ export function FloatingChat({
     document.addEventListener("keydown", escape, true);
     return () => document.removeEventListener("keydown", escape, true);
   }, [open, preview, onClose]);
-
-  async function submitted(result) {
-    setSent(result);
-    await Promise.all([chief.reload(), onRefresh()]);
-  }
 
   return (
     <div className={`floating-chat${drawerOpen ? " avoids-drawer" : ""}`}>
@@ -100,11 +113,15 @@ export function FloatingChat({
             {visibleEntries.length > 0 ? (
               <MainChat
                 entries={visibleEntries}
+                config={config}
                 chief={chief}
                 connected={snapshot.connected}
                 openInbox={() => onNavigate({ view: "messages", section: "inbox" })}
                 openRuns={() => onNavigate({ view: "tasks", tasksTab: "list", statusFilter: "running" })}
-                receiptProps={{ snapshot, onThread: openThread, onInspect, onAction, threadLabel: "进入原 Thread ›" }}
+                receiptProps={{ snapshot, onThread: openThread, onInspect, onAction, threadLabel: "查看原对话 ›" }}
+                intakeProps={intakeProps}
+                outboxActions={outboxActions}
+                discussActions={discussActions}
                 onPreview={setPreview}
               />
             ) : (
@@ -115,23 +132,6 @@ export function FloatingChat({
                 <p>有什么要交给 AJinOS？</p>
                 <small>可以查待办、交办任务或拟定协作计划。</small>
               </div>
-            )}
-            {awaitingReceipt && (
-              <article className="floating-chat-submitted" role="status">
-                <strong>任务已提交</strong>
-                <button type="button" className="link" onClick={() => openThread(sent.topic)}>
-                  进入原 Thread ›
-                </button>
-              </article>
-            )}
-            {unresolved && (
-              <article className="floating-chat-submitted" role="status">
-                <strong>需要补充信息</strong>
-                <p>{sent.reason}</p>
-                <button type="button" className="link" onClick={() => openThread(`intake:${sent.id}`)}>
-                  查看待澄清请求 ›
-                </button>
-              </article>
             )}
           </div>
           {preview && (
@@ -156,8 +156,7 @@ export function FloatingChat({
               api={api}
               toast={toast}
               connected={snapshot.connected}
-              intakes={snapshot.taskIntakes}
-              onResult={submitted}
+              onSend={outboxActions.onSend}
               compact
             />
           </footer>

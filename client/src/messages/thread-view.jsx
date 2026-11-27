@@ -1,8 +1,9 @@
 import React from "react";
-import { IconTerminal } from "@douyinfe/semi-icons";
+import { IconLoading, IconTerminal } from "@douyinfe/semi-icons";
 import { AgentMessage, UserMessage, VerificationNote } from "./dialog-parts.jsx";
 import { ApprovalCard } from "./inbox-view.jsx";
 import { IntakeBubble } from "./intake-bubble.jsx";
+import { buildThreadItems } from "./messages-model.mjs";
 import { CardReplyForm } from "../tasks/card-reply-form.jsx";
 
 const runStatus = {
@@ -14,12 +15,60 @@ const runStatus = {
   cancelled: "已停止",
 };
 
-export function ThreadView({ conversation, receipt, config, snapshot, onInspect, onPreview, replyProps, intakeProps }) {
+export function ThreadView({
+  conversation,
+  receipt,
+  config,
+  snapshot,
+  outbox = [],
+  outboxActions,
+  onInspect,
+  onPreview,
+  replyProps,
+  intakeProps,
+}) {
   if (!conversation) return <p className="empty">这段话题暂时没有记录。</p>;
+  const items = buildThreadItems(conversation, outbox);
   return (
     <div className="thread-items">
-      {conversation.items.map((item) => {
+      {items.map((item) => {
         if (item.type === "user_message") return <UserMessage key={item.key} {...item.message} onPreview={onPreview} />;
+        if (item.type === "outbox") {
+          const { entry } = item;
+          return (
+            <div className="thread-outbox-item" key={item.key}>
+              <UserMessage
+                text={entry.text}
+                at={entry.at}
+                attachments={entry.attachments}
+                onPreview={onPreview}
+              />
+              {entry.status === "failed" ? (
+                <div className="thread-outbox-status failed">
+                  <p className="mc-error" role="alert">
+                    {entry.error || "发送失败"}
+                  </p>
+                  <div className="wrap">
+                    <button type="button" className="btn" onClick={() => outboxActions?.onRetry(entry.id)}>
+                      重试
+                    </button>
+                    <button type="button" className="btn ghost" onClick={() => outboxActions?.onRestore(entry.id)}>
+                      填回输入框
+                    </button>
+                    <button type="button" className="btn ghost" onClick={() => outboxActions?.onDismiss(entry.id)}>
+                      移除
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="thread-outbox-status" role="status">
+                  <IconLoading spin size="small" aria-hidden="true" />
+                  <span>正在发送…</span>
+                </div>
+              )}
+            </div>
+          );
+        }
         if (item.type === "intake_status") return <IntakeBubble key={item.key} intake={item.intake} {...intakeProps} />;
         if (item.type === "card") {
           if (item.card.kind !== "ask")

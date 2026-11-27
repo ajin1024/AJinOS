@@ -134,8 +134,10 @@ with tempfile.TemporaryDirectory(prefix="studio-feishu-table-") as home:
             expect(page).to_have_url(page.url.split("#", 1)[0] + "#messages")
             page.goto(page.url.split("#", 1)[0] + "#settings/feishu")
             add_feishu()
-            page.locator("#rail-theme").click()
-            page.locator('[data-theme-choice="light"]').click()
+            for _ in range(3):
+                if page.locator("html").get_attribute("data-theme-mode") == "light":
+                    break
+                page.locator("#rail-theme").click()
             expect(page.get_by_text("已授权", exact=True)).to_be_visible()
             expect(page.get_by_text("连接详情", exact=True)).to_have_count(0)
             expect(page.get_by_text("没有这个接口", exact=True)).to_have_count(0)
@@ -251,8 +253,10 @@ with tempfile.TemporaryDirectory(prefix="studio-feishu-table-") as home:
             page.get_by_text("扫描设置", exact=True).click()
             expect(schedule).to_contain_text("每 10 分钟")
             page.set_viewport_size({"width": 850, "height": 650})
-            page.locator("#rail-theme").click()
-            page.locator('[data-theme-choice="dark"]').click()
+            for _ in range(3):
+                if page.locator("html").get_attribute("data-theme-mode") == "dark":
+                    break
+                page.locator("#rail-theme").click()
             table.get_by_role("row").filter(has_text="设计评审群").get_by_role("button", name="编辑").click()
             drawer = page.get_by_role("complementary", name="编辑群聊")
             expect(drawer).to_be_visible()

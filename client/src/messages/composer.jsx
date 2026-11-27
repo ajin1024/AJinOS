@@ -36,8 +36,9 @@ export function initialComposerDraft(conversation) {
     executor: input?.executor || "",
     complexity: input?.complexity || "",
     mode: "auto",
+    discussionId: "",
+    discussionTitle: "",
     advancedOpen: false,
-    pendingId: null,
     error: "",
   };
 }
@@ -55,17 +56,13 @@ export function Composer({
   api,
   toast,
   connected,
-  intakes,
-  onResult,
+  onSend,
   compact = false,
 }) {
-  const { text, attachments, project, flow, executor, complexity, mode, advancedOpen, pendingId, error } = draft;
-  const busy = Boolean(pendingId);
-  const stage = busy && intakes?.find((intake) => intake.id === pendingId)?.state;
-  const progress = stage === "confirming" ? "正在确认需求" : stage === "routing" ? "正在分配项目" : "正在发送…";
+  const { text, attachments, project, flow, executor, complexity, mode, discussionId, discussionTitle, advancedOpen, error } =
+    draft;
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
-  const sending = useRef(false);
   const mounted = useRef(false);
   useLayoutEffect(() => {
     mounted.current = true;
@@ -86,7 +83,7 @@ export function Composer({
   const textLength = [...text].length;
 
   function updateAttachments(updater) {
-    updateDraft((current) => ({ ...current, retryId: null, attachments: updater(current.attachments) }));
+    updateDraft((current) => ({ ...current, attachments: updater(current.attachments) }));
   }
 
   async function uploadFile(file, key) {
@@ -159,10 +156,10 @@ export function Composer({
     void addFiles(event.dataTransfer?.files || []);
   }
 
-  async function send(event) {
+  function send(event) {
     event.preventDefault();
     const content = text.trim();
-    if (!content || busy || sending.current) return;
+    if (!content) return;
     if (!connected) {
       toast("引擎未连接，暂时不能发送", true);
       return;
@@ -179,50 +176,52 @@ export function Composer({
       toast(`任务说明最多 ${MAX_TEXT} 字`, true);
       return;
     }
-    sending.current = true;
-    let answer;
-    let messageId;
-    try {
-      messageId = draft.retryId || crypto.randomUUID();
-      patchDraft({ pendingId: messageId, error: "" });
-      const attachmentIds = [
-        ...new Set([
-          ...originalAttachmentIds(conversation?.intake),
-          ...attachments.filter((attachment) => attachment.status === "done").map((attachment) => attachment.id),
-        ]),
-      ].slice(0, MAX_ATTACHMENTS);
-      answer = await api("/router/message", "POST", {
-        id: messageId,
-        text: content,
-        ...(isContinuation
-          ? { conversation: continuingTopic }
-          : {
-              mode,
-              ...(project ? { project } : {}),
-              ...(flow ? { flow } : {}),
-              ...(executor ? { executor } : {}),
-              ...(complexity ? { complexity } : {}),
-            }),
-        ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
-      });
-    } catch (sendError) {
-      patchDraft({ pendingId: null, retryId: messageId, error: sendError.message });
-      return;
-    } finally {
-      sending.current = false;
-    }
+    const messageId = crypto.randomUUID();
+    const doneAttachments = attachments.filter((attachment) => attachment.status === "done");
+    const attachmentIds = [
+      ...new Set([...originalAttachmentIds(conversation?.intake), ...doneAttachments.map((attachment) => attachment.id)]),
+    ].slice(0, MAX_ATTACHMENTS);
+    const payload = {
+      id: messageId,
+      text: content,
+      ...(isContinuation
+        ? { conversation: continuingTopic }
+        : {
+            mode,
+            ...(discussionId && !["ask", "plan", "task", "confirm"].includes(mode) ? { discussionId } : {}),
+            ...(project ? { project } : {}),
+            ...(flow ? { flow } : {}),
+            ...(executor ? { executor } : {}),
+            ...(complexity ? { complexity } : {}),
+          }),
+      ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
+    };
+    const draftText = text;
+    // Clear the composer immediately so the user can keep typing while routing runs asynchronously.
     updateDraft(() => null);
-    await onResult(answer, mounted.current);
+    onSend({
+      id: messageId,
+      pane: continuingTopic || null,
+      text: content,
+      draftText,
+      attachments: doneAttachments,
+      payload,
+      at: new Date().toISOString(),
+    });
   }
 
   function handleKeyDown(event) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent?.isComposing) return;
     event.preventDefault();
-    if (!event.repeat && !busy && (!compact || connected)) event.currentTarget.form.requestSubmit();
+    if (!event.repeat && (!compact || connected)) event.currentTarget.form.requestSubmit();
   }
 
-  const changeOptions = (patch) => patchDraft({ retryId: null, ...patch });
-  const prompt = isContinuation ? "沿原事项补充或继续…" : "告诉 AJinOS 要查进度、处理任务或安排跨项目协作…";
+  const changeOptions = (patch) => patchDraft(patch);
+  const prompt = isContinuation
+    ? "沿原事项补充或继续…"
+    : discussionId
+      ? "继续沟通需求，聊清楚后再决定是否派发…"
+      : "告诉 AJinOS 要查进度、沟通需求、处理任务或安排跨项目协作…";
 
   return (
     <div className="composer-slot">
@@ -231,18 +230,17 @@ export function Composer({
         onSubmit={send}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onDrop={busy ? (event) => event.preventDefault() : handleDrop}
+        onDrop={handleDrop}
       >
         <textarea
           ref={textareaRef}
           aria-label="任务说明"
           rows={Math.min(5, text.split("\n").length)}
           value={text}
-          readOnly={busy}
           placeholder={compact ? "给 AJinOS 总管发消息…" : prompt}
           onChange={(event) => changeOptions({ text: event.target.value, error: "" })}
           onKeyDown={handleKeyDown}
-          onPaste={busy ? undefined : handlePaste}
+          onPaste={handlePaste}
         />
         <div className="attachments">
           {attachments.map((file) => (
@@ -256,7 +254,6 @@ export function Composer({
                 type="button"
                 className="dialog-icon"
                 aria-label={`移除 ${file.filename}`}
-                disabled={busy}
                 onClick={() => removeAttachment(file.key)}
               >
                 <IconClose size="small" />
@@ -269,20 +266,14 @@ export function Composer({
             {error}
           </p>
         )}
-        {busy && (
-          <small className="secondary" role="status">
-            {progress}
-          </small>
-        )}
         <div className="row between">
           <div className="wrap tools">
-            <button type="button" className="btn ghost" disabled={busy} onClick={() => fileInputRef.current?.click()}>
+            <button type="button" className="btn ghost" onClick={() => fileInputRef.current?.click()}>
               <IconPlus size="small" /> 添加图片
             </button>
             <input
               ref={fileInputRef}
               type="file"
-              disabled={busy}
               accept="image/png,image/jpeg,image/webp,image/gif"
               multiple
               hidden
@@ -292,17 +283,32 @@ export function Composer({
               }}
             />
             {isContinuation ? (
-              <span className="chip green">Thread 直通</span>
+              <span className="chip green">原对话直连</span>
             ) : (
-              <button
-                type="button"
-                className="btn ghost"
-                aria-expanded={advancedOpen}
-                aria-controls="message-overrides"
-                onClick={() => patchDraft({ advancedOpen: !advancedOpen })}
-              >
-                <IconSetting size="small" /> 高级覆盖
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  aria-expanded={advancedOpen}
+                  aria-controls="message-overrides"
+                  onClick={() => patchDraft({ advancedOpen: !advancedOpen })}
+                >
+                  <IconSetting size="small" /> 指定选项
+                </button>
+                {discussionId && (
+                  <span className="chip blue discuss-chip">
+                    需求沟通中{discussionTitle ? ` · ${discussionTitle}` : ""}
+                    <button
+                      type="button"
+                      className="link"
+                      aria-label="结束需求沟通"
+                      onClick={() => changeOptions({ discussionId: "", discussionTitle: "", mode: "auto" })}
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+              </>
             )}
             {isContinuation && !connected && <small className="muted">引擎未连接</small>}
           </div>
@@ -318,7 +324,6 @@ export function Composer({
               aria-label="发送"
               title="发送（Enter）"
               disabled={
-                busy ||
                 !text.trim() ||
                 textLength > MAX_TEXT ||
                 uploading ||
@@ -347,7 +352,6 @@ export function Composer({
                 className="control"
                 aria-label="项目"
                 value={project}
-                disabled={busy}
                 onChange={(event) =>
                   changeOptions({
                     project: event.target.value,
@@ -372,7 +376,7 @@ export function Composer({
                 className="control"
                 aria-label="流程"
                 value={flow}
-                disabled={busy || !project || Boolean(executor)}
+                disabled={!project || Boolean(executor)}
                 onChange={(event) => changeOptions({ flow: event.target.value })}
               >
                 <option value="">按项目规则</option>
@@ -389,7 +393,7 @@ export function Composer({
                 className="control"
                 aria-label="执行器 / 模型"
                 value={executor}
-                disabled={busy || !executorChoices.length}
+                disabled={!executorChoices.length}
                 onChange={(event) => changeOptions({ executor: event.target.value, flow: "", complexity: "" })}
               >
                 <option value="">按项目规则</option>
@@ -406,7 +410,7 @@ export function Composer({
                 className="control"
                 aria-label="处理等级"
                 value={complexity}
-                disabled={busy || Boolean(executor)}
+                disabled={Boolean(executor)}
                 onChange={(event) => changeOptions({ complexity: event.target.value })}
               >
                 <option value="">自动</option>
@@ -415,15 +419,15 @@ export function Composer({
               </select>
             </label>
             <label>
-              路由模式
+              处理方式
               <select
                 className="control"
-                aria-label="路由模式"
+                aria-label="处理方式"
                 value={mode}
-                disabled={busy}
                 onChange={(event) =>
                   changeOptions({
                     mode: event.target.value,
+                    ...(event.target.value !== "discuss" && { discussionId: "", discussionTitle: "" }),
                     ...(["ask", "plan"].includes(event.target.value) && {
                       project: "",
                       flow: "",
@@ -433,8 +437,9 @@ export function Composer({
                   })
                 }
               >
-                <option value="auto">自动分流</option>
-                <option value="ask">只读简报</option>
+                <option value="auto">自动判断</option>
+                <option value="discuss">沟通需求（不直接开单）</option>
+                <option value="ask">仅查询问答</option>
                 <option value="plan">生成协作计划</option>
                 <option value="task">派发任务</option>
                 <option value="confirm">先确认需求</option>

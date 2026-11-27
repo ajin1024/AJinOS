@@ -53,6 +53,7 @@ const NODE_KEY_BY_KIND = {
   message: "gateway",
   profile: "profile",
   brief: "chief",
+  discuss: "chief",
   plan: "chief",
   memory: "memory",
 };

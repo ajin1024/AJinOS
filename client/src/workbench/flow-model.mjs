@@ -2,10 +2,10 @@ import { businessProjects } from "../gateway-config.mjs";
 import { resolveRoleCandidates } from "../../role-routing.mjs";
 
 const sourceLabels = {
-  chat: "AJinOS 主私聊",
-  feishu: "飞书私聊 / 群采集",
+  chat: "AJinOS 对话",
+  feishu: "飞书私聊 / 群消息",
   github: "GitHub Issue",
-  timer: "定时规则",
+  timer: "定时任务",
 };
 const activeRun = (run) => ["queued", "claimed"].includes(run.state);
 const receiptItem = (task) => ({ key: `task:${task.key}`, task, title: task.title });

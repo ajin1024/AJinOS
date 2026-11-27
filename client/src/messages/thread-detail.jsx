@@ -150,7 +150,7 @@ export function ThreadDetail({
       </div>
       {latest && (
         <footer className="wrap drawer-footer">
-          {task.topic && onOpenThread && <button type="button" className="btn" onClick={() => onOpenThread(task.topic)}>进入原 Thread</button>}
+          {task.topic && onOpenThread && <button type="button" className="btn" onClick={() => onOpenThread(task.topic)}>查看原对话</button>}
           {ordered.map((action) => (
             <button
               type="button"

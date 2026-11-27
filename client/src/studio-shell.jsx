@@ -4,14 +4,14 @@ import { ConfigProvider, Modal } from "@douyinfe/semi-ui";
 import {
   IconComment,
   IconContrast,
-  IconInfoCircle,
   IconLayers,
   IconLoading,
+  IconMoonStroked,
   IconPlay,
   IconPlus,
   IconPulse,
-  IconRefresh,
   IconSetting,
+  IconSunStroked,
 } from "@douyinfe/semi-icons";
 import semiCss from "@douyinfe/semi-ui/dist/css/semi.min.css";
 import semiThemeCss from "./semi-theme.css";
@@ -24,7 +24,8 @@ import { ProjectSpace } from "./project-space.jsx";
 import { SettingsCenter } from "./settings/settings-center.jsx";
 import { TaskCenter } from "./tasks/task-center.jsx";
 import { MessageCenter } from "./messages/message-center.jsx";
-import { hasComposerDraft } from "./messages/composer.jsx";
+import { hasComposerDraft, initialComposerDraft, originalAttachmentIds } from "./messages/composer.jsx";
+import { isOutboxSettled } from "./messages/messages-model.mjs";
 import { PlanView, useChiefActivity } from "./messages/use-chief-activity.jsx";
 import { SuperAgentFlow } from "./workbench/super-agent-flow.jsx";
 import { FloatingChat } from "./messages/floating-chat.jsx";
@@ -32,6 +33,7 @@ import { TaskDetailPanel } from "./tasks/task-detail-panel.jsx";
 import { NewTaskModal } from "./tasks/new-task-modal.jsx";
 import { WorkflowActionModal } from "./tasks/workflow-action-modal.jsx";
 import { VersionsPanel } from "./versions-panel.jsx";
+import { formatRailVersion, nextThemeMode } from "./studio-helpers.mjs";
 
 let semiStylesInstalled = false;
 function installSemiStyles() {
@@ -127,8 +129,8 @@ function StudioShell({
   const [themeMode, setThemeMode] = useState(() =>
     applyThemeMode(document.documentElement.dataset.themeMode || "system"),
   );
-  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState(null);
   const [windowsUpdate, setWindowsUpdate] = useState(null);
   const [versionProgress, setVersionProgress] = useState("");
   const [engineConfirm, setEngineConfirm] = useState({ operation: "stop", visible: false });
@@ -145,8 +147,235 @@ function StudioShell({
       return next;
     });
   }, []);
+  const [outbox, setOutbox] = useState([]);
+  const outboxRef = useRef(outbox);
+  outboxRef.current = outbox;
 
-  const themePickerRef = useRef(null);
+  const dispatchOutbox = useCallback(
+    (entry) => {
+      const nextEntry = { ...entry, status: "sending", error: "", result: null };
+      setOutbox((current) => {
+        const exists = current.some((item) => item.id === nextEntry.id);
+        return exists
+          ? current.map((item) => (item.id === nextEntry.id ? nextEntry : item))
+          : [...current, nextEntry];
+      });
+      void (async () => {
+        try {
+          const result = await api("/router/message", "POST", nextEntry.payload);
+          setOutbox((current) =>
+            current.map((item) => (item.id === nextEntry.id ? { ...item, status: "sent", result, error: "" } : item)),
+          );
+          if (result.kind === "answer" || result.kind === "plan" || result.kind === "discuss") {
+            if (
+              result.kind === "discuss" &&
+              result.discussionId &&
+              (!result.ready || (result.questions || []).length > 0)
+            ) {
+              const title = result.draft?.title || [...String(nextEntry.text || "")].slice(0, 18).join("");
+              changeComposerDraft(null, (current) => ({
+                ...(current || initialComposerDraft()),
+                discussionId: result.discussionId,
+                discussionTitle: title,
+                mode: "discuss",
+              }));
+            }
+            await chief.reload();
+          } else await onMessagesRefresh();
+        } catch (sendError) {
+          setOutbox((current) =>
+            current.map((item) =>
+              item.id === nextEntry.id ? { ...item, status: "failed", error: sendError.message || "发送失败" } : item,
+            ),
+          );
+        }
+      })();
+    },
+    [api, chief.reload, onMessagesRefresh],
+  );
+
+  const retryOutbox = useCallback(
+    (id) => {
+      const target = outboxRef.current.find((item) => item.id === id);
+      if (!target || target.status === "sending") return;
+      dispatchOutbox(target);
+    },
+    [dispatchOutbox],
+  );
+
+  const dismissOutbox = useCallback((id) => {
+    setOutbox((current) => current.filter((item) => item.id !== id));
+  }, []);
+
+  const restoreOutbox = useCallback(
+    (id) => {
+      const target = outboxRef.current.find((item) => item.id === id);
+      if (!target) return;
+      changeComposerDraft(target.pane ?? null, () => ({
+        ...initialComposerDraft(),
+        text: target.draftText ?? target.text ?? "",
+        attachments: (target.attachments || []).map((file) => ({
+          ...file,
+          key: file.key || crypto.randomUUID(),
+          status: "done",
+        })),
+        project: target.payload?.project || "",
+        flow: target.payload?.flow || "",
+        executor: target.payload?.executor || "",
+        complexity: target.payload?.complexity || "",
+        mode: target.payload?.mode || "auto",
+      }));
+      dismissOutbox(id);
+    },
+    [changeComposerDraft, dismissOutbox],
+  );
+
+  const outboxActions = {
+    onSend: dispatchOutbox,
+    onRetry: retryOutbox,
+    onRestore: restoreOutbox,
+    onDismiss: dismissOutbox,
+  };
+
+  const discussActions = {
+    onContinue: (entry) => {
+      const title = entry.draft?.title || [...String(entry.text || "")].slice(0, 18).join("");
+      changeComposerDraft(null, (current) => ({
+        ...(current || initialComposerDraft()),
+        discussionId: entry.discussionId || "",
+        discussionTitle: title,
+        mode: "discuss",
+      }));
+    },
+    onDispatch: (entry, targetMode = "task") => {
+      const summary = entry.draft?.summary;
+      if (!summary) return;
+      changeComposerDraft(null, (current) =>
+        current ? { ...current, discussionId: "", discussionTitle: "", mode: "auto" } : current,
+      );
+      const id = crypto.randomUUID();
+      const payload = {
+        id,
+        text: summary,
+        mode: targetMode,
+        ...(targetMode === "task"
+          ? {
+              requirementsConfirmed: true,
+              ...(entry.draft.project ? { project: entry.draft.project } : {}),
+              ...(entry.draft.complexity ? { complexity: entry.draft.complexity } : {}),
+            }
+          : {}),
+      };
+      dispatchOutbox({
+        id,
+        pane: null,
+        text: summary,
+        draftText: summary,
+        attachments: [],
+        payload,
+        at: new Date().toISOString(),
+      });
+    },
+    onFill: (entry) => {
+      const summary = entry.draft?.summary || "";
+      changeComposerDraft(null, (current) => ({
+        ...(current || initialComposerDraft()),
+        text: summary,
+        project: entry.draft?.project || "",
+        complexity: entry.draft?.complexity || "",
+        mode: entry.suggestedAction === "plan" ? "plan" : "task",
+        discussionId: "",
+        discussionTitle: "",
+      }));
+    },
+    onDiscussIntake: async (intake) => {
+      const text = intake?.input?.text || intake?.text || "";
+      if (!text.trim()) return;
+      await onIntakeDismiss(intake.id, { silent: true });
+      dismissOutbox(intake.id);
+      if (route.view === "messages" && (route.section === "inbox" || route.topic)) {
+        onNavigate({ view: "messages", topic: null, section: null });
+      }
+      const id = crypto.randomUUID();
+      const payload = {
+        id,
+        text,
+        mode: "discuss",
+        ...(intake.input?.project ? { project: intake.input.project } : {}),
+      };
+      dispatchOutbox({
+        id,
+        pane: null,
+        text,
+        draftText: text,
+        attachments: [],
+        payload,
+        at: new Date().toISOString(),
+      });
+    },
+  };
+
+  useEffect(() => {
+    setOutbox((current) => {
+      if (!current.length) return current;
+      const settledContext = {
+        history: chief.history,
+        plans: chief.plans,
+        receipts,
+        messages,
+        intakes: snapshot.taskIntakes || [],
+      };
+      const remaining = current.filter((entry) => !isOutboxSettled(entry, settledContext));
+      return remaining.length === current.length ? current : remaining;
+    });
+  }, [chief.history, chief.plans, receipts, messages, snapshot.taskIntakes]);
+
+  const resubmitIntake = useCallback(
+    async (intake, patch, { openThread = true } = {}) => {
+      const {
+        text = intake.text,
+        topic,
+        conversation,
+        task,
+        session,
+        agent,
+        project,
+        flow,
+        executor,
+        complexity,
+        requirementsConfirmed,
+        viaRouter,
+      } = intake.input || {};
+      const attachments = originalAttachmentIds(intake);
+      const same = Object.keys(patch).length === 0 && ["failed", "interrupted"].includes(intake.state);
+      const legacyRetry = same && !viaRouter;
+      const result = await api(legacyRetry ? "/messages" : "/router/message", "POST", {
+        id: same ? intake.id : crypto.randomUUID(),
+        text,
+        project,
+        flow,
+        executor,
+        complexity,
+        conversation,
+        task,
+        session,
+        agent,
+        ...(topic && topic !== "new" && { topic }),
+        ...(attachments.length && { attachments }),
+        ...(same && { requirementsConfirmed }),
+        ...(!legacyRetry && { mode: "task" }),
+        ...patch,
+      });
+      if (result.needsProject || result.needsConfirmation) result.kind = "intake";
+      if (!same) await onIntakeDismiss(intake.id, { silent: true });
+      dismissOutbox(intake.id);
+      if (openThread && result.topic) onNavigate({ view: "messages", topic: result.topic });
+      if (result.kind === "answer" || result.kind === "plan" || result.kind === "discuss") await chief.reload();
+      else await onMessagesRefresh();
+    },
+    [api, chief.reload, dismissOutbox, onIntakeDismiss, onMessagesRefresh, onNavigate],
+  );
+
   const messageView = route.view === "messages";
   const flowView = route.view === "tasks" && route.tasksTab === "overview";
   const boardView = route.view === "tasks" && ["list", "inbox"].includes(route.tasksTab);
@@ -195,27 +424,28 @@ function StudioShell({
   const windowsUpdateRef = useRef(null);
   windowsUpdateRef.current = windowsUpdate;
   const hasUnsavedRef = useRef(hasUnsavedForm);
-  hasUnsavedRef.current = () => hasUnsavedForm() || [...composerDrafts.values()].some(hasComposerDraft);
+  hasUnsavedRef.current = () =>
+    hasUnsavedForm() ||
+    [...composerDrafts.values()].some(hasComposerDraft) ||
+    outboxRef.current.some((entry) => entry.status === "sending");
 
+  // Load current version for the compact bottom-rail version label.
   useEffect(() => {
-    if (!themePickerOpen) return;
-    const onPointerDown = (event) => {
-      if (!themePickerRef.current?.contains(event.target)) setThemePickerOpen(false);
-    };
-    const onKeyDown = (event) => {
-      if (event.key !== "Escape") return;
-      setThemePickerOpen(false);
-      if (themePickerRef.current?.contains(document.activeElement)) {
-        themePickerRef.current.querySelector("#rail-theme")?.focus();
+    let active = true;
+    (async () => {
+      try {
+        const result = window.studio
+          ? await window.studio.versions("info")
+          : await fetch("/api/version").then((response) => (response.ok ? response.json() : null));
+        if (active && result?.current) setCurrentVersion(result.current);
+      } catch {
+        /* Fallback label stays visible; opening the modal surfaces any error. */
       }
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
+    })();
     return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
+      active = false;
     };
-  }, [themePickerOpen]);
+  }, []);
 
   // Sync system theme and cross-tab theme storage changes.
   useEffect(() => {
@@ -274,14 +504,9 @@ function StudioShell({
     [toast],
   );
 
-  const handleRefresh = useCallback(async () => {
-    if (hasUnsavedRef.current()) {
-      toast("请先处理未发送的草稿或未保存的更改，再刷新页面。");
-      return;
-    }
-    if (window.studio?.refresh) await window.studio.refresh();
-    else location.reload();
-  }, [toast]);
+  const cycleTheme = useCallback(() => {
+    selectTheme(nextThemeMode(themeMode));
+  }, [selectTheme, themeMode]);
 
   const runEngine = useCallback(
     async (operation) => {
@@ -315,6 +540,18 @@ function StudioShell({
   const confirmingEngineStop = engineConfirm.operation === "stop";
   const engineConfirmLabel = confirmingEngineStop ? "停止引擎" : "重启引擎";
   const hasUpdate = Boolean(windowsUpdate?.tag && windowsUpdate.state !== "error");
+  const railVersion = formatRailVersion(currentVersion);
+  const themeLabels = { light: "白天", dark: "黑夜", system: "自动" };
+  const currentThemeLabel = themeLabels[themeMode] || "自动";
+  const nextThemeLabel = themeLabels[nextThemeMode(themeMode)] || "白天";
+  const themeIcon =
+    themeMode === "light" ? (
+      <IconSunStroked aria-hidden="true" />
+    ) : themeMode === "dark" ? (
+      <IconMoonStroked aria-hidden="true" />
+    ) : (
+      <IconContrast aria-hidden="true" />
+    );
 
   const navItems = [
     { id: "tasks", label: "工作台", icon: <IconLayers aria-hidden="true" /> },
@@ -388,15 +625,15 @@ function StudioShell({
               onNavigate({ view: "tasks", tasksTab: "overview" });
             }}
           >
-            <span aria-hidden="true">∞</span>
+            <img className="studio-brand-logo" src="/icon.png" alt="" width="32" height="32" draggable="false" />
           </a>
           {!messageView && <h1 className="studio-view-title">{route.view === "tasks" ? "工作台" : "能力与沙箱"}</h1>}
           {route.view === "tasks" && (
             <nav className="studio-operation-tabs" aria-label="工作台视图">
               {[
-                ["overview", "流转概览"],
+                ["overview", "任务总览"],
                 ["list", "工单看板"],
-                ["plans", "DAG 协作计划"],
+                ["plans", "协作计划"],
               ].map(([tab, label]) => (
                 <button type="button" key={tab} aria-pressed={(boardView ? "list" : route.tasksTab) === tab}
                   onClick={() => onNavigate({ view: "tasks", tasksTab: tab })}>{label}</button>
@@ -454,64 +691,32 @@ function StudioShell({
                   <IconPulse aria-hidden="true" />
                 )}
               </button>
-              <div className="rail-theme-wrap" ref={themePickerRef}>
-                <button
-                  type="button"
-                  id="rail-theme"
-                  className="rail-control"
-                  aria-label="切换外观主题"
-                  title="切换外观主题"
-                  aria-expanded={themePickerOpen}
-                  aria-controls="rail-theme-picker"
-                  onClick={() => setThemePickerOpen((open) => !open)}
-                >
-                  <IconContrast aria-hidden="true" />
-                </button>
-                {themePickerOpen && (
-                  <div id="rail-theme-picker" className="studio-theme-pills" role="radiogroup" aria-label="外观模式">
-                    {[
-                      ["light", "白天"],
-                      ["dark", "夜间"],
-                      ["system", "跟随系统"],
-                    ].map(([mode, label]) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        role="radio"
-                        aria-checked={themeMode === mode}
-                        data-theme-choice={mode}
-                        className={`studio-theme-pill ${themeMode === mode ? "active" : ""}`}
-                        onClick={() => {
-                          selectTheme(mode);
-                          setThemePickerOpen(false);
-                          themePickerRef.current.querySelector("#rail-theme")?.focus();
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
               <button
                 type="button"
-                id="refresh-app"
+                id="rail-theme"
                 className="rail-control"
-                aria-label="刷新界面"
-                title="刷新界面"
-                onClick={handleRefresh}
+                data-theme-mode={themeMode}
+                aria-label={`切换外观主题：当前${currentThemeLabel}，点击切换为${nextThemeLabel}`}
+                title={`外观：${currentThemeLabel}（点击切换为${nextThemeLabel}）`}
+                onClick={cycleTheme}
               >
-                <IconRefresh aria-hidden="true" />
+                {themeIcon}
               </button>
               <button
                 type="button"
                 id="open-versions"
-                className="rail-control"
-                aria-label={hasUpdate ? "版本与更新，有新版本" : "版本与更新"}
-                title={hasUpdate ? `发现新版本 ${windowsUpdate.tag}` : "版本与更新"}
+                className="rail-control rail-version"
+                aria-label={hasUpdate ? `版本与更新，当前 ${railVersion}，有新版本` : `版本与更新，当前 ${railVersion}`}
+                title={
+                  hasUpdate
+                    ? `当前版本 ${currentVersion?.label || railVersion} · 发现新版本 ${windowsUpdate.tag}`
+                    : currentVersion?.label
+                      ? `当前版本 ${currentVersion.label} · 点击查看版本与更新`
+                      : "版本与更新"
+                }
                 onClick={() => setVersionsOpen(true)}
               >
-                <IconInfoCircle aria-hidden="true" />
+                <span className="rail-version-text">{railVersion}</span>
                 {hasUpdate && <span className="studio-update-dot" aria-hidden="true" />}
               </button>
             </div>
@@ -563,6 +768,10 @@ function StudioShell({
               conversations={conversations}
               receipts={receipts}
               inbox={inbox}
+              outbox={outbox}
+              outboxActions={outboxActions}
+              discussActions={discussActions}
+              onResubmitIntake={resubmitIntake}
               drawer={
                 drawerTask && (
                   <aside className="thread-drawer" aria-label="工单详情">
@@ -667,8 +876,10 @@ function StudioShell({
       )}
       {!messageView && <FloatingChat open={chatOpen} onOpen={openChat} onClose={closeChat} drawerOpen={externalDrawer}
         chief={chief} config={config} api={api} toast={toast} snapshot={snapshot} receipts={receipts}
-        conversations={conversations} pendingCount={inbox.total} draft={composerDrafts.get(null)} onDraft={changeComposerDraft}
-        onRefresh={onMessagesRefresh} onNavigate={onNavigate} onInspect={onInspectRun} onAction={onWorkflowAction} />}
+        conversations={conversations} outbox={outbox} outboxActions={outboxActions} discussActions={discussActions}
+        onResubmitIntake={resubmitIntake}
+        onIntakeDismiss={onIntakeDismiss} pendingCount={inbox.total} draft={composerDrafts.get(null)} onDraft={changeComposerDraft}
+        onNavigate={onNavigate} onInspect={onInspectRun} onAction={onWorkflowAction} />}
 
       <NewTaskModal
         request={newTaskRequest}

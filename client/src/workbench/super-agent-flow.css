@@ -475,7 +475,7 @@
     align-items: baseline;
     gap: 1px 5px;
   }
-  .project-card .node-copy .mono {
+  .project-card .node-copy :is(.mono, .access-label) {
     color: var(--ui-accent-ink);
   }
   .node-chevron {
